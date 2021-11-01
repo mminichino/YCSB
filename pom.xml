@@ -55,7 +55,12 @@ LICENSE file.
       <dependency>
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-api</artifactId>
-        <version>1.7.25</version>
+        <version>1.7.32</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-simple</artifactId>
+        <version>1.7.32</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -78,7 +83,7 @@ LICENSE file.
     <cloudspanner.version>0.24.0-beta</cloudspanner.version>
     <couchbase.version>1.4.10</couchbase.version>
     <couchbase2.version>2.7.0</couchbase2.version>
-    <couchbase3.version>3.0.4</couchbase3.version>
+    <couchbase3.version>3.2.2</couchbase3.version>
     <elasticsearch5-version>5.5.1</elasticsearch5-version>
     <foundationdb.version>5.2.5</foundationdb.version>
     <geode.version>1.2.0</geode.version>
