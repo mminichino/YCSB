@@ -146,7 +146,7 @@ public class Couchbase3Client extends DB {
     adhoc = props.getProperty("couchbase.adhoc", "false").equals("true");
     maxParallelism = Integer.parseInt(props.getProperty("couchbase.maxParallelism", "1"));
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
-        "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+        "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     bucketName = props.getProperty("couchbase.bucket", "default");
     upsert = props.getProperty("couchbase.upsert", "false").equals("true");
 
@@ -437,18 +437,25 @@ public class Couchbase3Client extends DB {
 
     try {
       Collection collection = bucket.defaultCollection();
+//      System.out.println("Insert from override insert");
+//      System.out.println(key);
+      Map<String, String> encodedString = new HashMap<>();
+      encodedString = encode(values);
+      encodedString.put("record_id", numericId(key));
+//      System.out.println(values);
+//      System.out.println(encode(values));
 
       if (useDurabilityLevels) {
         if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+          collection.upsert(formatId(table, key), encodedString, upsertOptions().durability(durabilityLevel));
         } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+          collection.insert(formatId(table, key), encodedString, insertOptions().durability(durabilityLevel));
         }
       } else {
         if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+          collection.upsert(formatId(table, key), encodedString, upsertOptions().durability(persistTo, replicateTo));
         } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
+          collection.insert(formatId(table, key), encodedString, insertOptions().durability(persistTo, replicateTo));
 
         }
       }
@@ -466,6 +473,9 @@ public class Couchbase3Client extends DB {
     try {
 
       Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+//      System.out.println("Insert from insert");
+//      System.out.println(key);
+//      System.out.println(encode(values));
 
       if (useDurabilityLevels) {
         if (upsert) {
@@ -722,13 +732,16 @@ public class Couchbase3Client extends DB {
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
     final String query =  "SELECT RAW meta().id FROM `" + bucketName +
-          "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+          "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     final ReactiveCollection reactiveCollection = collection.reactive();
+    System.out.println("First Scan Func");
+    System.out.println(JsonArray.from(numericId(startkey), recordcount));
+
     reactiveCluster.query(query,
           queryOptions()
                 .adhoc(adhoc)
                 .maxParallelism(maxParallelism)
-                .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+                .parameters(JsonArray.from(numericId(startkey), recordcount)))
           .flatMapMany(res -> {
               return res.rowsAs(String.class);
             })
@@ -754,14 +767,14 @@ public class Couchbase3Client extends DB {
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
     final String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
-          "`.`" + scope + "`.`"+ coll + "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+          "`.`" + scope + "`.`"+ coll + "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
 
     final ReactiveCollection reactiveCollection = collection.reactive();
     reactiveCluster.query(query,
           queryOptions()
                   .adhoc(adhoc)
                   .maxParallelism(maxParallelism)
-                  .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+                  .parameters(JsonArray.from(numericId(startkey), recordcount)))
           .flatMapMany(res -> {
               return res.rowsAs(String.class);
             })
@@ -798,13 +811,13 @@ public class Couchbase3Client extends DB {
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
     final String query =  "SELECT RAW meta().id FROM `" + bucketName +
-        "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+        "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     final ReactiveCollection reactiveCollection = collection.reactive();
     reactiveCluster.query(query,
         queryOptions()
             .adhoc(adhoc)
             .maxParallelism(maxParallelism)
-            .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+            .parameters(JsonArray.from(numericId(startkey), recordcount)))
         .flatMapMany(res -> {
             return res.rowsAs(String.class);
           })
@@ -897,4 +910,12 @@ public class Couchbase3Client extends DB {
     return prefix + KEY_SEPARATOR + key;
   }
 
+  /**
+   * Helper function to convert the key to a numeric value.
+   * @param key the key text
+   * @return a string with non-numeric characters removed
+   */
+  private static String numericId(final String key) {
+    return key.replaceAll("[^\\d.]", "");
+  }
 }
