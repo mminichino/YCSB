@@ -734,8 +734,8 @@ public class Couchbase3Client extends DB {
     final String query =  "SELECT RAW meta().id FROM `" + bucketName +
           "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     final ReactiveCollection reactiveCollection = collection.reactive();
-    System.out.println("First Scan Func");
-    System.out.println(JsonArray.from(numericId(startkey), recordcount));
+//    System.out.println("First Scan Func");
+//    System.out.println(JsonArray.from(numericId(startkey), recordcount));
 
     reactiveCluster.query(query,
           queryOptions()
