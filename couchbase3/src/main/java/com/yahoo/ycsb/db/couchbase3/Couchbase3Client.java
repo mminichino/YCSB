@@ -24,11 +24,8 @@ import com.couchbase.client.core.env.SeedNode;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
-import com.couchbase.client.java.Bucket;
-import com.couchbase.client.java.Cluster;
-import com.couchbase.client.java.ReactiveCluster;
+import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
-import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.java.json.JacksonTransformers;
 import com.couchbase.client.java.json.JsonArray;
@@ -41,14 +38,17 @@ import com.couchbase.transactions.config.TransactionConfigBuilder;
 import com.couchbase.transactions.error.TransactionFailed;
 import com.couchbase.transactions.log.LogDefer;
 
-import com.couchbase.client.java.ClusterOptions;
-
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
+import com.couchbase.client.java.query.QueryResult;
+//import com.couchbase.client.java.query.QueryScanConsistency;
+//import com.couchbase.client.java.query.ReactiveQueryResult;
+//import static com.couchbase.client.java.query.Select.select;
+//import static com.couchbase.client.java.query.dsl.Expression.*;
 
 import com.couchbase.client.java.codec.RawJsonTranscoder;
 
@@ -82,7 +82,7 @@ public class Couchbase3Client extends DB {
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
   private static final Object INIT_COORDINATOR = new Object();
 
-  private volatile Cluster cluster;
+  private static volatile Cluster cluster;
   private static volatile ReactiveCluster reactiveCluster;
   private static volatile Bucket bucket;
   private static volatile ClusterOptions clusterOptions;
@@ -248,6 +248,7 @@ public class Couchbase3Client extends DB {
 
         reactiveCluster = cluster.reactive();
         bucket = cluster.bucket(bucketName);
+//        Cluster myCluster = cluster;
 
         if ((transactions == null) && transactionEnabled) {
           transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
@@ -728,34 +729,44 @@ public class Couchbase3Client extends DB {
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
 
-    final Collection collection = bucket.defaultCollection();
+//    final Collection collection = bucket.defaultCollection();
+//    final Scope scope = bucket.defaultScope();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query =  "SELECT RAW meta().id FROM `" + bucketName +
+    final String query =  "SELECT RAW record_id FROM `" + bucketName +
           "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
-    final ReactiveCollection reactiveCollection = collection.reactive();
+
+    QueryResult documents = cluster.query(query,
+        queryOptions().parameters(JsonArray.from(numericId(startkey), recordcount)));
+    for (String row : documents.rowsAs(String.class)) {
+      HashMap<String, ByteIterator> tuple = new HashMap<>();
+      tuple.put("record_id", new StringByteIterator(row));
+      data.add(tuple);
+    }
+
+//    final ReactiveCollection reactiveCollection = collection.reactive();
 //    System.out.println("First Scan Func");
 //    System.out.println(JsonArray.from(numericId(startkey), recordcount));
-
-    reactiveCluster.query(query,
-          queryOptions()
-                .adhoc(adhoc)
-                .maxParallelism(maxParallelism)
-                .parameters(JsonArray.from(numericId(startkey), recordcount)))
-          .flatMapMany(res -> {
-              return res.rowsAs(String.class);
-            })
-          .flatMap(id -> {
-              return reactiveCollection
-                  .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
-            })
-          .map(getResult -> {
-              HashMap<String, ByteIterator> tuple = new HashMap<>();
-              decodeStringSource(getResult.contentAs(String.class), null, tuple);
-              return tuple;
-            })
-          .toStream()
-          .forEach(data::add);
+//
+//    reactiveCluster.query(query,
+//          queryOptions()
+//                .adhoc(adhoc)
+//                .maxParallelism(maxParallelism)
+//                .parameters(JsonArray.from(numericId(startkey), recordcount)))
+//          .flatMapMany(res -> {
+//              return res.rowsAs(String.class);
+//            })
+//          .flatMap(id -> {
+//              return reactiveCollection
+//                  .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+//            })
+//          .map(getResult -> {
+//              HashMap<String, ByteIterator> tuple = new HashMap<>();
+//              decodeStringSource(getResult.contentAs(String.class), null, tuple);
+//              return tuple;
+//            })
+//          .toStream()
+//          .forEach(data::add);
 
     result.addAll(data);
     return Status.OK;
