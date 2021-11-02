@@ -12,6 +12,7 @@ RECORDCOUNT=1000000
 OPCOUNT=10000000
 THREADCOUNT=32
 RUNTIME=180
+MAXPARALLELISM=8
 
 function run_load {
 python2 bin/ycsb load couchbase3 \
@@ -39,6 +40,7 @@ python2 bin/ycsb run couchbase3 \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.epoll=true \
 	-p couchbase.sslMode=none \
+	-p couchbase.maxParallelism=$MAXPARALLELISM \
 	-p couchbase.username=$USERNAME \
 	-p couchbase.password=$PASSWORD \
 	-p recordcount=$RECORDCOUNT \
@@ -47,7 +49,7 @@ python2 bin/ycsb run couchbase3 \
 	-s > ${WORKLOAD}-run.dat
 }
 
-while getopts "h:w:p:u:b:C:O:T:R:lr" opt
+while getopts "h:w:p:u:b:C:O:T:R:P:lr" opt
 do
   case $opt in
     h)
@@ -76,6 +78,9 @@ do
       ;;
     R)
       RUNTIME=$OPTARG
+      ;;
+    P)
+      MAXPARALLELISM=$OPTARG
       ;;
     l)
       LOAD=1

@@ -24,6 +24,7 @@ import com.couchbase.client.core.env.SeedNode;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
+//import com.couchbase.client.core.error.RequestCanceledException;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
@@ -47,6 +48,12 @@ import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import com.couchbase.client.java.query.QueryResult;
 //import com.couchbase.client.java.query.QueryScanConsistency;
 //import com.couchbase.client.java.query.ReactiveQueryResult;
+//import org.reactivestreams.Subscription;
+//import reactor.core.publisher.BaseSubscriber;
+//import reactor.core.publisher.Mono;
+//import reactor.util.retry.Retry;
+//import com.couchbase.client.java.util.retry.RetryBuilder;
+
 //import static com.couchbase.client.java.query.Select.select;
 //import static com.couchbase.client.java.query.dsl.Expression.*;
 
@@ -70,6 +77,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
+//import reactor.util.retry.RetryBackoffSpec;
 
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
@@ -733,16 +741,58 @@ public class Couchbase3Client extends DB {
 //    final Scope scope = bucket.defaultScope();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query =  "SELECT RAW record_id FROM `" + bucketName +
+    final String querya =  "SELECT record_id FROM `" + bucketName +
           "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
+    final String queryb =  "SELECT meta().id FROM `" + bucketName +
+        "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
 
-    QueryResult documents = cluster.query(query,
+    QueryResult documents = cluster.query(querya,
         queryOptions().parameters(JsonArray.from(numericId(startkey), recordcount)));
-    for (String row : documents.rowsAs(String.class)) {
+    for (JsonObject row : documents.rowsAsObject()) {
       HashMap<String, ByteIterator> tuple = new HashMap<>();
-      tuple.put("record_id", new StringByteIterator(row));
+      tuple.put("record_id", new StringByteIterator(row.getString("record_id")));
       data.add(tuple);
     }
+
+//    cluster.reactive().query(queryb,
+//        queryOptions()
+//            .maxParallelism(maxParallelism)
+//            .readonly(true)
+//            .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+//        .flatMapMany(ReactiveQueryResult::rowsAsObject)
+//        .onErrorStop()
+//        .subscribe(row -> {
+//            System.out.println("Found row: " + row);
+//            HashMap<String, ByteIterator> tuple = new HashMap<>();
+//            tuple.put("id", new StringByteIterator(row.getString("id")));
+//            data.add(tuple);
+//          });
+
+//    queryResult.flatMapMany(ReactiveQueryResult::rowsAsObject).subscribe(new BaseSubscriber<JsonObject>() {
+//      private final AtomicInteger oustanding = new AtomicInteger(0);
+//
+//      @Override
+//      protected void hookOnSubscribe(Subscription subscription) {
+//        request(10);
+//        oustanding.set(10);
+//      }
+//
+//      @Override
+//      protected void hookOnNext(JsonObject value) {
+//        System.out.println(value);
+//        HashMap<String, ByteIterator> tuple = new HashMap<>();
+//        tuple.put("id", new StringByteIterator(value.getString("id")));
+//        data.add(tuple);
+//        if (oustanding.decrementAndGet() == 0) {
+//          request(10);
+//        }
+//      }
+//
+//      @Override
+//      protected void hookOnError(Throwable t) {
+//        System.err.println("Scan failed with exception: " + t);
+//      }
+//    });
 
 //    final ReactiveCollection reactiveCollection = collection.reactive();
 //    System.out.println("First Scan Func");
