@@ -128,9 +128,12 @@ public class Couchbase3Client extends DB {
   private String certKeystoreFile;
   private String certKeystorePassword;
 
+  private static volatile AtomicInteger primaryKeySeq;
+
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
+    primaryKeySeq = new AtomicInteger();
 
     boolean outOfOrderExecution = Boolean.parseBoolean(props.getProperty("couchbase.outOfOrderExecution", "false"));
     if (outOfOrderExecution) {
@@ -405,8 +408,8 @@ public class Couchbase3Client extends DB {
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
 
     try {
-
       Collection collection = bucket.defaultCollection();
+      values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
 
       if (useDurabilityLevels) {
         collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
@@ -446,25 +449,19 @@ public class Couchbase3Client extends DB {
 
     try {
       Collection collection = bucket.defaultCollection();
-//      System.out.println("Insert from override insert");
-//      System.out.println(key);
-      Map<String, String> encodedString = new HashMap<>();
-      encodedString = encode(values);
-      encodedString.put("record_id", numericId(key));
-//      System.out.println(values);
-//      System.out.println(encode(values));
+      values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
 
       if (useDurabilityLevels) {
         if (upsert) {
-          collection.upsert(formatId(table, key), encodedString, upsertOptions().durability(durabilityLevel));
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
         } else {
-          collection.insert(formatId(table, key), encodedString, insertOptions().durability(durabilityLevel));
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
         }
       } else {
         if (upsert) {
-          collection.upsert(formatId(table, key), encodedString, upsertOptions().durability(persistTo, replicateTo));
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
         } else {
-          collection.insert(formatId(table, key), encodedString, insertOptions().durability(persistTo, replicateTo));
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
 
         }
       }
@@ -482,9 +479,6 @@ public class Couchbase3Client extends DB {
     try {
 
       Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
-//      System.out.println("Insert from insert");
-//      System.out.println(key);
-//      System.out.println(encode(values));
 
       if (useDurabilityLevels) {
         if (upsert) {
@@ -737,86 +731,17 @@ public class Couchbase3Client extends DB {
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
 
-//    final Collection collection = bucket.defaultCollection();
-//    final Scope scope = bucket.defaultScope();
-
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String querya =  "SELECT record_id FROM `" + bucketName +
+    final String query =  "SELECT record_id FROM `" + bucketName +
           "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
-    final String queryb =  "SELECT meta().id FROM `" + bucketName +
-        "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
 
-    QueryResult documents = cluster.query(querya,
+    QueryResult documents = cluster.query(query,
         queryOptions().parameters(JsonArray.from(numericId(startkey), recordcount)));
     for (JsonObject row : documents.rowsAsObject()) {
       HashMap<String, ByteIterator> tuple = new HashMap<>();
       tuple.put("record_id", new StringByteIterator(row.getString("record_id")));
       data.add(tuple);
     }
-
-//    cluster.reactive().query(queryb,
-//        queryOptions()
-//            .maxParallelism(maxParallelism)
-//            .readonly(true)
-//            .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
-//        .flatMapMany(ReactiveQueryResult::rowsAsObject)
-//        .onErrorStop()
-//        .subscribe(row -> {
-//            System.out.println("Found row: " + row);
-//            HashMap<String, ByteIterator> tuple = new HashMap<>();
-//            tuple.put("id", new StringByteIterator(row.getString("id")));
-//            data.add(tuple);
-//          });
-
-//    queryResult.flatMapMany(ReactiveQueryResult::rowsAsObject).subscribe(new BaseSubscriber<JsonObject>() {
-//      private final AtomicInteger oustanding = new AtomicInteger(0);
-//
-//      @Override
-//      protected void hookOnSubscribe(Subscription subscription) {
-//        request(10);
-//        oustanding.set(10);
-//      }
-//
-//      @Override
-//      protected void hookOnNext(JsonObject value) {
-//        System.out.println(value);
-//        HashMap<String, ByteIterator> tuple = new HashMap<>();
-//        tuple.put("id", new StringByteIterator(value.getString("id")));
-//        data.add(tuple);
-//        if (oustanding.decrementAndGet() == 0) {
-//          request(10);
-//        }
-//      }
-//
-//      @Override
-//      protected void hookOnError(Throwable t) {
-//        System.err.println("Scan failed with exception: " + t);
-//      }
-//    });
-
-//    final ReactiveCollection reactiveCollection = collection.reactive();
-//    System.out.println("First Scan Func");
-//    System.out.println(JsonArray.from(numericId(startkey), recordcount));
-//
-//    reactiveCluster.query(query,
-//          queryOptions()
-//                .adhoc(adhoc)
-//                .maxParallelism(maxParallelism)
-//                .parameters(JsonArray.from(numericId(startkey), recordcount)))
-//          .flatMapMany(res -> {
-//              return res.rowsAs(String.class);
-//            })
-//          .flatMap(id -> {
-//              return reactiveCollection
-//                  .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
-//            })
-//          .map(getResult -> {
-//              HashMap<String, ByteIterator> tuple = new HashMap<>();
-//              decodeStringSource(getResult.contentAs(String.class), null, tuple);
-//              return tuple;
-//            })
-//          .toStream()
-//          .forEach(data::add);
 
     result.addAll(data);
     return Status.OK;
