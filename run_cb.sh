@@ -6,6 +6,7 @@ USERNAME="Administrator"
 PASSWORD="password"
 BUCKET="ycsb"
 SCENARIO=""
+CURRENT_SCENARIO=""
 LOAD=1
 RUN=1
 RECORDCOUNT=1000000
@@ -118,7 +119,7 @@ sleep 1
 
 function run_load {
 [ "$MANUALMODE" -eq 0 ] && create_bucket
-[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && create_index
+[ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && create_index
 python2 bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_LOAD \
@@ -151,7 +152,7 @@ python2 bin/ycsb run couchbase3 \
   -p operationcount=$OPCOUNT \
   -p maxexecutiontime=$RUNTIME \
 	-s > ${WORKLOAD}-run.dat
-[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && drop_index
+[ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && drop_index
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
@@ -265,6 +266,7 @@ fi
 for run_workload in $SCENARIO
 do
   WORKLOAD="workloads/workload${run_workload}"
+  CURRENT_SCENARIO=${run_workload}
   [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
   echo "Running workload scenario YCSB-${run_workload} file $WORKLOAD"
   [ "$LOAD" -eq 1 ] && run_load
