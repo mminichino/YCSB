@@ -222,9 +222,10 @@ echo ""
 if [ -z "$SCENARIO" ]; then
   for ycsb_workload in {a..f}
   do
-    WORKLOAD="workloads/workload${ycsb_workload}"
+    SCENARIO=$ycsb_workload
+    WORKLOAD="workloads/workload${SCENARIO}"
     [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
-    echo "Running workload scenario $WORKLOAD"
+    echo "Running workload scenario YCSB-${SCENARIO}"
     [ "$SCENARIO" = "$INDEX_WORKLOAD" ] && echo "Yes"
 #    run_load
 #    run_workload
@@ -232,7 +233,7 @@ if [ -z "$SCENARIO" ]; then
 else
   WORKLOAD="workloads/workload${SCENARIO}"
   [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
-  echo "Running single workload scenario $WORKLOAD"
+  echo "Running single workload scenario YCSB-${SCENARIO}"
 #  run_load
 #  run_workload
 fi
