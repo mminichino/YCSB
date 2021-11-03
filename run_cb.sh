@@ -16,6 +16,7 @@ RUNTIME=180
 MAXPARALLELISM=1
 MEMOPT=0
 INDEX_WORKLOAD="e"
+TMP_OUTPUT=$(mktemp)
 
 function create_bucket {
 cbc stats -U couchbase://$HOST/$BUCKET -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -240,3 +241,6 @@ fi
 if [ -d /output ]; then
    cp $SCRIPTDIR/workloads/*.dat /output
 fi
+
+rm $TMP_OUTPUT
+##
