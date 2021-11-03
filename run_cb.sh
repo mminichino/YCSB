@@ -57,7 +57,7 @@ sleep 1
 }
 
 function create_index {
-local QUERY_TEXT="CREATE INDEX record_id_index ON \`ycsb\`(\`record_id\`) WITH {\"num_replica\": 2};"
+local QUERY_TEXT="CREATE INDEX record_id_index ON \`ycsb\`(\`record_id\`) WITH {\"num_replica\": 1};"
 local retry_count=1
 
 while [ "$retry_count" -le 3 ]; do
@@ -205,13 +205,13 @@ do
       MANUALMODE=1
       ;;
     B)
-      echo -n "Creating bucket ... "
+      echo "Creating bucket ... "
       create_bucket
       echo "Done."
       exit
       ;;
     I)
-      echo -n "Creating index ... "
+      echo "Creating index ... "
       create_index
       echo "Done."
       exit
