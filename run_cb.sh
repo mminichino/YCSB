@@ -115,7 +115,7 @@ sleep 1
 
 function run_load {
 create_bucket
-create_index
+[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && create_index
 python2 bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_LOAD \
@@ -148,7 +148,7 @@ python2 bin/ycsb run couchbase3 \
   -p operationcount=$OPCOUNT \
   -p maxexecutiontime=$RUNTIME \
 	-s > ${WORKLOAD}-run.dat
-drop_index
+[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && drop_index
 delete_bucket
 }
 
@@ -226,16 +226,15 @@ if [ -z "$SCENARIO" ]; then
     WORKLOAD="workloads/workload${SCENARIO}"
     [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
     echo "Running workload scenario YCSB-${SCENARIO}"
-    [ "$SCENARIO" = "$INDEX_WORKLOAD" ] && echo "Yes"
-#    run_load
-#    run_workload
+    run_load
+    run_workload
   done
 else
   WORKLOAD="workloads/workload${SCENARIO}"
   [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
   echo "Running single workload scenario YCSB-${SCENARIO}"
-#  run_load
-#  run_workload
+  run_load
+  run_workload
 fi
 
 if [ -d /output ]; then
