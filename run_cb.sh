@@ -232,14 +232,23 @@ do
   esac
 done
 
+which jq >/dev/null 2>&1
+[ $? -ne 0 ] && err_exit "This utility requires jq."
+
+which cbc >/dev/null 2>&1
+[ $? -ne 0 ] && err_exit "This utility requires cbc from libcouchbase."
+
 cd $SCRIPTDIR
 
 [ -z "$HOST" ] && err_exit
 
 [ -z "$PASSWORD" ] && get_password
 
+ping -c 1 $HOST >/dev/null 2>&1
+[ $? -ne 0 ] && err_exit "$HOST is unreachable."
+
 echo "Testing against cluster node $HOST"
-CLUSTER_VERSION=$(cbc admin -U couchbase://$HOST -u $USERNAME -P $PASSWORD /pools 2>/dev/null | sed -n -e 's/^.*ns_server":"\(.*\)","a.*$/\1/p')
+CLUSTER_VERSION=$(cbc admin -U couchbase://$HOST -u $USERNAME -P $PASSWORD /pools 2>/dev/null | jq -r '.componentsVersion.ns_server')
 if [ -z "$CLUSTER_VERSION" ]; then
   err_exit "Can not connect to Couchbase cluster at couchbase://$HOST"
 fi
