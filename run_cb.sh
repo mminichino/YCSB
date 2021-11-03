@@ -118,7 +118,7 @@ sleep 1
 
 function run_load {
 [ "$MANUALMODE" -eq 0 ] && create_bucket
-[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && create_index
+[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && create_index
 python2 bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_LOAD \
@@ -151,7 +151,7 @@ python2 bin/ycsb run couchbase3 \
   -p operationcount=$OPCOUNT \
   -p maxexecutiontime=$RUNTIME \
 	-s > ${WORKLOAD}-run.dat
-[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && drop_index
+[ "$SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && drop_index
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 

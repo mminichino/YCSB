@@ -45,12 +45,12 @@ import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
-import com.couchbase.client.java.query.QueryResult;
+//import com.couchbase.client.java.query.QueryResult;
 //import com.couchbase.client.java.query.QueryScanConsistency;
-//import com.couchbase.client.java.query.ReactiveQueryResult;
+import com.couchbase.client.java.query.ReactiveQueryResult;
 //import org.reactivestreams.Subscription;
 //import reactor.core.publisher.BaseSubscriber;
-//import reactor.core.publisher.Mono;
+import reactor.core.publisher.Mono;
 //import reactor.util.retry.Retry;
 //import com.couchbase.client.java.util.retry.RetryBuilder;
 
@@ -119,6 +119,7 @@ public class Couchbase3Client extends DB {
   private static int kvPort;
   private static int managerPort;
   private static long kvTimeoutMillis;
+  private static long queryTimeoutMillis;
   private static int kvEndpoints;
   private boolean upsert;
 
@@ -189,7 +190,8 @@ public class Couchbase3Client extends DB {
 
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-        kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
+        kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "600000"));
+        queryTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.queryTimeoutMillis", "600000"));
         kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
         transactionEnabled = Boolean.parseBoolean(props.getProperty("couchbase.transactionsEnabled", "false"));
@@ -222,7 +224,8 @@ public class Couchbase3Client extends DB {
         if (sslMode.equals("data")) {
           environment = ClusterEnvironment
               .builder()
-              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis))
+                  .queryTimeout(Duration.ofMillis(queryTimeoutMillis)))
               .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
               .securityConfig(SecurityConfig.enableTls(true)
                   .trustCertificate(Paths.get(certificateFile)))
@@ -735,13 +738,23 @@ public class Couchbase3Client extends DB {
     final String query =  "SELECT record_id FROM `" + bucketName +
           "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
 
-    QueryResult documents = cluster.query(query,
-        queryOptions().parameters(JsonArray.from(numericId(startkey), recordcount)));
-    for (JsonObject row : documents.rowsAsObject()) {
-      HashMap<String, ByteIterator> tuple = new HashMap<>();
-      tuple.put("record_id", new StringByteIterator(row.getString("record_id")));
-      data.add(tuple);
-    }
+    cluster.reactive().query(query,
+        queryOptions()
+            .pipelineBatch(100)
+            .parameters(JsonArray.from(numericId(startkey), recordcount)))
+            .flatMapMany(ReactiveQueryResult::rowsAsObject)
+              .onErrorResume(e -> {
+                  System.out.println("Start Key: " + startkey + " Count: "
+                      + recordcount + " Error:" + e.getClass() + " Info: " + e.getMessage());
+                  return Mono.empty();
+                })
+              .map(row -> {
+                 HashMap<String, ByteIterator> tuple = new HashMap<>();
+                 tuple.put("record_id", new StringByteIterator(row.getString("record_id")));
+                 return tuple;
+                })
+              .toStream()
+              .forEach(data::add);
 
     result.addAll(data);
     return Status.OK;
