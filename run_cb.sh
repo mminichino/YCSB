@@ -17,6 +17,7 @@ MAXPARALLELISM=1
 MEMOPT=0
 INDEX_WORKLOAD="e"
 TMP_OUTPUT=$(mktemp)
+REPL_NUM=1
 
 function create_bucket {
 cbc stats -U couchbase://$HOST/$BUCKET -u $USERNAME -P $PASSWORD >/dev/null 2>&1
