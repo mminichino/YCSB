@@ -6,8 +6,8 @@ USERNAME="Administrator"
 PASSWORD="password"
 BUCKET="ycsb"
 SCENARIO=""
-LOAD=0
-RUN=0
+LOAD=1
+RUN=1
 RECORDCOUNT=1000000
 OPCOUNT=10000000
 THREADCOUNT_LOAD=32
@@ -18,6 +18,7 @@ MEMOPT=0
 INDEX_WORKLOAD="e"
 TMP_OUTPUT=$(mktemp)
 REPL_NUM=1
+MANUALMODE=0
 
 function create_bucket {
 cbc stats -U couchbase://$HOST/$BUCKET -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -116,7 +117,7 @@ sleep 1
 }
 
 function run_load {
-create_bucket
+[ "$MANUALMODE" -eq 0 ] && create_bucket
 [ "$SCENARIO" = "$INDEX_WORKLOAD" ] && create_index
 python2 bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
@@ -151,10 +152,10 @@ python2 bin/ycsb run couchbase3 \
   -p maxexecutiontime=$RUNTIME \
 	-s > ${WORKLOAD}-run.dat
 [ "$SCENARIO" = "$INDEX_WORKLOAD" ] && drop_index
-delete_bucket
+[ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:C:O:T:R:P:lr" opt
+while getopts "h:w:o:p:u:b:m:C:O:T:R:P:lrMBI" opt
 do
   case $opt in
     h)
@@ -195,10 +196,25 @@ do
       MAXPARALLELISM=$OPTARG
       ;;
     l)
-      LOAD=1
+      RUN=0
       ;;
     r)
-      RUN=1
+      LOAD=0
+      ;;
+    M)
+      MANUALMODE=1
+      ;;
+    B)
+      echo -n "Creating bucket ... "
+      create_bucket
+      echo "Done."
+      exit
+      ;;
+    I)
+      echo -n "Creating index ... "
+      create_index
+      echo "Done."
+      exit
       ;;
     \?)
       print_usage
@@ -224,20 +240,18 @@ echo ""
 if [ -z "$SCENARIO" ]; then
   for ycsb_workload in {a..f}
   do
-    SCENARIO=$ycsb_workload
-    WORKLOAD="workloads/workload${SCENARIO}"
-    [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
-    echo "Running workload scenario YCSB-${SCENARIO}"
-    run_load
-    run_workload
+    SCENARIO="$SCENARIO $ycsb_workload"
   done
-else
-  WORKLOAD="workloads/workload${SCENARIO}"
-  [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
-  echo "Running single workload scenario YCSB-${SCENARIO}"
-  run_load
-  run_workload
 fi
+
+for run_workload in $SCENARIO
+do
+  WORKLOAD="workloads/workload${run_workload}"
+  [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
+  echo "Running workload scenario YCSB-${run_workload} file $WORKLOAD"
+  [ "$LOAD" -eq 1 ] && run_load
+  [ "$RUN" -eq 1 ] && run_workload
+done
 
 if [ -d /output ]; then
    cp $SCRIPTDIR/workloads/*.dat /output
