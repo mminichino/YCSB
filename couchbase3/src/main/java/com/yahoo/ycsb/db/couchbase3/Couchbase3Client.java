@@ -749,9 +749,9 @@ public class Couchbase3Client extends DB {
                   return Mono.empty();
                 })
               .map(row -> {
-                 HashMap<String, ByteIterator> tuple = new HashMap<>();
-                 tuple.put("record_id", new StringByteIterator(row.getString("record_id")));
-                 return tuple;
+                  HashMap<String, ByteIterator> tuple = new HashMap<>();
+                  tuple.put("record_id", new StringByteIterator(row.getString("record_id")));
+                  return tuple;
                 })
               .toStream()
               .forEach(data::add);
