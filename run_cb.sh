@@ -155,7 +155,7 @@ python2 bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:C:O:T:R:P:lrMBI" opt
+while getopts "h:w:o:p:u:b:m:C:O:T:R:P:lrMBIX" opt
 do
   case $opt in
     h)
@@ -213,6 +213,15 @@ do
     I)
       echo "Creating index ... "
       create_index
+      echo "Done."
+      exit
+      ;;
+    X)
+      echo "Cleaning up."
+      echo "Dropping index ..."
+      drop_index
+      echo "Deleting bucket ..."
+      delete_bucket
       echo "Done."
       exit
       ;;
