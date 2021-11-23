@@ -742,6 +742,8 @@ public class Couchbase3Client extends DB {
         queryOptions()
             .pipelineBatch(100)
             .adhoc(Boolean.parseBoolean("false"))
+            .maxParallelism(4)
+            .readonly(Boolean.parseBoolean("true"))
             .parameters(JsonArray.from(numericId(startkey), recordcount)))
             .flatMapMany(ReactiveQueryResult::rowsAsObject)
               .onErrorResume(e -> {
