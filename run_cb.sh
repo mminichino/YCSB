@@ -30,6 +30,10 @@ if [ $? -ne 0 ]; then
     else
       MEMQUOTA=$MEMOPT
     fi
+    if [ -z "$MEMQUOTA" ]; then
+      echo "Can not get cluster statistics. Is the cluster available?"
+      exit 1
+    fi
     cbc bucket-create -U couchbase://$HOST -u $USERNAME -P $PASSWORD --ram-quota $MEMQUOTA --num-replicas $REPL_NUM $BUCKET >$TMP_OUTPUT 2>&1
     if [ $? -ne 0 ]; then
        echo "Can not create $BUCKET bucket."

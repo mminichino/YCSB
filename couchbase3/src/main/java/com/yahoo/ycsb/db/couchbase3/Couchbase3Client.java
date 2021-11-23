@@ -736,7 +736,7 @@ public class Couchbase3Client extends DB {
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
     final String query =  "SELECT record_id FROM `" + bucketName +
-          "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
+          "` WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
 
     cluster.reactive().query(query,
         queryOptions()
