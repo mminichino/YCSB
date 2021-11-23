@@ -741,6 +741,7 @@ public class Couchbase3Client extends DB {
     cluster.reactive().query(query,
         queryOptions()
             .pipelineBatch(100)
+            .adhoc(Boolean.parseBoolean("false"))
             .parameters(JsonArray.from(numericId(startkey), recordcount)))
             .flatMapMany(ReactiveQueryResult::rowsAsObject)
               .onErrorResume(e -> {
