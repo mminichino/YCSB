@@ -735,12 +735,13 @@ public class Couchbase3Client extends DB {
                                final Vector<HashMap<String, ByteIterator>> result) {
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query =  "SELECT record_id FROM `" + bucketName +
-          "` WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
+    final String query = "SELECT record_id FROM `" + bucketName +
+        "` WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
 
     cluster.reactive().query(query,
         queryOptions()
-            .pipelineBatch(100)
+            .pipelineBatch(256)
+            .pipelineCap(1024)
             .adhoc(Boolean.parseBoolean("false"))
             .maxParallelism(4)
             .readonly(Boolean.parseBoolean("true"))
