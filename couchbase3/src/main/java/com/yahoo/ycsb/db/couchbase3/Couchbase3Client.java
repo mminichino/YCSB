@@ -740,7 +740,7 @@ public class Couchbase3Client extends DB {
 
     cluster.reactive().query(query,
         queryOptions()
-            .pipelineBatch(256)
+            .pipelineBatch(128)
             .pipelineCap(1024)
             .adhoc(Boolean.parseBoolean("false"))
             .maxParallelism(4)
