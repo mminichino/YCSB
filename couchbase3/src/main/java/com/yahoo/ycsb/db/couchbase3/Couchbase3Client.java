@@ -742,6 +742,7 @@ public class Couchbase3Client extends DB {
         queryOptions()
             .pipelineBatch(128)
             .pipelineCap(1024)
+            .scanCap(1024)
             .adhoc(Boolean.parseBoolean("false"))
             .maxParallelism(4)
             .readonly(Boolean.parseBoolean("true"))
