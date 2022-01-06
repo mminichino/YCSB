@@ -41,6 +41,7 @@ MANUALMODE=0
 SSLMODE="none"
 CONTYPE="couchbase"
 CONOPTIONS=""
+BYPASS=0
 
 function create_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -185,7 +186,7 @@ python2 bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIX" opt
+while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIXZ" opt
 do
   case $opt in
     h)
@@ -260,6 +261,9 @@ do
       echo "Done."
       exit
       ;;
+    Z)
+      BYPASS=1
+      ;;
     \?)
       print_usage
       exit 1
@@ -289,12 +293,19 @@ if [ $? -eq 0 ]; then
 fi
 
 echo "Testing against cluster node $HOST"
-CLUSTER_VERSION=$(cbc admin -U ${CONTYPE}://${HOST}${CONOPTIONS} -u $USERNAME -P $PASSWORD /pools 2>/dev/null | jq -r '.componentsVersion.ns_server')
-if [ -z "$CLUSTER_VERSION" ]; then
-  err_exit "Can not connect to Couchbase cluster at ${CONTYPE}://$HOST"
+if [ "$BYPASS" -eq 0 ]; then
+  CLUSTER_VERSION=$(cbc admin -U ${CONTYPE}://${HOST}${CONOPTIONS} -u $USERNAME -P $PASSWORD /pools 2>/dev/null | jq -r '.componentsVersion.ns_server')
+  if [ -z "$CLUSTER_VERSION" ]; then
+    err_exit "Can not connect to Couchbase cluster at ${CONTYPE}://$HOST"
+  fi
+  echo "Cluster version $CLUSTER_VERSION"
+  echo ""
+else
+  if [ "$MANUALMODE" -ne 1 ]; then
+    err_exit "Automation bypass is only supported in Manual mode."
+  fi
+  echo "Automation bypassed: buckets and required indexes will need to be manually created, and no checks are performed."
 fi
-echo "Cluster version $CLUSTER_VERSION"
-echo ""
 
 if [ -z "$SCENARIO" ]; then
   for ycsb_workload in {a..f}

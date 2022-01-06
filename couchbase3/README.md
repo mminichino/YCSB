@@ -34,6 +34,16 @@ git clone https://github.com/mminichino/YCSB
 cd YCSB
 ```
 
+The bucket and index automation in the helper script requires the ```cbc``` CLI that is part of ```libcouchbase```. You can 
+read about it [here](https://docs.couchbase.com/c-sdk/current/hello-world/cbc.html).
+
+To install it on a Linux distribution that uses the ```yum``` package manager, first create a repo configuration
+for your Linux distribution per the documentation and then install the packages:
+
+```
+yum install -y libcouchbase3 libcouchbase-devel libcouchbase3-tools
+```
+
 ### 3. Run the Tests (A-F)
 
 ```
@@ -50,6 +60,38 @@ To run a specific workload (YCSB-A in this example):
 
 ```
 ./run_cb.sh -h cbnode-0000.domain.com -u user -p password -w a
+```
+
+### Manual Mode
+
+To just create the bucket:
+```
+./run_cb.sh -h cbnode-0000.domain.com -B
+```
+
+To just create the index:
+```
+./run_cb.sh -h cbnode-0000.domain.com -I
+```
+
+To run a data load:
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -M -l -w a
+```
+
+To run a scenario:
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -M -r -w a
+```
+
+To manually load data (without any script automation - i.e. if ```cbc``` isn't installed):
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -Z -M -l -w a
+```
+
+To manually run a scenario (without any automation):
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -Z -M -r -w a
 ```
 
 ## Capella
