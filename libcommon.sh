@@ -15,6 +15,12 @@ function err_exit {
    exit 1
 }
 
+function warn_msg {
+   if [ -n "$1" ]; then
+      echo "[i] Warning: $1"
+   fi
+}
+
 function get_password {
    while true
    do

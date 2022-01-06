@@ -15,9 +15,9 @@ permissions and limitations under the License. See accompanying
 LICENSE file.
 -->
 
-# Couchbase (SDK 2.x) Driver for YCSB
+# Couchbase (SDK 3.x) Driver for YCSB
 This driver is a binding for the YCSB facilities to operate against a Couchbase Server cluster. It uses the official
-Couchbase Java SDK (version 2.x) and provides a rich set of configuration options, including support for the N1QL
+Couchbase Java SDK (version 3.x) and provides a rich set of configuration options, including support for the N1QL
 query language.
 
 ## Quickstart
@@ -30,52 +30,37 @@ for more details and instructions.
 You can either download the release zip and run it, or just clone from master.
 
 ```
-git clone git://github.com/brianfrankcooper/YCSB.git
+git clone https://github.com/mminichino/YCSB
 cd YCSB
-mvn clean package
 ```
 
-### 3. Run the Workload
-Before you can actually run the workload, you need to "load" the data first.
+### 3. Run the Tests (A-F)
 
 ```
-bin/ycsb load couchbase2 -s -P workloads/workloada
+./run_cb.sh -h cbnode-0000.domain.com -u user -p password 
 ```
 
-Then, you can run the workload:
+To use SSL to connect to the cluster:
 
 ```
-bin/ycsb run couchbase2 -s -P workloads/workloada
+./run_cb.sh -h cbnode-0000.domain.com -s -u user -p password
 ```
 
-Please see the general instructions in the `doc` folder if you are not sure how it all works. You can apply a property
-(as seen in the next section) like this:
+To run a specific workload (YCSB-A in this example):
 
 ```
-bin/ycsb run couchbase -s -P workloads/workloada -p couchbase.epoll=true
+./run_cb.sh -h cbnode-0000.domain.com -u user -p password -w a
 ```
 
-## N1QL Index Setup
-In general, every time N1QL is used (either implicitly through using `workloade` or through setting `kv=false`) some
-kind of index must be present to make it work. Depending on the workload and data size, choosing the right index is
-crucial at runtime in order to get the best performance. If in doubt, please ask at the
-[forums](http://forums.couchbase.com) or get in touch with our team at Couchbase.
-
-For `workloade` and the default `readallfields=true` we recommend creating the following index, and if using Couchbase
-Server 4.5 or later with the "Memory Optimized Index" setting on the bucket.
+## Capella
+For Couchbase Capella (Couchbase hosted DBaaS) you will need to create a bucket named "ycsb" before you run the test(s).
+This is because Capella database users do not have sufficient permissions to operate on buckets. You will also need to 
+use SSL to connect. You can provide the name given on the Capella portal as the host. The helper utility will get the SRV 
+records and extract a node name to use for the host parameter.
 
 ```
-CREATE PRIMARY INDEX ON `bucketname`;
+./run_cb.sh -h cb.abcdefg.cloud.couchbase.com -s -u dbuser -p password 
 ```
-
-Couchbase Server prior to 4.5 may need a slightly different index to deliver the best performance.  In those releases
-additional covering information may be added to the index with this form.
-
-```
--CREATE INDEX wle_idx ON `bucketname`(meta().id);
-```
-
-For other workloads, different index setups might be even more performant.
 
 ## Performance Considerations
 As it is with any benchmark, there are lot of knobs to tune in order to get great or (if you are reading
@@ -126,7 +111,7 @@ implement the facilities on your own.
 You can set the following properties (with the default settings applied):
 
  - couchbase.host=127.0.0.1: The hostname from one server.
- - couchbase.bucket=default: The bucket name to use.
+ - couchbase.bucket=ycsb: The bucket name to use.
  - couchbase.password=: The password of the bucket.
  - couchbase.syncMutationResponse=true: If mutations should wait for the response to complete.
  - couchbase.persistTo=0: Persistence durability requirement
@@ -143,3 +128,4 @@ You can set the following properties (with the default settings applied):
  - couchbase.networkMetricsInterval=0: The interval in seconds when latency metrics will be logged.
  - couchbase.runtimeMetricsInterval=0: The interval in seconds when runtime metrics will be logged.
  - couchbase.documentExpiry=0: Document Expiry is the amount of time(second) until a document expires in Couchbase.
+ - couchbase.sslMode=none: Set to ```data``` to use SSL to connect to the cluster.
