@@ -66,7 +66,9 @@ import com.yahoo.ycsb.*;
 
 import java.io.*;
 
-import java.nio.file.Paths;
+// Disable SSL cert check
+//import java.nio.file.Paths;
+import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 
 import java.security.KeyStore;
 
@@ -228,7 +230,10 @@ public class Couchbase3Client extends DB {
                   .queryTimeout(Duration.ofMillis(queryTimeoutMillis)))
               .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
               .securityConfig(SecurityConfig.enableTls(true)
-                  .trustCertificate(Paths.get(certificateFile)))
+// Disable SSL cert check
+                  .enableHostnameVerification(false)
+                  .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+//                  .trustCertificate(Paths.get(certificateFile)))
               .build();
         } else if (sslMode.equals("auth")) {
           environment = ClusterEnvironment

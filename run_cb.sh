@@ -20,6 +20,7 @@ INDEX_WORKLOAD="e"
 TMP_OUTPUT=$(mktemp)
 REPL_NUM=1
 MANUALMODE=0
+SSLMODE="none"
 
 function create_bucket {
 cbc stats -U couchbase://$HOST/$BUCKET -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -132,7 +133,7 @@ python2 bin/ycsb load couchbase3 \
 	-p couchbase.upsert=true \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.epoll=true \
-	-p couchbase.sslMode=none \
+	-p couchbase.sslMode=$SSLMODE \
 	-p couchbase.username=$USERNAME \
 	-p couchbase.password=$PASSWORD \
 	-p recordcount=$RECORDCOUNT \
@@ -148,7 +149,7 @@ python2 bin/ycsb run couchbase3 \
 	-p couchbase.upsert=true \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.epoll=true \
-	-p couchbase.sslMode=none \
+	-p couchbase.sslMode=$SSLMODE \
 	-p couchbase.maxParallelism=$MAXPARALLELISM \
 	-p couchbase.username=$USERNAME \
 	-p couchbase.password=$PASSWORD \
@@ -160,7 +161,7 @@ python2 bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:C:O:T:R:P:lrMBIX" opt
+while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIX" opt
 do
   case $opt in
     h)
@@ -183,6 +184,9 @@ do
       ;;
     m)
       MEMOPT=$OPTARG
+      ;;
+    s)
+      SSLMODE="data"
       ;;
     C)
       RECORDCOUNT=$OPTARG
