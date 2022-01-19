@@ -124,6 +124,7 @@ public class Couchbase3Client extends DB {
   private static long queryTimeoutMillis;
   private static int kvEndpoints;
   private boolean upsert;
+  private boolean useDnsSrv;
 
   private static KeyStore keyStore;
   private String sslMode;
@@ -163,7 +164,7 @@ public class Couchbase3Client extends DB {
         "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     bucketName = props.getProperty("couchbase.bucket", "default");
     upsert = props.getProperty("couchbase.upsert", "false").equals("true");
-
+    useDnsSrv = Boolean.parseBoolean(props.getProperty("couchbase.usesrv", "true"));
 
     int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
 
@@ -228,7 +229,9 @@ public class Couchbase3Client extends DB {
               .builder()
               .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis))
                   .queryTimeout(Duration.ofMillis(queryTimeoutMillis)))
-              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken)
+                  .numKvConnections(kvEndpoints)
+                  .enableDnsSrv(useDnsSrv))
               .securityConfig(SecurityConfig.enableTls(true)
 // Disable SSL cert check
                   .enableHostnameVerification(false)
@@ -239,7 +242,9 @@ public class Couchbase3Client extends DB {
           environment = ClusterEnvironment
               .builder()
               .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
-              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken)
+                  .numKvConnections(kvEndpoints)
+                  .enableDnsSrv(useDnsSrv))
               .securityConfig(SecurityConfig.enableTls(true)
                   .trustStore(keyStore))
               .build();
@@ -248,13 +253,15 @@ public class Couchbase3Client extends DB {
           environment = ClusterEnvironment
               .builder()
               .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
-              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken)
+                  .numKvConnections(kvEndpoints)
+                  .enableDnsSrv(useDnsSrv))
               .build();
         }
 
         clusterOptions = ClusterOptions.clusterOptions(username, password);
  
-        if (!sslMode.equals("auth")) {
+        if (!sslMode.equals("auth") && !useDnsSrv) {
           clusterOptions.environment(environment);
           Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
               SeedNode.create(hostname,
@@ -262,6 +269,7 @@ public class Couchbase3Client extends DB {
                   Optional.of(managerPort))));
           cluster = Cluster.connect(seedNodes, clusterOptions);
         } else {
+          clusterOptions.environment(environment);
           cluster = Cluster.connect(hostname, clusterOptions);
         }
 

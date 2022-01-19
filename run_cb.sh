@@ -288,8 +288,8 @@ ping -c 1 $HOST >/dev/null 2>&1
 
 nslookup -type=SRV _${CONTYPE}._tcp.${HOST} >/dev/null 2>&1
 if [ $? -eq 0 ]; then
-  HOST=$(nslookup -type=SRV _${CONTYPE}._tcp.${HOST} | grep service | awk '{print $NF}' | head -1 | sed -e 's/\.$//')
-  warn_msg "SRV records found: rewrote host as $HOST"
+  info_msg "SRV records found:"
+  nslookup -type=SRV _${CONTYPE}._tcp.${HOST} | grep service | awk '{print $NF}' | sed -e 's/\.$//'
 fi
 
 echo "Testing against cluster node $HOST"

@@ -17,7 +17,13 @@ function err_exit {
 
 function warn_msg {
    if [ -n "$1" ]; then
-      echo "[i] Warning: $1"
+      echo "[!] Warning: $1"
+   fi
+}
+
+function info_msg {
+   if [ -n "$1" ]; then
+      echo "[i] $1"
    fi
 }
 
