@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 source $SCRIPTDIR/libcommon.sh
 PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O | -T | -R | -P | -l | -r | -M | -B | -I | -X ]
