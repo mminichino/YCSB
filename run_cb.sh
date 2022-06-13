@@ -150,7 +150,7 @@ sleep 1
 function run_load {
 [ "$MANUALMODE" -eq 0 ] && create_bucket
 [ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && create_index
-python2 bin/ycsb load couchbase3 \
+${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_LOAD \
 	-p couchbase.host=$HOST \
@@ -166,7 +166,7 @@ python2 bin/ycsb load couchbase3 \
 }
 
 function run_workload {
-python2 bin/ycsb run couchbase3 \
+${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_RUN \
 	-p couchbase.host=$HOST \
