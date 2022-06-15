@@ -114,9 +114,8 @@ LICENSE file.
     <couchbase.version>1.4.13</couchbase.version>
 		<couchbase2.version>2.7.23</couchbase2.version>
     <couchbase3.version>3.3.1</couchbase3.version>
-    <openjpa.jdbc.version>2.1.1</openjpa.jdbc.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <s3.version>1.10.20</s3.version>
+    <s3.version>1.12.239</s3.version>
   </properties>
 
   <modules>
@@ -128,7 +127,6 @@ LICENSE file.
     <module>couchbase</module>
 		<module>couchbase2</module>
     <module>couchbase3</module>
-    <module>jdbc</module>
     <module>s3</module>
   </modules>
 
