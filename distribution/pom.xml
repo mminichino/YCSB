@@ -70,6 +70,7 @@ LICENSE file.
           <descriptors>
             <descriptor>src/main/assembly/distribution.xml</descriptor>
           </descriptors>
+          <finalName>ycsb-couchbase</finalName>
           <appendAssemblyId>false</appendAssemblyId>
           <tarLongFileMode>posix</tarLongFileMode>
         </configuration>

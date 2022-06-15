@@ -29,8 +29,13 @@ for more details and instructions.
 You can either download the release zip and run it, or just clone from master.
 
 ```
-git clone https://github.com/mminichino/YCSB
-cd YCSB
+curl -OLs https://github.com/couchbaselabs/ycsb-couchbase/releases/download/v0.18.0/ycsb-couchbase.zip
+```
+```
+unzip ycsb-couchbase.zip
+```
+```
+cd ycsb-couchbase
 ```
 
 The bucket and index automation in the helper script requires the ```cbc``` CLI that is part of ```libcouchbase```. You can 

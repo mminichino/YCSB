@@ -20,8 +20,9 @@ LICENSE file.
   <id>package</id>
   <formats>
     <format>tar.gz</format>
+    <format>zip</format>
   </formats>
-  <includeBaseDirectory>true</includeBaseDirectory>
+  <baseDirectory>ycsb-couchbase</baseDirectory>
   <fileSets>
     <fileSet>
       <directory>..</directory>
