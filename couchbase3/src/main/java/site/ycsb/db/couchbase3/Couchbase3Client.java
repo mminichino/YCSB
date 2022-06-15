@@ -67,7 +67,7 @@ import site.ycsb.*;
 import java.io.*;
 
 // Disable SSL cert check
-//import java.nio.file.Paths;
+import java.nio.file.Paths;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 
 import java.security.KeyStore;
@@ -93,6 +93,7 @@ import site.ycsb.StringByteIterator;
 public class Couchbase3Client extends DB {
 
   private static final String KEY_SEPARATOR = ":";
+  private static final String KEYSPACE_SEPARATOR = ".";
 
   private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
@@ -119,8 +120,11 @@ public class Couchbase3Client extends DB {
   private int maxParallelism;
   private String scanAllQuery;
   private String bucketName;
+  private String scopeName;
+  private String collectionName;
 
   private static boolean collectionenabled;
+  private static boolean scopeenabled;
   private static String username;
   private static String password;
   private static String hostname;
@@ -134,6 +138,7 @@ public class Couchbase3Client extends DB {
 
   private static KeyStore keyStore;
   private String sslMode;
+  private static boolean sslNoVerify;
   private String certificateFile;
   private String certKeystoreFile;
   private String certKeystorePassword;
@@ -145,14 +150,13 @@ public class Couchbase3Client extends DB {
     Properties props = getProperties();
     primaryKeySeq = new AtomicInteger();
 
-    boolean outOfOrderExecution = Boolean.parseBoolean(props.getProperty("couchbase.outOfOrderExecution", "false"));
-    if (outOfOrderExecution) {
-      System.setProperty("com.couchbase.unorderedExecutionEnabled", "true");
-    } else {
-      System.setProperty("com.couchbase.unorderedExecutionEnabled", "false");
-    }
-
     bucketName = props.getProperty("couchbase.bucket", "ycsb");
+    scopeName = props.getProperty("couchbase.scope", "_default");
+    collectionName = props.getProperty("couchbase.collection", "_default");
+
+    scopeenabled = scopeName != "_default";
+    collectionenabled = collectionName != "_default";
+
     // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
     if (rawDurabilityLevel == null) {
@@ -166,9 +170,7 @@ public class Couchbase3Client extends DB {
 
     adhoc = props.getProperty("couchbase.adhoc", "false").equals("true");
     maxParallelism = Integer.parseInt(props.getProperty("couchbase.maxParallelism", "1"));
-    scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
-        "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
-    bucketName = props.getProperty("couchbase.bucket", "default");
+    scanAllQuery = "SELECT RAW meta().id FROM " + keyspaceName() + " WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     upsert = props.getProperty("couchbase.upsert", "false").equals("true");
     useDnsSrv = Boolean.parseBoolean(props.getProperty("couchbase.usesrv", "true"));
 
@@ -177,16 +179,12 @@ public class Couchbase3Client extends DB {
     hostname = props.getProperty("couchbase.host", "127.0.0.1");
     managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
     username = props.getProperty("couchbase.username", "Administrator");
-
     password = props.getProperty("couchbase.password", "password");
-
-    collectionenabled = false;
-//    collectionenabled = props.getProperty(Client.COLLECTION_ENABLED_PROPERTY,
-//        Client.COLLECTION_ENABLED_DEFAULT).equals("true");
 
     certKeystoreFile = props.getProperty("couchbase.certKeystoreFile", "");
     certKeystorePassword = props.getProperty("couchbase.certKeystorePassword", "");
     sslMode = props.getProperty("couchbase.sslMode", "none");
+    sslNoVerify = props.getProperty("couchbase.sslNoVerify", "true").equals("true");
     certificateFile = props.getProperty("couchbase.certificateFile", "none");
 
     if (sslMode.equals("none")) {
@@ -232,19 +230,26 @@ public class Couchbase3Client extends DB {
         }
 
         if (sslMode.equals("data")) {
-          environment = ClusterEnvironment
+          ClusterEnvironment.Builder clusterEnvironment = ClusterEnvironment
               .builder()
               .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis))
                   .queryTimeout(Duration.ofMillis(queryTimeoutMillis)))
               .ioConfig(IoConfig.enableMutationTokens(enableMutationToken)
                   .numKvConnections(kvEndpoints)
-                  .enableDnsSrv(useDnsSrv))
-              .securityConfig(SecurityConfig.enableTls(true)
-// Disable SSL cert check
-                  .enableHostnameVerification(false)
-                  .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
-//                  .trustCertificate(Paths.get(certificateFile)))
-              .build();
+                  .enableDnsSrv(useDnsSrv));
+
+          if (sslNoVerify) {
+            clusterEnvironment.securityConfig(SecurityConfig.enableTls(true)
+                .enableHostnameVerification(false)
+                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE));
+          } else if (certificateFile != "none") {
+            clusterEnvironment.securityConfig(SecurityConfig.enableTls(true)
+                .trustCertificate(Paths.get(certificateFile)));
+          } else {
+            clusterEnvironment.securityConfig(SecurityConfig.enableTls(true));
+          }
+
+          environment = clusterEnvironment.build();
         } else if (sslMode.equals("auth")) {
           environment = ClusterEnvironment
               .builder()
@@ -384,26 +389,8 @@ public class Couchbase3Client extends DB {
 
     try {
 
-      Collection collection = bucket.defaultCollection();
-
-      GetResult document = collection.get(formatId(table, key));
-      extractFields(document.contentAsObject(), fields, result);
-      return Status.OK;
-    } catch (DocumentNotFoundException e) {
-      return Status.NOT_FOUND;
-    } catch (Throwable t) {
-      errors.add(t);
-      System.err.println("read failed with exception : " + t);
-      return Status.ERROR;
-    }
-  }
-
-  public Status read(final String table, final String key, final Set<String> fields,
-                     final Map<String, ByteIterator> result, String scope, String coll) {
-
-    try {
-
-      Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+      Collection collection = collectionenabled ?
+          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
       GetResult document = collection.get(formatId(table, key));
       extractFields(document.contentAsObject(), fields, result);
@@ -431,28 +418,9 @@ public class Couchbase3Client extends DB {
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
 
     try {
-      Collection collection = bucket.defaultCollection();
+      Collection collection = collectionenabled ?
+          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
       values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
-
-      if (useDurabilityLevels) {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
-      } else {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
-      }
-      return Status.OK;
-    } catch (Throwable t) {
-      errors.add(t);
-      System.err.println("update failed with exception :" + t);
-      return Status.ERROR;
-    }
-  }
-
-  public Status update(final String table, final String key,
-                       final Map<String, ByteIterator> values, String scope, String coll) {
-
-    try {
-
-      Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
 
       if (useDurabilityLevels) {
         collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
@@ -471,37 +439,9 @@ public class Couchbase3Client extends DB {
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
 
     try {
-      Collection collection = bucket.defaultCollection();
+      Collection collection = collectionenabled ?
+          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
       values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
-
-      if (useDurabilityLevels) {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
-        } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
-        }
-      } else {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
-        } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-
-        }
-      }
-      return Status.OK;
-    } catch (Throwable t) {
-      errors.add(t);
-      System.err.println("insert failed with exception :" + t);
-      return Status.ERROR;
-    }
-  }
-
-  public Status insert(final String table, final String key, final Map<String,
-      ByteIterator> values, String scope, String coll) {
-
-    try {
-
-      Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
 
       if (useDurabilityLevels) {
         if (upsert) {
@@ -534,24 +474,12 @@ public class Couchbase3Client extends DB {
 
   }
 
-  public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
-                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result,
-                            String scope, String coll) {
-    if (transactionEnabled) {
-      return transactionContext(table, transationKeys, transationValues, transationOperations, fields, result,
-          scope, coll);
-    }
-    //return simpleCustomSequense(table, transationKeys, transationValues, transationOperations, fields, result);
-    return Status.NOT_IMPLEMENTED;
-
-  }
-
-
   public Status simpleCustomSequense(String table, String[] transationKeys,
                                      Map<String, ByteIterator>[] transationValues, String[] transationOperations,
                                      Set<String> fields, Map<String, ByteIterator> result) {
 
-    Collection collection = bucket.defaultCollection();
+    Collection collection = collectionenabled ?
+        bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
     try {
 
@@ -587,60 +515,10 @@ public class Couchbase3Client extends DB {
   public Status transactionContext(String table, String[] transationKeys, Map<String,
                                    ByteIterator>[] transationValues,
                                    String[] transationOperations, Set<String> fields,
-                                   Map<String, ByteIterator> result,
-                                   String scope, String coll) {
-
-
-    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
-
-    try {
-
-      transactions.run((ctx) -> {
-        // Init and Start transaction here
-          for (int i = 0; i < transationKeys.length; i++) {
-            final String formattedDocId = formatId(table, transationKeys[i]);
-            switch (transationOperations[i]) {
-            case "TRREAD":
-              TransactionGetResult doc = ctx.get(collection, formattedDocId);
-              extractFields(doc.contentAs(JsonObject.class), fields, result);
-              break;
-            case "TRUPDATE":
-              TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
-              JsonObject content = docToReplace.contentAs(JsonObject.class);
-              for (Map.Entry<String, String> entry: encode(transationValues[i]).entrySet()){
-                content.put(entry.getKey(), entry.getValue());
-              }
-              ctx.replace(docToReplace, content);
-              break;
-            case "TRINSERT":
-              ctx.insert(collection, formattedDocId, encode(transationValues[i]));
-              break;
-            default:
-              break;
-            }
-          }
-          ctx.commit();
-        });
-    } catch (TransactionFailed e) {
-      Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
-      //System.err.println("Transaction failed " + e.result().transactionId() + " " +
-          //e.result().timeTaken().toMillis() + "msecs");
-      for (LogDefer err : e.result().log().logs()) {
-        String s = err.toString();
-        logger.warn("transaction failed with exception :" + s);
-      }
-      return Status.ERROR;
-    }
-    return Status.OK;
-  }
-
-
-  public Status transactionContext(String table, String[] transationKeys, Map<String,
-      ByteIterator>[] transationValues,
-                                   String[] transationOperations, Set<String> fields,
                                    Map<String, ByteIterator> result) {
 
-    Collection collection = bucket.defaultCollection();
+    Collection collection = collectionenabled ?
+        bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
     try {
 
@@ -701,7 +579,8 @@ public class Couchbase3Client extends DB {
   public Status delete(final String table, final String key) {
     try {
 
-      Collection collection = bucket.defaultCollection();
+      Collection collection = collectionenabled ?
+          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
       if (useDurabilityLevels) {
         collection.remove(formatId(table, key), removeOptions().durability(durabilityLevel));
@@ -734,35 +613,18 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
-                     final Vector<HashMap<String, ByteIterator>> result, String scope, String coll) {
-    try {
-      if (fields == null || fields.isEmpty()) {
-        return scanAllFields(table, startkey, recordcount, result, scope, coll);
-      } else {
-        return scanSpecificFields(table, startkey, recordcount, fields, result);
-        // need to implement
-      }
-    } catch (Throwable t) {
-      errors.add(t);
-      System.err.println("scan failed with exception :" + t);
-      return Status.ERROR;
-    }
-  }
-
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query = "SELECT record_id FROM `" + bucketName +
-        "` WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
+    final String query = "SELECT record_id FROM " + keyspaceName() + " WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
 
     cluster.reactive().query(query,
         queryOptions()
             .pipelineBatch(128)
             .pipelineCap(1024)
             .scanCap(1024)
-            .adhoc(Boolean.parseBoolean("false"))
+            .adhoc(adhoc)
             .maxParallelism(4)
             .readonly(Boolean.parseBoolean("true"))
             .parameters(JsonArray.from(numericId(startkey), recordcount)))
@@ -784,39 +646,6 @@ public class Couchbase3Client extends DB {
     return Status.OK;
   }
 
-  private Status scanAllFields(final String table, final String startkey, final int recordcount,
-                               final Vector<HashMap<String, ByteIterator>> result, String scope, String coll) {
-    final Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
-
-    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
-          "`.`" + scope + "`.`"+ coll + "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
-
-    final ReactiveCollection reactiveCollection = collection.reactive();
-    reactiveCluster.query(query,
-          queryOptions()
-                  .adhoc(adhoc)
-                  .maxParallelism(maxParallelism)
-                  .parameters(JsonArray.from(numericId(startkey), recordcount)))
-          .flatMapMany(res -> {
-              return res.rowsAs(String.class);
-            })
-          .flatMap(id -> {
-              return reactiveCollection
-                    .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
-            })
-          .map(getResult -> {
-              HashMap<String, ByteIterator> tuple = new HashMap<>();
-              decodeStringSource(getResult.contentAs(String.class), null, tuple);
-              return tuple;
-            })
-          .toStream()
-          .forEach(data::add);
-
-    result.addAll(data);
-    return Status.OK;
-  }
-
   /**
    * Performs the {@link #scan(String, String, int, Set, Vector)} operation N1Ql only for a subset of the fields.
    *
@@ -833,8 +662,7 @@ public class Couchbase3Client extends DB {
     final Collection collection = bucket.defaultCollection();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query =  "SELECT RAW meta().id FROM `" + bucketName +
-        "` WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
+    final String query =  "SELECT RAW meta().id FROM " + keyspaceName() + " WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     final ReactiveCollection reactiveCollection = collection.reactive();
     reactiveCluster.query(query,
         queryOptions()
@@ -940,5 +768,13 @@ public class Couchbase3Client extends DB {
    */
   private static String numericId(final String key) {
     return key.replaceAll("[^\\d.]", "");
+  }
+
+  private String keyspaceName() {
+    if (scopeenabled || collectionenabled) {
+      return this.bucketName + KEYSPACE_SEPARATOR + this.scopeName + KEYSPACE_SEPARATOR + this.collectionName;
+    } else {
+      return this.bucketName;
+    }
   }
 }

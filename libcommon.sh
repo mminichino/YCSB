@@ -1,12 +1,12 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-function print_usage {
+print_usage() {
 if [ -n "$PRINT_USAGE" ]; then
    echo "$PRINT_USAGE"
 fi
 }
 
-function err_exit {
+err_exit() {
    if [ -n "$1" ]; then
       echo "[!] Error: $1"
    else
@@ -15,19 +15,19 @@ function err_exit {
    exit 1
 }
 
-function warn_msg {
+warn_msg() {
    if [ -n "$1" ]; then
       echo "[!] Warning: $1"
    fi
 }
 
-function info_msg {
+info_msg() {
    if [ -n "$1" ]; then
       echo "[i] $1"
    fi
 }
 
-function get_password {
+get_password() {
    while true
    do
       echo -n "Password: "

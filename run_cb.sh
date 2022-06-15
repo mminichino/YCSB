@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 source $SCRIPTDIR/libcommon.sh
-PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O | -T | -R | -P | -l | -r | -M | -B | -I | -X ]
+PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O | -T | -R | -P | -l | -r | -M | -B | -I | -X | -c | -S ]
               -h Connect host name
               -w Run workload (a .. f)
               -o Run scenario for backwards compatibility
               -u User name
               -p Password
               -b Bucket name
+              -c Collection name
+              -S Scope name
               -m Index storage option (defaults to memopt)
               -s Use SSL
               -C Record count
@@ -23,6 +25,8 @@ PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O
 USERNAME="Administrator"
 PASSWORD="password"
 BUCKET="ycsb"
+SCOPE="ycsb"
+COLLECTION="ycsb"
 SCENARIO=""
 CURRENT_SCENARIO=""
 LOAD=1
@@ -72,6 +76,38 @@ fi
 sleep 1
 }
 
+function create_scope() {
+local QUERY_TEXT="CREATE SCOPE ${BUCKET}.${SCOPE} IF NOT EXISTS;"
+
+if [ "$SCOPE" = "_default" ]; then
+  return
+fi
+
+cbc query -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD "$QUERY_TEXT" >$TMP_OUTPUT 2>&1
+if [ $? -ne 0 ]; then
+   echo "Query failed."
+   echo "$QUERY_TEXT"
+   cat $TMP_OUTPUT
+   exit 1
+fi
+}
+
+function create_collection() {
+local QUERY_TEXT="CREATE COLLECTION ${BUCKET}.${SCOPE}.${COLLECTION} IF NOT EXISTS;"
+
+if [ "$COLLECTION" = "_default" ]; then
+  return
+fi
+
+cbc query -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD "$QUERY_TEXT" >$TMP_OUTPUT 2>&1
+if [ $? -ne 0 ]; then
+   echo "Query failed."
+   echo "$QUERY_TEXT"
+   cat $TMP_OUTPUT
+   exit 1
+fi
+}
+
 function delete_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
 
@@ -88,7 +124,7 @@ sleep 1
 }
 
 function create_index {
-local QUERY_TEXT="CREATE INDEX record_id_${BUCKET} ON \`${BUCKET}\`(\`record_id\`) WITH {\"num_replica\": 1};"
+local QUERY_TEXT="CREATE INDEX record_id_${BUCKET} ON \`${BUCKET}\`.${SCOPE}.${COLLECTION}(\`record_id\`) WITH {\"num_replica\": 1};"
 local retry_count=1
 
 while [ "$retry_count" -le 3 ]; do
@@ -118,7 +154,7 @@ sleep 1
 }
 
 function drop_index {
-local QUERY_TEXT="DROP INDEX record_id_${BUCKET} ON \`${BUCKET}\` USING GSI;"
+local QUERY_TEXT="DROP INDEX record_id_${BUCKET} ON \`${BUCKET}\`.${SCOPE}.${COLLECTION} USING GSI;"
 local retry_count=1
 
 while [ "$retry_count" -le 3 ]; do
@@ -148,13 +184,15 @@ sleep 1
 }
 
 function run_load {
-[ "$MANUALMODE" -eq 0 ] && create_bucket
+[ "$MANUALMODE" -eq 0 ] && create_bucket && create_scope && create_collection
 [ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && create_index
 ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_LOAD \
 	-p couchbase.host=$HOST \
 	-p couchbase.bucket=$BUCKET \
+	-p couchbase.scope=$SCOPE \
+	-p couchbase.collection=$COLLECTION \
 	-p couchbase.upsert=true \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.epoll=true \
@@ -171,6 +209,8 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-threads $THREADCOUNT_RUN \
 	-p couchbase.host=$HOST \
 	-p couchbase.bucket=$BUCKET \
+	-p couchbase.scope=$SCOPE \
+  -p couchbase.collection=$COLLECTION \
 	-p couchbase.upsert=true \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.epoll=true \
@@ -186,7 +226,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIXZ" opt
+while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIXZc:S:" opt
 do
   case $opt in
     h)
@@ -206,6 +246,12 @@ do
       ;;
     b)
       BUCKET=$OPTARG
+      ;;
+    c)
+      COLLECTION=$OPTARG
+      ;;
+    S)
+      SCOPE=$OPTARG
       ;;
     m)
       MEMOPT=$OPTARG
@@ -242,7 +288,7 @@ do
       ;;
     B)
       echo "Creating bucket ... "
-      create_bucket
+      create_bucket && create_scope && create_collection
       echo "Done."
       exit
       ;;
@@ -277,7 +323,7 @@ which jq >/dev/null 2>&1
 which cbc >/dev/null 2>&1
 [ $? -ne 0 ] && err_exit "This utility requires cbc from libcouchbase."
 
-cd $SCRIPTDIR
+cd $SCRIPTDIR || err_exit "Can not change to directory $SCRIPTDIR"
 
 [ -z "$HOST" ] && err_exit
 

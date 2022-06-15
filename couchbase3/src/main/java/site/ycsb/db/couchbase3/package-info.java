@@ -18,5 +18,5 @@
 /**
  * The YCSB binding for <a href="http://www.couchbase.com/">Couchbase</a>, new driver.
  */
-package com.yahoo.ycsb.db.couchbase3;
+package site.ycsb.db.couchbase3;
 
