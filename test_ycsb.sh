@@ -1,27 +1,13 @@
 #!/usr/bin/env bash
-SCRIPTDIR=$(cd $(dirname $0) && pwd)
-source $SCRIPTDIR/libcommon.sh
-PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O | -T | -R | -P | -l | -r | -M | -B | -I | -X | -c | -S ]
+
+PRINT_USAGE="Usage: $0 -h host_name [ -h | -u | -p | -b | -c | -s | -S ]
               -h Connect host name
-              -w Run workload (a .. f)
-              -o Run scenario for backwards compatibility
               -u User name
               -p Password
               -b Bucket name
               -c Collection name
-              -S Scope name
-              -m Index storage option (defaults to memopt)
-              -s Use SSL
-              -C Record count
-              -O Operation count
-              -T Thread count
-              -R Run time
-              -P Max parallelism
-              -l Load only in manual mode
-              -r Run only in manual mode
-              -M manual mode
-              -B Create the bucket
-              -I Create the indexes"
+              -s Scope name
+              -S Do not use SSL"
 USERNAME="Administrator"
 PASSWORD="password"
 BUCKET="ycsb"
@@ -31,21 +17,36 @@ SCENARIO=""
 CURRENT_SCENARIO=""
 LOAD=1
 RUN=1
-RECORDCOUNT=1000000
+RECORDCOUNT=1000
 OPCOUNT=10000000
 THREADCOUNT_LOAD=32
 THREADCOUNT_RUN=256
-RUNTIME=180
+RUNTIME=30
 MAXPARALLELISM=1
-MEMOPT=0
+MEMOPT=768
 INDEX_WORKLOAD="e"
 TMP_OUTPUT=$(mktemp)
 REPL_NUM=1
 MANUALMODE=0
-SSLMODE="none"
-CONTYPE="couchbase"
-CONOPTIONS=""
+SSLMODE="data"
+CONTYPE="couchbases"
+CONOPTIONS="?ssl=no_verify"
 BYPASS=0
+
+print_usage() {
+if [ -n "$PRINT_USAGE" ]; then
+   echo "$PRINT_USAGE"
+fi
+}
+
+err_exit() {
+   if [ -n "$1" ]; then
+      echo "[!] Error: $1"
+   else
+      print_usage
+   fi
+   exit 1
+}
 
 function create_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -186,7 +187,7 @@ sleep 1
 function run_load {
 [ "$MANUALMODE" -eq 0 ] && create_bucket && create_scope && create_collection
 [ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && create_index
-${SCRIPTDIR}/bin/ycsb load couchbase3 \
+bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_LOAD \
 	-p couchbase.host=$HOST \
@@ -203,7 +204,7 @@ ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 }
 
 function run_workload {
-${SCRIPTDIR}/bin/ycsb run couchbase3 \
+bin/ycsb run couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_RUN \
 	-p couchbase.host=$HOST \
@@ -224,17 +225,11 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIXZc:S:" opt
+while getopts "h:u:p:b:c:s:S" opt
 do
   case $opt in
     h)
       HOST=$OPTARG
-      ;;
-    w)
-      SCENARIO=$OPTARG
-      ;;
-    o)
-      SCENARIO=$OPTARG
       ;;
     u)
       USERNAME=$OPTARG
@@ -248,65 +243,13 @@ do
     c)
       COLLECTION=$OPTARG
       ;;
-    S)
+    s)
       SCOPE=$OPTARG
       ;;
-    m)
-      MEMOPT=$OPTARG
-      ;;
-    s)
-      SSLMODE="data"
-      CONTYPE="couchbases"
-      CONOPTIONS="?ssl=no_verify"
-      ;;
-    C)
-      RECORDCOUNT=$OPTARG
-      ;;
-    O)
-      OPCOUNT=$OPTARG
-      ;;
-    T)
-      THREADCOUNT_RUN=$OPTARG
-      THREADCOUNT_LOAD=$OPTARG
-      ;;
-    R)
-      RUNTIME=$OPTARG
-      ;;
-    P)
-      MAXPARALLELISM=$OPTARG
-      ;;
-    l)
-      RUN=0
-      ;;
-    r)
-      LOAD=0
-      ;;
-    M)
-      MANUALMODE=1
-      ;;
-    B)
-      echo "Creating bucket ... "
-      create_bucket && create_scope && create_collection
-      echo "Done."
-      exit
-      ;;
-    I)
-      echo "Creating index ... "
-      create_index
-      echo "Done."
-      exit
-      ;;
-    X)
-      echo "Cleaning up."
-      echo "Dropping index ..."
-      drop_index
-      echo "Deleting bucket ..."
-      delete_bucket
-      echo "Done."
-      exit
-      ;;
-    Z)
-      BYPASS=1
+    S)
+      SSLMODE="none"
+      CONTYPE="couchbase"
+      CONOPTIONS=""
       ;;
     \?)
       print_usage
@@ -320,8 +263,6 @@ which jq >/dev/null 2>&1
 
 which cbc >/dev/null 2>&1
 [ $? -ne 0 ] && err_exit "This utility requires cbc from libcouchbase."
-
-cd $SCRIPTDIR || err_exit "Can not change to directory $SCRIPTDIR"
 
 [ -z "$HOST" ] && err_exit
 
@@ -367,10 +308,6 @@ do
   [ "$LOAD" -eq 1 ] && run_load
   [ "$RUN" -eq 1 ] && run_workload
 done
-
-if [ -d /output ]; then
-   cp $SCRIPTDIR/workloads/*.dat /output
-fi
 
 rm $TMP_OUTPUT
 ##

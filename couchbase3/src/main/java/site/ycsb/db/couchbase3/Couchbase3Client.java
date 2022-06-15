@@ -153,11 +153,9 @@ public class Couchbase3Client extends DB {
     bucketName = props.getProperty("couchbase.bucket", "ycsb");
     scopeName = props.getProperty("couchbase.scope", "_default");
     collectionName = props.getProperty("couchbase.collection", "_default");
-
     scopeenabled = scopeName != "_default";
     collectionenabled = collectionName != "_default";
 
-    // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
     if (rawDurabilityLevel == null) {
       persistTo = parsePersistTo(props.getProperty("couchbase.persistTo", "0"));
@@ -287,7 +285,6 @@ public class Couchbase3Client extends DB {
 
         reactiveCluster = cluster.reactive();
         bucket = cluster.bucket(bucketName);
-//        Cluster myCluster = cluster;
 
         if ((transactions == null) && transactionEnabled) {
           transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
@@ -617,7 +614,8 @@ public class Couchbase3Client extends DB {
                                final Vector<HashMap<String, ByteIterator>> result) {
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query = "SELECT record_id FROM " + keyspaceName() + " WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
+    final String query = "SELECT record_id FROM " + keyspaceName() +
+        " WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
 
     cluster.reactive().query(query,
         queryOptions()
@@ -662,7 +660,8 @@ public class Couchbase3Client extends DB {
     final Collection collection = bucket.defaultCollection();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query =  "SELECT RAW meta().id FROM " + keyspaceName() + " WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
+    final String query =  "SELECT RAW meta().id FROM " + keyspaceName() +
+        " WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     final ReactiveCollection reactiveCollection = collection.reactive();
     reactiveCluster.query(query,
         queryOptions()

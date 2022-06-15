@@ -37,21 +37,11 @@ LICENSE file.
     </encoder>
   </appender>
 
-  <root level="warn">
-    <!--<appender-ref ref="FILE" />-->
-    <!--<appender-ref ref="STDOUT" />-->
-  </root>
-
-  <!-- Output must also be enabled with logDirectly on TransactionsConfig (-v option) -->
-  <!--<logger name="com.couchbase.transactions" level="trace">-->
-  <!--<appender-ref ref="STDOUT" />-->
-  <!--</logger>-->
-
   <logger name="com.couchbase.transactions" level="warn">
     <appender-ref ref="FILE" />
   </logger>
 
-  <logger name="com.yahoo.ycsb.db.couchbase3" level="warn">
+  <logger name="site.ycsb.db.couchbase3" level="warn">
     <appender-ref ref="FILE" />
   </logger>
 
