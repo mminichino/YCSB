@@ -28,9 +28,18 @@ LICENSE file.
       <outputDirectory>.</outputDirectory>
       <fileMode>0644</fileMode>
       <includes>
-        <include>README</include>
+        <include>README.md</include>
         <include>LICENSE.txt</include>
         <include>NOTICE.txt</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>..</directory>
+      <outputDirectory>.</outputDirectory>
+      <fileMode>0755</fileMode>
+      <includes>
+        <include>run_cb.sh</include>
+        <include>libcommon.sh</include>
       </includes>
     </fileSet>
     <fileSet>
@@ -53,6 +62,9 @@ LICENSE file.
       <directory>../workloads</directory>
       <outputDirectory>workloads</outputDirectory>
       <fileMode>0644</fileMode>
+      <excludes>
+        <exclude>*.dat</exclude>
+      </excludes>
     </fileSet>
   </fileSets>
   <dependencySets>

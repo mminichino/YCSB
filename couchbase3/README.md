@@ -154,6 +154,8 @@ You can set the following properties (with the default settings applied):
 
  - couchbase.host=127.0.0.1: The hostname from one server.
  - couchbase.bucket=ycsb: The bucket name to use.
+ - couchbase.scope=_default: The scope to use.
+ - couchbase.collection=_default: The collection to use.
  - couchbase.password=: The password of the bucket.
  - couchbase.syncMutationResponse=true: If mutations should wait for the response to complete.
  - couchbase.persistTo=0: Persistence durability requirement
@@ -171,4 +173,5 @@ You can set the following properties (with the default settings applied):
  - couchbase.runtimeMetricsInterval=0: The interval in seconds when runtime metrics will be logged.
  - couchbase.documentExpiry=0: Document Expiry is the amount of time(second) until a document expires in Couchbase.
  - couchbase.sslMode=none: Set to ```data``` to use SSL to connect to the cluster.
- - couchbase.usesrv=true: Set to ```false``` to not allow domains with SRV records as the hostname
+ - couchbase.sslNoVerify=true: Set to ```false``` to check the SSL server certificate.
+ - couchbase.usesrv=true: Set to ```false``` to not allow domains with SRV records as the hostname.
