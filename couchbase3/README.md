@@ -81,12 +81,13 @@ You can set the following properties (with the default settings applied):
  - couchbase.scope=_default: The scope to use.
  - couchbase.collection=_default: The collection to use.
  - couchbase.password=: The password of the bucket.
+ - couchbase.durability=: Durability level to use.
  - couchbase.persistTo=0: Persistence durability requirement
  - couchbase.replicateTo=0: Replication durability requirement
  - couchbase.upsert=false: Use upsert instead of insert or replace.
  - couchbase.adhoc=false: If set to true, prepared statements are not used.
  - couchbase.maxParallelism=1: The server parallelism for all n1ql queries.
  - couchbase.kvEndpoints=1: The number of KV sockets to open per server.
- - couchbase.sslMode=none: Set to ```data``` to use SSL to connect to the cluster.
+ - couchbase.sslMode=false: Set to ```true``` to use SSL to connect to the cluster.
  - couchbase.sslNoVerify=true: Set to ```false``` to check the SSL server certificate.
- - couchbase.usesrv=true: Set to ```false``` to not allow domains with SRV records as the hostname.
+ - couchbase.certificateFile=: Path to file containing certificates to trust.

@@ -28,20 +28,7 @@ LICENSE file.
     </encoder>
   </appender>
 
-  <appender name="FAILS" class="ch.qos.logback.core.FileAppender">
-    <file>fails.log</file>
-    <append>false</append>
-    <immediateFlush>false</immediateFlush>
-    <encoder>
-      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
-    </encoder>
-  </appender>
-
-  <logger name="com.couchbase.transactions" level="warn">
-    <appender-ref ref="FILE" />
-  </logger>
-
-  <logger name="site.ycsb.db.couchbase3" level="warn">
+  <logger name="site.ycsb.db.couchbase3" level="error">
     <appender-ref ref="FILE" />
   </logger>
 

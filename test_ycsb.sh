@@ -28,7 +28,7 @@ INDEX_WORKLOAD="e"
 TMP_OUTPUT=$(mktemp)
 REPL_NUM=1
 MANUALMODE=0
-SSLMODE="data"
+SSLMODE="true"
 CONTYPE="couchbases"
 CONOPTIONS="?ssl=no_verify"
 BYPASS=0
@@ -305,8 +305,8 @@ do
   CURRENT_SCENARIO=${run_workload}
   [ ! -f "$WORKLOAD" ] && err_exit "Workload file $WORKLOAD not found."
   echo "Running workload scenario YCSB-${run_workload} file $WORKLOAD"
-  [ "$LOAD" -eq 1 ] && run_load
-  [ "$RUN" -eq 1 ] && run_workload
+  run_load
+  run_workload
 done
 
 rm $TMP_OUTPUT
