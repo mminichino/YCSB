@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 source $SCRIPTDIR/libcommon.sh
-PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O | -T | -R | -P | -l | -r | -M | -B | -I | -X | -c | -S ]
+PRINT_USAGE="Usage: $0 -h host_name [ options ]
               -h Connect host name
               -w Run workload (a .. f)
               -o Run scenario for backwards compatibility
@@ -14,9 +14,10 @@ PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O
               -s Use SSL
               -C Record count
               -O Operation count
-              -T Thread count
-              -R Run time
+              -N Thread count
+              -T Run time
               -P Max parallelism
+              -R Replica count
               -l Load only in manual mode
               -r Run only in manual mode
               -M manual mode
@@ -224,7 +225,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIXZc:S:" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:lrMBIXZc:S:" opt
 do
   case $opt in
     h)
@@ -265,15 +266,18 @@ do
     O)
       OPCOUNT=$OPTARG
       ;;
-    T)
+    N)
       THREADCOUNT_RUN=$OPTARG
       THREADCOUNT_LOAD=$OPTARG
       ;;
-    R)
+    T)
       RUNTIME=$OPTARG
       ;;
     P)
       MAXPARALLELISM=$OPTARG
+      ;;
+    R)
+      REPL_NUM=$OPTARG
       ;;
     l)
       RUN=0
