@@ -114,7 +114,7 @@ public class Couchbase3Client extends DB {
   private String certificateFile;
   private static String keyspaceName;
   private static volatile AtomicInteger primaryKeySeq;
-  private static final int MAX_RETRY = 5;
+  private static final int MAX_RETRY = 10;
 
   @Override
   public void init() throws DBException {

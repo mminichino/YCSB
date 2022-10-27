@@ -18,6 +18,8 @@ PRINT_USAGE="Usage: $0 -h host_name [ options ]
               -T Run time
               -P Max parallelism
               -R Replica count
+              -K KV timeout (milliseconds)
+              -Q Query timeout (milliseconds)
               -l Load only in manual mode
               -r Run only in manual mode
               -M manual mode
@@ -47,6 +49,8 @@ SSLMODE="true"
 CONTYPE="couchbase"
 CONOPTIONS=""
 BYPASS=0
+KV_TIMEOUT=2000
+QUERY_TIMEOUT=14000
 
 function create_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -199,6 +203,8 @@ ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-p couchbase.sslMode=$SSLMODE \
 	-p couchbase.username=$USERNAME \
 	-p couchbase.password=$PASSWORD \
+	-p couchbase.kvTimeout=$KV_TIMEOUT \
+	-p couchbase.queryTimeout=$QUERY_TIMEOUT \
 	-p recordcount=$RECORDCOUNT \
 	-s > ${WORKLOAD}-load.dat
 }
@@ -217,6 +223,8 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-p couchbase.maxParallelism=$MAXPARALLELISM \
 	-p couchbase.username=$USERNAME \
 	-p couchbase.password=$PASSWORD \
+	-p couchbase.kvTimeout=$KV_TIMEOUT \
+  -p couchbase.queryTimeout=$QUERY_TIMEOUT \
 	-p recordcount=$RECORDCOUNT \
   -p operationcount=$OPCOUNT \
   -p maxexecutiontime=$RUNTIME \
@@ -225,7 +233,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:lrMBIXZc:S:" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:" opt
 do
   case $opt in
     h)
@@ -278,6 +286,12 @@ do
       ;;
     R)
       REPL_NUM=$OPTARG
+      ;;
+    K)
+      KV_TIMEOUT=$OPTARG
+      ;;
+    Q)
+      QUERY_TIMEOUT=$OPTARG
       ;;
     l)
       RUN=0
