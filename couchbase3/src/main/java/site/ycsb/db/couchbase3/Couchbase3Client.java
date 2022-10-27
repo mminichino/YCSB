@@ -166,8 +166,8 @@ public class Couchbase3Client extends DB {
 
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-        kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "600000"));
-        queryTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.queryTimeoutMillis", "600000"));
+        kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeout", "2000"));
+        queryTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.queryTimeout", "14000"));
         kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
         if (sslMode) {

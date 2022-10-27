@@ -136,3 +136,5 @@ You can set the following properties (with the default settings applied):
 - couchbase.sslMode=false: Set to ```true``` to use SSL to connect to the cluster.
 - couchbase.sslNoVerify=true: Set to ```false``` to check the SSL server certificate.
 - couchbase.certificateFile=: Path to file containing certificates to trust.
+- couchbase.kvTimeout=2000: KV operation timeout (milliseconds)
+- couchbase.queryTimeout=14000: Query timeout (milliseconds)
