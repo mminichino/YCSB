@@ -114,7 +114,7 @@ public class Couchbase3Client extends DB {
   private String certificateFile;
   private static String keyspaceName;
   private static volatile AtomicInteger primaryKeySeq;
-  private static final int MAX_RETRY = 10;
+  private static final int MAX_RETRY = 15;
 
   @Override
   public void init() throws DBException {
@@ -318,6 +318,8 @@ public class Couchbase3Client extends DB {
           errors.add(t);
           LOGGER.error("read failed with exception : " + t);
           return Status.ERROR;
+        } else {
+          retryWait(retryCount);
         }
       }
     }
@@ -360,6 +362,8 @@ public class Couchbase3Client extends DB {
           errors.add(t);
           LOGGER.error("update failed with exception :" + t);
           return Status.ERROR;
+        } else {
+          retryWait(retryCount);
         }
       }
     }
@@ -398,6 +402,8 @@ public class Couchbase3Client extends DB {
           errors.add(t);
           LOGGER.error("insert failed with exception :" + t);
           return Status.ERROR;
+        } else {
+          retryWait(retryCount);
         }
       }
     }
@@ -440,6 +446,8 @@ public class Couchbase3Client extends DB {
           errors.add(t);
           LOGGER.error("delete failed with exception :" + t);
           return Status.ERROR;
+        } else {
+          retryWait(retryCount);
         }
       }
     }
@@ -469,6 +477,8 @@ public class Couchbase3Client extends DB {
           errors.add(t);
           LOGGER.error("scan failed with exception :" + t);
           return Status.ERROR;
+        } else {
+          retryWait(retryCount);
         }
       }
     }
@@ -622,6 +632,17 @@ public class Couchbase3Client extends DB {
       return this.bucketName + KEYSPACE_SEPARATOR + this.scopeName + KEYSPACE_SEPARATOR + this.collectionName;
     } else {
       return this.bucketName;
+    }
+  }
+
+  /**
+   * Helper function to wait before a retry.
+   */
+  public static void retryWait(int count) {
+    try {
+      Thread.sleep(count * 200L);
+    } catch(InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 }
