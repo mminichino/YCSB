@@ -93,7 +93,7 @@ public class Couchbase3Client extends DB {
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
-  private  volatile ArrayList errors = new ArrayList();
+  private volatile ArrayList errors = new ArrayList();
   private boolean adhoc;
   private int maxParallelism;
   private String scanAllQuery;
@@ -114,6 +114,7 @@ public class Couchbase3Client extends DB {
   private String certificateFile;
   private static String keyspaceName;
   private static volatile AtomicInteger primaryKeySeq;
+  private static final int MAX_RETRY = 5;
 
   @Override
   public void init() throws DBException {
@@ -301,21 +302,24 @@ public class Couchbase3Client extends DB {
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
+    int retryCount = 0;
+    while (true) {
+      try {
+        Collection collection = collectionEnabled ?
+            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
-    try {
-
-      Collection collection = collectionEnabled ?
-          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-
-      GetResult document = collection.get(formatId(table, key));
-      extractFields(document.contentAsObject(), fields, result);
-      return Status.OK;
-    } catch (DocumentNotFoundException e) {
-      return Status.NOT_FOUND;
-    } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("read failed with exception : " + t);
-      return Status.ERROR;
+        GetResult document = collection.get(formatId(table, key));
+        extractFields(document.contentAsObject(), fields, result);
+        return Status.OK;
+      } catch (DocumentNotFoundException e) {
+        return Status.NOT_FOUND;
+      } catch (Throwable t) {
+        if (++retryCount == MAX_RETRY) {
+          errors.add(t);
+          LOGGER.error("read failed with exception : " + t);
+          return Status.ERROR;
+        }
+      }
     }
   }
 
@@ -338,22 +342,26 @@ public class Couchbase3Client extends DB {
    */
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
+    int retryCount = 0;
+    while (true) {
+      try {
+        Collection collection = collectionEnabled ?
+            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+        values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
 
-    try {
-      Collection collection = collectionEnabled ?
-          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-      values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
-
-      if (useDurabilityLevels) {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
-      } else {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+        if (useDurabilityLevels) {
+          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+        } else {
+          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+        }
+        return Status.OK;
+      } catch (Throwable t) {
+        if (++retryCount == MAX_RETRY) {
+          errors.add(t);
+          LOGGER.error("update failed with exception :" + t);
+          return Status.ERROR;
+        }
       }
-      return Status.OK;
-    } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("update failed with exception :" + t);
-      return Status.ERROR;
     }
   }
 
@@ -365,31 +373,33 @@ public class Couchbase3Client extends DB {
    */
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
-
-    try {
-      Collection collection = collectionEnabled ?
-          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-      values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
-
-      if (useDurabilityLevels) {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+    int retryCount = 0;
+    while (true) {
+      try {
+        Collection collection = collectionEnabled ?
+            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+        values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
+        if (useDurabilityLevels) {
+          if (upsert) {
+            collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+          } else {
+            collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+          }
         } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+          if (upsert) {
+            collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+          } else {
+            collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
+          }
         }
-      } else {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
-        } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-
+        return Status.OK;
+      } catch (Throwable t) {
+        if (++retryCount == MAX_RETRY) {
+          errors.add(t);
+          LOGGER.error("insert failed with exception :" + t);
+          return Status.ERROR;
         }
       }
-      return Status.OK;
-    } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("insert failed with exception :" + t);
-      return Status.ERROR;
     }
   }
 
@@ -414,22 +424,24 @@ public class Couchbase3Client extends DB {
    */
   @Override
   public Status delete(final String table, final String key) {
-    try {
-
-      Collection collection = collectionEnabled ?
-          bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-
-      if (useDurabilityLevels) {
-        collection.remove(formatId(table, key), removeOptions().durability(durabilityLevel));
-      } else {
-        collection.remove(formatId(table, key), removeOptions().durability(persistTo, replicateTo));
+    int retryCount = 0;
+    while (true) {
+      try {
+        Collection collection = collectionEnabled ?
+            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+        if (useDurabilityLevels) {
+          collection.remove(formatId(table, key), removeOptions().durability(durabilityLevel));
+        } else {
+          collection.remove(formatId(table, key), removeOptions().durability(persistTo, replicateTo));
+        }
+        return Status.OK;
+      } catch (Throwable t) {
+        if (++retryCount == MAX_RETRY) {
+          errors.add(t);
+          LOGGER.error("delete failed with exception :" + t);
+          return Status.ERROR;
+        }
       }
-
-      return Status.OK;
-    } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("delete failed with exception :" + t);
-      return Status.ERROR;
     }
   }
 
@@ -444,16 +456,21 @@ public class Couchbase3Client extends DB {
   @Override
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
-    try {
-      if (fields == null || fields.isEmpty()) {
-        return scanAllFields(table, startkey, recordcount, result);
-      } else {
-        return scanSpecificFields(table, startkey, recordcount, fields, result);
+    int retryCount = 0;
+    while (true) {
+      try {
+        if (fields == null || fields.isEmpty()) {
+          return scanAllFields(table, startkey, recordcount, result);
+        } else {
+          return scanSpecificFields(table, startkey, recordcount, fields, result);
+        }
+      } catch (Throwable t) {
+        if (++retryCount == MAX_RETRY) {
+          errors.add(t);
+          LOGGER.error("scan failed with exception :" + t);
+          return Status.ERROR;
+        }
       }
-    } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("scan failed with exception :" + t);
-      return Status.ERROR;
     }
   }
 
