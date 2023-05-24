@@ -88,6 +88,7 @@ LICENSE file.
         <module name="ParameterName"/>
         <module name="StaticVariableName"/>
         <module name="TypeName"/>
+        <module name="RedundantModifier"/>
 
 
         <!-- Checks for Headers                                -->
@@ -118,7 +119,7 @@ LICENSE file.
         <!-- Checks for Size Violations.                    -->
         <!-- See http://checkstyle.sf.net/config_sizes.html -->
         <module name="LineLength">
-            <property name="max" value="160"/>
+          <property name="max" value="160"/>
         </module>
         <module name="MethodLength">
             <property name="max" value="200"/>

@@ -264,7 +264,7 @@ do
       MEMOPT=$OPTARG
       ;;
     s)
-      SSLMODE="data"
+      SSLMODE="true"
       CONTYPE="couchbases"
       CONOPTIONS="?ssl=no_verify"
       ;;

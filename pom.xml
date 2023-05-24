@@ -107,13 +107,13 @@ LICENSE file.
 
   <!-- Properties Management -->
   <properties>
-    <maven.assembly.version>2.5.5</maven.assembly.version>
-    <maven.dependency.version>2.10</maven.dependency.version>
+    <maven.assembly.version>3.6.0</maven.assembly.version>
+    <maven.dependency.version>3.6.0</maven.dependency.version>
 
     <!-- datastore binding versions, lex sorted -->
     <couchbase.version>1.4.13</couchbase.version>
 		<couchbase2.version>2.7.23</couchbase2.version>
-    <couchbase3.version>3.4.0</couchbase3.version>
+    <couchbase3.version>3.4.6</couchbase3.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <s3.version>1.12.239</s3.version>
   </properties>
@@ -144,7 +144,7 @@ LICENSE file.
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
-        <version>3.0.0-M1</version>
+        <version>3.3.0</version>
         <executions>
           <execution>
             <id>enforce-maven</id>
@@ -168,7 +168,7 @@ LICENSE file.
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.7.0</version>
+        <version>3.11.0</version>
         <configuration>
           <source>1.8</source>
           <target>1.8</target>
@@ -205,51 +205,49 @@ LICENSE file.
             <plugin>
               <groupId>org.apache.maven.plugins</groupId>
               <artifactId>maven-deploy-plugin</artifactId>
-              <version>3.0.0-M1</version>
+              <version>3.1.1</version>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-source-plugin</artifactId>
+              <version>3.3.0</version>
+              <executions>
+                <execution>
+                  <id>attach-sources</id>
+                  <goals>
+                    <goal>jar-no-fork</goal>
+                  </goals>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-javadoc-plugin</artifactId>
+              <version>3.1.1</version>
+              <executions>
+                <execution>
+                  <id>attach-javadocs</id>
+                  <goals>
+                    <goal>jar</goal>
+                  </goals>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-gpg-plugin</artifactId>
+              <version>1.6</version>
+              <executions>
+                <execution>
+                  <id>sign-release-artifacts</id>
+                  <goals>
+                    <goal>sign</goal>
+                  </goals>
+                </execution>
+              </executions>
             </plugin>
           </plugins>
         </pluginManagement>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-source-plugin</artifactId>
-            <version>3.1.0</version>
-            <executions>
-              <execution>
-                <id>attach-sources</id>
-                <goals>
-                  <goal>jar-no-fork</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-javadoc-plugin</artifactId>
-            <version>3.1.1</version>
-            <executions>
-              <execution>
-                <id>attach-javadocs</id>
-                <goals>
-                  <goal>jar</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-gpg-plugin</artifactId>
-            <version>1.6</version>
-            <executions>
-              <execution>
-                <id>sign-release-artifacts</id>
-                <goals>
-                  <goal>sign</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
       </build>
     </profile>
   </profiles>
