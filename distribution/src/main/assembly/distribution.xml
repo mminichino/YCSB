@@ -40,6 +40,7 @@ LICENSE file.
       <includes>
         <include>run_cb.sh</include>
         <include>libcommon.sh</include>
+        <include>setup.sh</include>
       </includes>
     </fileSet>
     <fileSet>

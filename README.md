@@ -29,7 +29,7 @@ for more details and instructions.
 You can either download the release zip and run it, or just clone from master.
 
 ```
-curl -OLs https://github.com/couchbaselabs/ycsb-couchbase/releases/download/v0.18.0/ycsb-couchbase.zip
+curl -OLs https://github.com/couchbaselabs/ycsb-couchbase/releases/download/1.0.1/ycsb-couchbase.zip
 ```
 ```
 unzip ycsb-couchbase.zip
@@ -37,7 +37,11 @@ unzip ycsb-couchbase.zip
 ```
 cd ycsb-couchbase
 ```
+```
+sudo ./setup.sh
+```
 
+### Manual Setup
 The bucket and index automation in the helper script requires the ```cbc``` CLI that is part of ```libcouchbase```. You can 
 read about it [here](https://docs.couchbase.com/c-sdk/current/hello-world/cbc.html).
 
@@ -53,6 +57,8 @@ For Debian type systems such as Ubuntu:
 ```
 apt-get install -y libcouchbase3 libcouchbase-dev libcouchbase3-tools libcouchbase-dbg libcouchbase3-libev libcouchbase3-libevent
 ```
+
+Additionally, the helper script requires the ```jq``` and ```python3``` packages if not already installed.
 
 ### 3. Run the Tests (A-F)
 
