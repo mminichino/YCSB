@@ -51,6 +51,8 @@ CONOPTIONS=""
 BYPASS=0
 KV_TIMEOUT=2000
 QUERY_TIMEOUT=14000
+TEST_TYPE="DEFAULT"
+WRITE_ALL_FIELDS="false"
 
 function create_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -205,6 +207,8 @@ ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-p couchbase.password=$PASSWORD \
 	-p couchbase.kvTimeout=$KV_TIMEOUT \
 	-p couchbase.queryTimeout=$QUERY_TIMEOUT \
+	-p couchbase.mode=$TEST_TYPE \
+	-p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \
 	-s > ${WORKLOAD}-load.dat
 }
@@ -225,6 +229,8 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-p couchbase.password=$PASSWORD \
 	-p couchbase.kvTimeout=$KV_TIMEOUT \
   -p couchbase.queryTimeout=$QUERY_TIMEOUT \
+  -p couchbase.mode=$TEST_TYPE \
+  -p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \
   -p operationcount=$OPCOUNT \
   -p maxexecutiontime=$RUNTIME \
@@ -233,7 +239,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:Y:" opt
 do
   case $opt in
     h)
@@ -326,6 +332,9 @@ do
     Z)
       BYPASS=1
       ;;
+    Y)
+      TEST_TYPE=$OPTARG
+      ;;
     \?)
       print_usage
       exit 1
@@ -375,6 +384,8 @@ if [ -z "$SCENARIO" ]; then
     SCENARIO="$SCENARIO $ycsb_workload"
   done
 fi
+
+[ "$TEST_TYPE" = "ARRAY" ] && WRITE_ALL_FIELDS="true"
 
 for run_workload in $SCENARIO
 do
