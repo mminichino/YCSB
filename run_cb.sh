@@ -54,6 +54,7 @@ QUERY_TIMEOUT=14000
 TEST_TYPE="DEFAULT"
 WRITE_ALL_FIELDS="false"
 TTL_SECONDS=0
+DO_UPSERT="true"
 
 function create_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -201,7 +202,7 @@ ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-p couchbase.bucket=$BUCKET \
 	-p couchbase.scope=$SCOPE \
 	-p couchbase.collection=$COLLECTION \
-	-p couchbase.upsert=true \
+	-p couchbase.upsert=$DO_UPSERT \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.sslMode=$SSLMODE \
 	-p couchbase.username=$USERNAME \
@@ -223,7 +224,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-p couchbase.bucket=$BUCKET \
 	-p couchbase.scope=$SCOPE \
   -p couchbase.collection=$COLLECTION \
-	-p couchbase.upsert=true \
+	-p couchbase.upsert=$DO_UPSERT \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.sslMode=$SSLMODE \
 	-p couchbase.maxParallelism=$MAXPARALLELISM \
@@ -242,7 +243,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:Y:L:" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:Y:L:W" opt
 do
   case $opt in
     h)
@@ -340,6 +341,9 @@ do
       ;;
     L)
       TTL_SECONDS=$OPTARG
+      ;;
+    W)
+      DO_UPSERT="false"
       ;;
     \?)
       print_usage
