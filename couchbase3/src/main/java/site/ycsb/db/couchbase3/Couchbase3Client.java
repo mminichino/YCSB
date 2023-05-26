@@ -73,6 +73,8 @@ import site.ycsb.StringByteIterator;
  * <li><b>couchbase.sslMode=false</b> Set to true to use SSL to connect to the cluster.</li>
  * <li><b>couchbase.sslNoVerify=true</b> Set to false to check the SSL server certificate.</li>
  * <li><b>couchbase.certificateFile=</b> Path to file containing certificates to trust.</li>
+ * <li><b>couchbase.mode=</b> Test operating mode (DEFAULT or ARRAY).</li>
+ * <li><b>couchbase.ttlSeconds=</b> Set document expiration (TTL) in seconds.</li>
  * </ul>
  */
 
