@@ -111,8 +111,6 @@ LICENSE file.
     <maven.dependency.version>3.6.0</maven.dependency.version>
 
     <!-- datastore binding versions, lex sorted -->
-    <couchbase.version>1.4.13</couchbase.version>
-		<couchbase2.version>2.7.23</couchbase2.version>
     <couchbase3.version>3.4.6</couchbase3.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <s3.version>1.12.239</s3.version>
@@ -124,8 +122,6 @@ LICENSE file.
     <module>binding-parent</module>
     <module>distribution</module>
     <!-- all the datastore bindings, lex sorted please -->
-    <module>couchbase</module>
-		<module>couchbase2</module>
     <module>couchbase3</module>
     <module>s3</module>
   </modules>

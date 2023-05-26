@@ -35,12 +35,9 @@ import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustMan
 import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
 
-import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
-import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
-//import static java.util.Collections.emptyList;
 
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -48,7 +45,6 @@ import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 
-//import com.google.gson.Gson;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 import reactor.core.publisher.Mono;
@@ -84,7 +80,7 @@ import site.ycsb.StringByteIterator;
 
 public class Couchbase3Client extends DB {
   private static final Logger LOGGER = LoggerFactory.getLogger(Couchbase3Client.class.getName());
-  private static final String KEY_SEPARATOR = ":";
+  private static final String KEY_SEPARATOR = "::";
   private static final String KEYSPACE_SEPARATOR = ".";
   private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
@@ -97,34 +93,27 @@ public class Couchbase3Client extends DB {
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
-  private volatile ArrayList errors = new ArrayList();
+  private final ArrayList<Throwable> errors = new ArrayList<>();
   private boolean adhoc;
   private int maxParallelism;
-  private String scanAllQuery;
   private String bucketName;
   private String scopeName;
   private String collectionName;
   private static boolean collectionEnabled;
   private static boolean scopeEnabled;
-  private static String username;
-  private static String password;
-  private static String hostname;
-  private static long kvTimeoutMillis;
-  private static long queryTimeoutMillis;
-  private static int kvEndpoints;
-  private boolean upsert;
-  private static boolean sslMode;
-  private static boolean sslNoVerify;
-  private String certificateFile;
   private static String keyspaceName;
   private static volatile AtomicInteger primaryKeySeq;
-  private static final int MAX_RETRY = 15;
   private TestType testMode;
   private String arrayKey;
+  private int ttlSeconds;
+  private UpsertOptions dbUpsertOptions;
+  private RemoveOptions dbRemoveOptions;
+  private MutateInOptions dbMutateOptions;
+  private final String recordId = "record_id";
 
   /** Test Type. */
   public enum TestType {
-    DEFAULT, ARRAY;
+    DEFAULT, ARRAY
   }
 
   @Override
@@ -135,8 +124,8 @@ public class Couchbase3Client extends DB {
     bucketName = props.getProperty("couchbase.bucket", "ycsb");
     scopeName = props.getProperty("couchbase.scope", "_default");
     collectionName = props.getProperty("couchbase.collection", "_default");
-    scopeEnabled = scopeName != "_default";
-    collectionEnabled = collectionName != "_default";
+    scopeEnabled = !Objects.equals(scopeName, "_default");
+    collectionEnabled = !Objects.equals(collectionName, "_default");
     keyspaceName = getKeyspaceName();
 
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
@@ -165,25 +154,26 @@ public class Couchbase3Client extends DB {
 
     adhoc = props.getProperty("couchbase.adhoc", "false").equals("true");
     maxParallelism = Integer.parseInt(props.getProperty("couchbase.maxParallelism", "0"));
-    scanAllQuery = "SELECT RAW meta().id FROM " + keyspaceName + " WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
-    upsert = props.getProperty("couchbase.upsert", "false").equals("true");
 
-    hostname = props.getProperty("couchbase.host", "127.0.0.1");
-    username = props.getProperty("couchbase.username", "Administrator");
-    password = props.getProperty("couchbase.password", "password");
+    String hostname = props.getProperty("couchbase.host", "127.0.0.1");
+    String username = props.getProperty("couchbase.username", "Administrator");
+    String password = props.getProperty("couchbase.password", "password");
 
-    sslMode = props.getProperty("couchbase.sslMode", "false").equals("true");
-    sslNoVerify = props.getProperty("couchbase.sslNoVerify", "true").equals("true");
-    certificateFile = props.getProperty("couchbase.certificateFile", "none");
+    boolean sslMode = props.getProperty("couchbase.sslMode", "false").equals("true");
+    boolean sslNoVerify = props.getProperty("couchbase.sslNoVerify", "true").equals("true");
+    String certificateFile = props.getProperty("couchbase.certificateFile", "none");
+    ttlSeconds = Integer.parseInt(props.getProperty("couchbase.ttlSeconds", "0"));
+
+    compileOptions(useDurabilityLevels, ttlSeconds);
 
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
 
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-        kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeout", "2000"));
-        queryTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.queryTimeout", "14000"));
-        kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
+        long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeout", "2000"));
+        long queryTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.queryTimeout", "14000"));
+        int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
         if (sslMode) {
           ClusterEnvironment.Builder clusterEnvironment = ClusterEnvironment
@@ -222,6 +212,24 @@ public class Couchbase3Client extends DB {
       }
     }
     OPEN_CLIENTS.incrementAndGet();
+  }
+
+  private void compileOptions(final Boolean useDurability, int seconds) {
+    dbUpsertOptions = upsertOptions();
+    dbRemoveOptions = removeOptions();
+    dbMutateOptions = MutateInOptions.mutateInOptions();
+    if (useDurability) {
+      dbUpsertOptions = dbUpsertOptions.durability(durabilityLevel);
+      dbRemoveOptions = dbRemoveOptions.durability(durabilityLevel);
+    } else {
+      dbUpsertOptions = dbUpsertOptions.durability(persistTo, replicateTo);
+      dbRemoveOptions = dbRemoveOptions.durability(persistTo, replicateTo);
+    }
+
+    if (seconds > 0) {
+      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbMutateOptions = dbMutateOptions.preserveExpiry(true);
+    }
   }
 
   /**
@@ -298,9 +306,7 @@ public class Couchbase3Client extends DB {
       cluster.disconnect();
       environment.shutdown();
       environment = null;
-      Iterator it = errors.iterator();
-      while(it.hasNext()) {
-        Throwable t = (Throwable)it.next();
+      for (Throwable t : errors) {
         LOGGER.error(t.getMessage(), t);
       }
     }
@@ -339,48 +345,20 @@ public class Couchbase3Client extends DB {
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
-    int retryCount = 0;
-    while (true) {
-      try {
-        Collection collection = collectionEnabled ?
-            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-
-        GetResult document = collection.get(formatId(table, key));
-        extractFields(document.contentAsObject(), fields, result);
-        return Status.OK;
-      } catch (DocumentNotFoundException e) {
-        return Status.NOT_FOUND;
-      } catch (Throwable t) {
-        if (++retryCount == MAX_RETRY) {
-          errors.add(t);
-          LOGGER.error("read failed with exception : " + t);
-          return Status.ERROR;
-        } else {
-          retryWait(retryCount);
-        }
-      }
-    }
-  }
-
-  public Status getDoc(final String table, final String key) {
-    int retryCount = 0;
-    while (true) {
-      try {
-        Collection collection = collectionEnabled ?
-            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-        GetResult document = collection.get(formatId(table, key));
-        return Status.OK;
-      } catch (DocumentNotFoundException e) {
-        return Status.NOT_FOUND;
-      } catch (Throwable t) {
-        if (++retryCount == MAX_RETRY) {
-          errors.add(t);
-          LOGGER.error("read failed with exception : " + t);
-          return Status.ERROR;
-        } else {
-          retryWait(retryCount);
-        }
-      }
+    try {
+      return retryBlock(() -> {
+          Collection collection = collectionEnabled ?
+              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+          GetResult document = collection.get(formatId(table, key));
+          extractFields(document.contentAsObject(), fields, result);
+          return Status.OK;
+        });
+    } catch (DocumentNotFoundException e) {
+      return Status.NOT_FOUND;
+    } catch (Throwable t) {
+      errors.add(t);
+      LOGGER.error("read failed with exception : " + t);
+      return Status.ERROR;
     }
   }
 
@@ -417,13 +395,11 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
-
-          if (useDurabilityLevels) {
-            collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
-          } else {
-            collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+          List<MutateInSpec> mutateSpec = new ArrayList<>();
+          for (Map.Entry<String, String> entry : encode(values).entrySet()) {
+            mutateSpec.add(MutateInSpec.upsert(entry.getKey(), entry.getValue()));
           }
+          collection.mutateIn(formatId(table, key), mutateSpec, dbMutateOptions);
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -438,9 +414,9 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-
           collection.mutateIn(formatId(table, key),
-              Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(encode(values)))));
+              Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(encode(values)))),
+              dbMutateOptions);
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -472,15 +448,12 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           List<Map<String, String>> value = new ArrayList<>();
           value.add(encode(values));
-          Map<String, List<Map<String, String>>> document = new HashMap<>();
+          Map<String, Object> document = new HashMap<>();
+          document.put(recordId, String.valueOf(primaryKeySeq.incrementAndGet()));
           document.put(arrayKey, value);
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          if (upsert) {
-            collection.upsert(formatId(table, key), document, upsertOptions().durability(persistTo, replicateTo));
-          } else {
-            collection.insert(formatId(table, key), document, insertOptions().durability(persistTo, replicateTo));
-          }
+          collection.upsert(formatId(table, key), document, dbUpsertOptions);
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -496,19 +469,7 @@ public class Couchbase3Client extends DB {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
           values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
-          if (useDurabilityLevels) {
-            if (upsert) {
-              collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
-            } else {
-              collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
-            }
-          } else {
-            if (upsert) {
-              collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
-            } else {
-              collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-            }
-          }
+          collection.upsert(formatId(table, key), encode(values), dbUpsertOptions);
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -517,55 +478,6 @@ public class Couchbase3Client extends DB {
       return Status.ERROR;
     }
   }
-
-//  public Status createArray(final String table, final String key, final String arrayKey){
-//    int retryCount = 0;
-//    JsonObject document = JsonObject.create()
-//        .put(arrayKey, emptyList());
-//    while (true) {
-//      try {
-//        Collection collection = collectionEnabled ?
-//            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-//        if (upsert) {
-//          collection.upsert(formatId(table, key), document, upsertOptions().durability(persistTo, replicateTo));
-//        } else {
-//          collection.insert(formatId(table, key), document, insertOptions().durability(persistTo, replicateTo));
-//        }
-//        return Status.OK;
-//      } catch (Throwable t) {
-//        if (++retryCount == MAX_RETRY) {
-//          errors.add(t);
-//          LOGGER.error("insert failed with exception :" + t);
-//          return Status.ERROR;
-//        } else {
-//          retryWait(retryCount);
-//        }
-//      }
-//    }
-//  }
-
-//  public Status arrayAppendData(final String table, final String key,
-//                            final String arrayKey, final Map<String, ByteIterator> values){
-//    int retryCount = 0;
-//    JSONObject subDoc = new JSONObject(encode(values));
-//    while (true) {
-//      try {
-//        Collection collection = collectionEnabled ?
-//            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-//        MutationResult result = collection.mutateIn(formatId(table, key),
-//            Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(encode(values)))));
-//        return Status.OK;
-//      } catch (Throwable t) {
-//        if (++retryCount == MAX_RETRY) {
-//          errors.add(t);
-//          LOGGER.error("insert failed with exception :" + t);
-//          return Status.ERROR;
-//        } else {
-//          retryWait(retryCount);
-//        }
-//      }
-//    }
-//  }
 
   /**
    * Helper method to turn the passed in iterator values into a map we can encode to json.
@@ -588,26 +500,17 @@ public class Couchbase3Client extends DB {
    */
   @Override
   public Status delete(final String table, final String key) {
-    int retryCount = 0;
-    while (true) {
-      try {
-        Collection collection = collectionEnabled ?
-            bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-        if (useDurabilityLevels) {
-          collection.remove(formatId(table, key), removeOptions().durability(durabilityLevel));
-        } else {
-          collection.remove(formatId(table, key), removeOptions().durability(persistTo, replicateTo));
-        }
-        return Status.OK;
-      } catch (Throwable t) {
-        if (++retryCount == MAX_RETRY) {
-          errors.add(t);
-          LOGGER.error("delete failed with exception :" + t);
-          return Status.ERROR;
-        } else {
-          retryWait(retryCount);
-        }
-      }
+    try {
+      return retryBlock(() -> {
+          Collection collection = collectionEnabled ?
+              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+          collection.remove(formatId(table, key), dbRemoveOptions);
+          return Status.OK;
+        });
+    } catch (Throwable t) {
+      errors.add(t);
+      LOGGER.error("delete failed with exception :" + t);
+      return Status.ERROR;
     }
   }
 
@@ -622,23 +525,18 @@ public class Couchbase3Client extends DB {
   @Override
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
-    int retryCount = 0;
-    while (true) {
-      try {
-        if (fields == null || fields.isEmpty()) {
-          return scanAllFields(table, startkey, recordcount, result);
-        } else {
-          return scanSpecificFields(table, startkey, recordcount, fields, result);
-        }
-      } catch (Throwable t) {
-        if (++retryCount == MAX_RETRY) {
-          errors.add(t);
-          LOGGER.error("scan failed with exception :" + t);
-          return Status.ERROR;
-        } else {
-          retryWait(retryCount);
-        }
-      }
+    try {
+      return retryBlock(() -> {
+          if (fields == null || fields.isEmpty()) {
+            return scanAllFields(table, startkey, recordcount, result);
+          } else {
+            return scanSpecificFields(table, startkey, recordcount, fields, result);
+          }
+        });
+    } catch (Throwable t) {
+      errors.add(t);
+      LOGGER.error("scan failed with exception :" + t);
+      return Status.ERROR;
     }
   }
 
@@ -652,7 +550,7 @@ public class Couchbase3Client extends DB {
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
 
-    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+    final List<HashMap<String, ByteIterator>> data = new ArrayList<>(recordcount);
     final String query = "SELECT record_id FROM " + keyspaceName +
         " WHERE record_id >= \"$1\" ORDER BY record_id LIMIT $2";
     QueryOptions scanQueryOptions = QueryOptions.queryOptions();
@@ -701,7 +599,7 @@ public class Couchbase3Client extends DB {
                                     final Set<String> fields, final Vector<HashMap<String, ByteIterator>> result) {
     final Collection collection = bucket.defaultCollection();
 
-    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+    final List<HashMap<String, ByteIterator>> data = new ArrayList<>(recordcount);
     final String query =  "SELECT RAW meta().id FROM " + keyspaceName +
         " WHERE record_id >= $1 ORDER BY record_id LIMIT $2";
     final ReactiveCollection reactiveCollection = collection.reactive();
@@ -715,13 +613,9 @@ public class Couchbase3Client extends DB {
             scanQueryOptions
             .adhoc(adhoc)
             .parameters(JsonArray.from(numericId(startkey), recordcount)))
-        .flatMapMany(res -> {
-            return res.rowsAs(String.class);
-          })
-        .flatMap(id -> {
-            return reactiveCollection
-              .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
-          })
+        .flatMapMany(res -> res.rowsAs(String.class))
+        .flatMap(id -> reactiveCollection
+          .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE)))
         .map(getResult -> {
             HashMap<String, ByteIterator> tuple = new HashMap<>();
             decodeStringSource(getResult.contentAs(String.class), fields, tuple);
@@ -793,14 +687,4 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  /**
-   * Helper function to wait before a retry.
-   */
-  public static void retryWait(int count) {
-    try {
-      Thread.sleep(count * 200L);
-    } catch(InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-  }
 }
