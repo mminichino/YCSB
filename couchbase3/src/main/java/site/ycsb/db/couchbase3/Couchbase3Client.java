@@ -21,6 +21,7 @@ import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
+import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
@@ -34,10 +35,7 @@ import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
-
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
-import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
-import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -106,9 +104,10 @@ public class Couchbase3Client extends DB {
   private TestType testMode;
   private String arrayKey;
   private int ttlSeconds;
-  private UpsertOptions dbUpsertOptions;
   private RemoveOptions dbRemoveOptions;
   private MutateInOptions dbMutateOptions;
+  private InsertOptions dbInsertOptions;
+  private ReplaceOptions dbReplaceOptions;
   private final String recordId = "record_id";
 
   /** Test Type. */
@@ -215,19 +214,23 @@ public class Couchbase3Client extends DB {
   }
 
   private void compileOptions(final Boolean useDurability, int seconds) {
-    dbUpsertOptions = upsertOptions();
-    dbRemoveOptions = removeOptions();
+    dbRemoveOptions = RemoveOptions.removeOptions();
+    dbInsertOptions = InsertOptions.insertOptions();
+    dbReplaceOptions = ReplaceOptions.replaceOptions();
     dbMutateOptions = MutateInOptions.mutateInOptions();
     if (useDurability) {
-      dbUpsertOptions = dbUpsertOptions.durability(durabilityLevel);
+      dbInsertOptions = dbInsertOptions.durability(durabilityLevel);
+      dbReplaceOptions = dbReplaceOptions.durability(durabilityLevel);
       dbRemoveOptions = dbRemoveOptions.durability(durabilityLevel);
     } else {
-      dbUpsertOptions = dbUpsertOptions.durability(persistTo, replicateTo);
+      dbInsertOptions = dbInsertOptions.durability(persistTo, replicateTo);
+      dbReplaceOptions = dbReplaceOptions.durability(persistTo, replicateTo);
       dbRemoveOptions = dbRemoveOptions.durability(persistTo, replicateTo);
     }
 
     if (seconds > 0) {
-      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbReplaceOptions = dbReplaceOptions.preserveExpiry(true);
       dbMutateOptions = dbMutateOptions.preserveExpiry(true);
     }
   }
@@ -349,12 +352,14 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          GetResult document = collection.get(formatId(table, key));
-          extractFields(document.contentAsObject(), fields, result);
+          try {
+            GetResult document = collection.get(formatId(table, key));
+            extractFields(document.contentAsObject(), fields, result);
+          } catch (DocumentNotFoundException e) {
+            return Status.NOT_FOUND;
+          }
           return Status.OK;
         });
-    } catch (DocumentNotFoundException e) {
-      return Status.NOT_FOUND;
     } catch (Throwable t) {
       errors.add(t);
       LOGGER.error("read failed with exception : " + t);
@@ -395,11 +400,13 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          List<MutateInSpec> mutateSpec = new ArrayList<>();
-          for (Map.Entry<String, String> entry : encode(values).entrySet()) {
-            mutateSpec.add(MutateInSpec.upsert(entry.getKey(), entry.getValue()));
+          Map<String, String> document = encode(values);
+          document.put(recordId, String.valueOf(primaryKeySeq.incrementAndGet()));
+          try {
+            collection.replace(formatId(table, key), document, dbReplaceOptions);
+          } catch (DocumentNotFoundException e) {
+            collection.insert(formatId(table, key), document, dbInsertOptions);
           }
-          collection.mutateIn(formatId(table, key), mutateSpec, dbMutateOptions);
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -414,9 +421,18 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          collection.mutateIn(formatId(table, key),
-              Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(encode(values)))),
-              dbMutateOptions);
+          try {
+            collection.mutateIn(formatId(table, key),
+                Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(encode(values)))),
+                dbMutateOptions);
+          } catch (DocumentNotFoundException e) {
+            List<Map<String, String>> value = new ArrayList<>();
+            value.add(encode(values));
+            Map<String, Object> document = new HashMap<>();
+            document.put(recordId, String.valueOf(primaryKeySeq.incrementAndGet()));
+            document.put(arrayKey, value);
+            collection.insert(formatId(table, key), document, dbInsertOptions);
+          }
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -453,7 +469,11 @@ public class Couchbase3Client extends DB {
           document.put(arrayKey, value);
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          collection.upsert(formatId(table, key), document, dbUpsertOptions);
+          try {
+            collection.insert(formatId(table, key), document, dbInsertOptions);
+          } catch (DocumentExistsException e) {
+            collection.replace(formatId(table, key), document, dbReplaceOptions);
+          }
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -468,8 +488,13 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          values.put("record_id", new StringByteIterator(String.valueOf(primaryKeySeq.incrementAndGet())));
-          collection.upsert(formatId(table, key), encode(values), dbUpsertOptions);
+          Map<String, String> document = encode(values);
+          document.put(recordId, String.valueOf(primaryKeySeq.incrementAndGet()));
+          try {
+            collection.insert(formatId(table, key), document, dbInsertOptions);
+          } catch (DocumentExistsException e) {
+            collection.replace(formatId(table, key), document, dbReplaceOptions);
+          }
           return Status.OK;
         });
     } catch (Throwable t) {
@@ -504,7 +529,11 @@ public class Couchbase3Client extends DB {
       return retryBlock(() -> {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          collection.remove(formatId(table, key), dbRemoveOptions);
+          try {
+            collection.remove(formatId(table, key), dbRemoveOptions);
+          } catch (DocumentNotFoundException e) {
+            assert true;
+          }
           return Status.OK;
         });
     } catch (Throwable t) {
