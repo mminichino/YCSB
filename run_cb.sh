@@ -58,6 +58,7 @@ TEST_TYPE="DEFAULT"
 WRITE_ALL_FIELDS="false"
 TTL_SECONDS=0
 DO_UPSERT="true"
+EXTRA_ARGS=""
 VERBOSE=0
 
 function create_bucket {
@@ -248,12 +249,13 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-p recordcount=$RECORDCOUNT \
   -p operationcount=$OPCOUNT \
   -p maxexecutiontime=$RUNTIME \
+  $EXTRA_ARGS \
 	-s > ${WORKLOAD}-run.dat
 [ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && drop_index
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:Y:L:WFGv" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIX:Zc:S:Y:L:WFGvD" opt
 do
   case $opt in
     h)
@@ -336,7 +338,7 @@ do
       echo "Done."
       exit
       ;;
-    X)
+    D)
       echo "Cleaning up."
       echo "Dropping index ..."
       drop_index
@@ -365,6 +367,9 @@ do
       ;;
     v)
       VERBOSE=1
+      ;;
+    X)
+      EXTRA_ARGS="-p $OPTARG"
       ;;
     \?)
       print_usage
