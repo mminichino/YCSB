@@ -28,6 +28,7 @@ PRINT_USAGE="Usage: $0 -h host_name [ options ]
 USERNAME="Administrator"
 PASSWORD="password"
 BUCKET="ycsb"
+BUCKET_BACKEND="couchstore"
 SCOPE="_default"
 COLLECTION="_default"
 SCENARIO=""
@@ -48,6 +49,8 @@ MANUALMODE=0
 SSLMODE="true"
 CONTYPE="couchbase"
 CONOPTIONS=""
+HTTP_PREFIX="http"
+HTTP_PORT="8091"
 BYPASS=0
 KV_TIMEOUT=2000
 QUERY_TIMEOUT=14000
@@ -55,6 +58,7 @@ TEST_TYPE="DEFAULT"
 WRITE_ALL_FIELDS="false"
 TTL_SECONDS=0
 DO_UPSERT="true"
+VERBOSE=0
 
 function create_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -69,7 +73,13 @@ if [ $? -ne 0 ]; then
       echo "Can not get cluster statistics. Is the cluster available?"
       exit 1
     fi
-    cbc bucket-create -U ${CONTYPE}://${HOST}${CONOPTIONS} -u $USERNAME -P $PASSWORD --ram-quota $MEMQUOTA --num-replicas $REPL_NUM $BUCKET >$TMP_OUTPUT 2>&1
+    curl -k -X POST -u "${USERNAME}:${PASSWORD}" \
+    "${HTTP_PREFIX}://${HOST}:${HTTP_PORT}/pools/default/buckets${CONOPTIONS}" \
+    -d name=$BUCKET \
+    -d ramQuota=$MEMQUOTA \
+    -d replicaNumber=$REPL_NUM \
+    -d storageBackend=$BUCKET_BACKEND >$TMP_OUTPUT 2>&1
+
     if [ $? -ne 0 ]; then
        echo "Can not create $BUCKET bucket."
        echo "Memory Quota: $MEMQUOTA"
@@ -243,7 +253,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:Y:L:W" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIXZc:S:Y:L:WFGv" opt
 do
   case $opt in
     h)
@@ -277,6 +287,8 @@ do
       SSLMODE="true"
       CONTYPE="couchbases"
       CONOPTIONS="?ssl=no_verify"
+      HTTP_PREFIX="https"
+      HTTP_PORT="18091"
       ;;
     C)
       RECORDCOUNT=$OPTARG
@@ -345,6 +357,15 @@ do
     W)
       DO_UPSERT="false"
       ;;
+    F)
+      WRITE_ALL_FIELDS="true"
+      ;;
+    G)
+      BUCKET_BACKEND="magma"
+      ;;
+    v)
+      VERBOSE=1
+      ;;
     \?)
       print_usage
       exit 1
@@ -357,6 +378,10 @@ which jq >/dev/null 2>&1
 
 which cbc >/dev/null 2>&1
 [ $? -ne 0 ] && err_exit "This utility requires cbc from libcouchbase."
+
+if [ "$VERBOSE" -eq 1 ]; then
+  echo "Output file: $TMP_OUTPUT"
+fi
 
 cd $SCRIPTDIR || err_exit "Can not change to directory $SCRIPTDIR"
 
@@ -394,8 +419,6 @@ if [ -z "$SCENARIO" ]; then
     SCENARIO="$SCENARIO $ycsb_workload"
   done
 fi
-
-[ "$TEST_TYPE" = "ARRAY" ] && WRITE_ALL_FIELDS="true"
 
 for run_workload in $SCENARIO
 do
