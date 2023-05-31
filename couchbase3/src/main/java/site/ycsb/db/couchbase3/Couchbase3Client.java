@@ -45,7 +45,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -112,6 +114,8 @@ public class Couchbase3Client extends DB {
   private ReplaceOptions dbReplaceOptions;
   private UpsertOptions dbUpsertOptions;
   private boolean doUpsert;
+  private boolean loading;
+  private List<String> loadKeys;
   private final String recordId = "record_id";
 
   /** Test Type. */
@@ -166,6 +170,8 @@ public class Couchbase3Client extends DB {
     boolean sslNoVerify = props.getProperty("couchbase.sslNoVerify", "true").equals("true");
     String certificateFile = props.getProperty("couchbase.certificateFile", "none");
     doUpsert = props.getProperty("couchbase.upsert", "false").equals("true");
+    loading = props.getProperty("couchbase.loading", "false").equals("true");
+    loadKeys = new ArrayList<>();
     ttlSeconds = Integer.parseInt(props.getProperty("couchbase.ttlSeconds", "0"));
 
     compileOptions(useDurabilityLevels, ttlSeconds);
@@ -236,9 +242,9 @@ public class Couchbase3Client extends DB {
       dbRemoveOptions = dbRemoveOptions.durability(persistTo, replicateTo);
     }
 
-    if (seconds > 0) {
-      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
-      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+    if (!loading && seconds > 0) {
+      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(seconds));
+      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(seconds));
       dbReplaceOptions = dbReplaceOptions.preserveExpiry(true);
       dbMutateOptions = dbMutateOptions.preserveExpiry(true);
     }
@@ -313,6 +319,10 @@ public class Couchbase3Client extends DB {
 
   @Override
   public synchronized void cleanup() {
+    if (loading && ttlSeconds > 0) {
+      LOGGER.error(String.format("Setting expiration to %d seconds on %d keys", ttlSeconds, loadKeys.size()));
+      setExpiry();
+    }
     OPEN_CLIENTS.get();
     if (OPEN_CLIENTS.get() == 0 && environment != null) {
       cluster.disconnect();
@@ -321,6 +331,21 @@ public class Couchbase3Client extends DB {
       for (Throwable t : errors) {
         LOGGER.error(t.getMessage(), t);
       }
+    }
+  }
+
+  private void setExpiry() {
+    Collection collection = collectionEnabled ?
+        bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+
+    try {
+      List<GetResult> results = Flux.fromIterable(loadKeys)
+          .flatMap(key -> collection.reactive().getAndTouch(key, Duration.ofSeconds(ttlSeconds))
+              .retryWhen(Retry.backoff(10, Duration.ofMillis(10)))).collectList()
+          .block();
+    } catch (Exception e) {
+      LOGGER.error(String.format("Set expiry error: %s", e.getMessage()));
+      errors.add(e);
     }
   }
 
@@ -489,6 +514,9 @@ public class Couchbase3Client extends DB {
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     Status result;
+    if (loading) {
+      loadKeys.add(formatId(table, key));
+    }
     if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
       result = insertArray(table, key, values);
     } else {

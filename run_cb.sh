@@ -222,6 +222,7 @@ ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-p couchbase.queryTimeout=$QUERY_TIMEOUT \
 	-p couchbase.mode=$TEST_TYPE \
 	-p couchbase.ttlSeconds=$TTL_SECONDS \
+	-p couchbase.loading="true" \
 	-p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \
 	-s > ${WORKLOAD}-load.dat
@@ -245,6 +246,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
   -p couchbase.queryTimeout=$QUERY_TIMEOUT \
   -p couchbase.mode=$TEST_TYPE \
   -p couchbase.ttlSeconds=$TTL_SECONDS \
+  -p couchbase.loading="false" \
   -p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \
   -p operationcount=$OPCOUNT \
