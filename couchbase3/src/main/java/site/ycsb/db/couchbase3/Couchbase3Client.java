@@ -227,7 +227,8 @@ public class Couchbase3Client extends DB {
         } else {
           environment = ClusterEnvironment
               .builder()
-              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis))
+                  .connectTimeout(Duration.ofMillis(15000)))
               .ioConfig(IoConfig.enableMutationTokens(enableMutationToken)
                   .numKvConnections(kvEndpoints))
               .build();
