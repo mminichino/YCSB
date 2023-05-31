@@ -107,6 +107,7 @@ public class Couchbase3Client extends DB {
   private TestType testMode;
   private String arrayKey;
   private int ttlSeconds;
+  private int ttlLoadSeconds;
   private RemoveOptions dbRemoveOptions;
   private MutateInOptions dbMutateOptions;
   private InsertOptions dbInsertOptions;
@@ -175,9 +176,21 @@ public class Couchbase3Client extends DB {
     loading = props.getProperty("couchbase.loading", "false").equals("true");
     delayExpiry = props.getProperty("couchbase.delayExpiry", "false").equals("true");
     loadKeys = new ArrayList<>();
-    ttlSeconds = Integer.parseInt(props.getProperty("couchbase.ttlSeconds", "0"));
+    String ttlProperty = props.getProperty("couchbase.ttlSeconds", "0");
+    String[] ttlArray = ttlProperty.split(":");
+    if (ttlArray.length == 2) {
+      ttlLoadSeconds = Integer.parseInt(ttlArray[0]);
+      ttlSeconds = Integer.parseInt(ttlArray[1]);
+    } else if (ttlArray.length == 1) {
+      ttlLoadSeconds = 0;
+      ttlSeconds = Integer.parseInt(ttlArray[0]);
+    } else {
+      LOGGER.error("Improperly formatted TTL parameter");
+      ttlLoadSeconds = 0;
+      ttlSeconds = 0;
+    }
 
-    compileOptions(useDurabilityLevels, ttlSeconds);
+    compileOptions(useDurabilityLevels, ttlSeconds, ttlLoadSeconds);
 
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
@@ -227,7 +240,7 @@ public class Couchbase3Client extends DB {
     clientNumber = OPEN_CLIENTS.incrementAndGet();
   }
 
-  private void compileOptions(final Boolean useDurability, int seconds) {
+  private void compileOptions(final Boolean useDurability, int seconds, int loadSeconds) {
     dbRemoveOptions = RemoveOptions.removeOptions();
     dbInsertOptions = InsertOptions.insertOptions();
     dbUpsertOptions = UpsertOptions.upsertOptions();
@@ -246,8 +259,12 @@ public class Couchbase3Client extends DB {
     }
 
     if (!delayExpiry && seconds > 0) {
-      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(seconds));
-      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(seconds));
+      int totalSeconds = seconds;
+      if (loadSeconds > 0 && loading) {
+        totalSeconds += loadSeconds;
+      }
+      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(totalSeconds));
+      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(totalSeconds));
       dbReplaceOptions = dbReplaceOptions.preserveExpiry(true);
       dbMutateOptions = dbMutateOptions.preserveExpiry(true);
     }
