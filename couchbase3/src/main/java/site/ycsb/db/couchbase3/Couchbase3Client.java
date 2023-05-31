@@ -45,9 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.retry.Retry;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -351,17 +349,13 @@ public class Couchbase3Client extends DB {
   }
 
   private void setExpiry() {
-    final int size = loadKeys.size();
-    final int batch = 100;
+    TouchOptions options = TouchOptions.touchOptions().timeout(Duration.ofSeconds(5));
     Collection collection = collectionEnabled ?
         bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
     try {
-      for (int i = 0; i < size; i += batch) {
-        List<String> part = new ArrayList<>(loadKeys.subList(i, Math.min(size, i + batch)));
-        Flux.fromIterable(part)
-            .flatMap(key -> collection.reactive().touch(key, Duration.ofSeconds(ttlSeconds))
-                .retryWhen(Retry.backoff(10, Duration.ofMillis(100)))).collectList().block();
+      for (String key : loadKeys) {
+        retryBlock(() -> collection.touch(key, Duration.ofSeconds(ttlSeconds), options));
       }
     } catch (Exception e) {
       LOGGER.error(String.format("Set expiry error: %s", e.getMessage()));
