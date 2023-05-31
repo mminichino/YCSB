@@ -351,14 +351,18 @@ public class Couchbase3Client extends DB {
   }
 
   private void setExpiry() {
+    final int size = loadKeys.size();
+    final int batch = 100;
     Collection collection = collectionEnabled ?
         bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
     try {
-      List<MutationResult> results = Flux.fromIterable(loadKeys)
-          .flatMap(key -> collection.reactive().touch(key, Duration.ofSeconds(ttlSeconds))
-              .retryWhen(Retry.backoff(10, Duration.ofMillis(10)))).collectList()
-          .block();
+      for (int i = 0; i < size; i += batch) {
+        List<String> part = new ArrayList<>(loadKeys.subList(i, Math.min(size, i + batch)));
+        Flux.fromIterable(part)
+            .flatMap(key -> collection.reactive().touch(key, Duration.ofSeconds(ttlSeconds))
+                .retryWhen(Retry.backoff(10, Duration.ofMillis(100)))).collectList().block();
+      }
     } catch (Exception e) {
       LOGGER.error(String.format("Set expiry error: %s", e.getMessage()));
       errors.add(e);
