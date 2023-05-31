@@ -23,6 +23,7 @@ import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
+import com.couchbase.client.core.retry.BestEffortRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
@@ -260,6 +261,8 @@ public class Couchbase3Client extends DB {
       dbReplaceOptions = dbReplaceOptions.durability(persistTo, replicateTo);
       dbRemoveOptions = dbRemoveOptions.durability(persistTo, replicateTo);
     }
+
+    dbMutateOptions = dbMutateOptions.retryStrategy(BestEffortRetryStrategy.INSTANCE);
 
     if (!delayExpiry && seconds > 0) {
       int totalSeconds = seconds;
