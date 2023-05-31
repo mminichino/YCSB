@@ -528,8 +528,9 @@ public class Couchbase3Client extends DB {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
           try {
+            Map<String, String> document = encode(values);
             collection.mutateIn(formatId(table, key),
-                Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(encode(values)))),
+                Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(document))),
                 dbMutateOptions);
           } catch (DocumentNotFoundException e) {
             List<Map<String, String>> value = new ArrayList<>();
