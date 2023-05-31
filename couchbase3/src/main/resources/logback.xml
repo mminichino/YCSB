@@ -28,8 +28,8 @@ LICENSE file.
     </encoder>
   </appender>
 
-  <logger name="site.ycsb.db.couchbase3" level="error">
+  <root level="info">
     <appender-ref ref="FILE" />
-  </logger>
+  </root>
 
 </configuration>

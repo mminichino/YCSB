@@ -53,6 +53,7 @@ import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
+import site.ycsb.measurements.Measurements;
 
 /**
  * A class that wraps the 3.x Couchbase SDK to be used with YCSB.
@@ -81,7 +82,7 @@ import site.ycsb.StringByteIterator;
  */
 
 public class Couchbase3Client extends DB {
-  private static final Logger LOGGER = LoggerFactory.getLogger(Couchbase3Client.class.getName());
+  protected static final Logger LOGGER = LoggerFactory.getLogger(Couchbase3Client.class.getName());
   private static final String KEY_SEPARATOR = "::";
   private static final String KEYSPACE_SEPARATOR = ".";
   private static volatile ClusterEnvironment environment;
@@ -116,6 +117,8 @@ public class Couchbase3Client extends DB {
   private boolean doUpsert;
   private boolean loading;
   private List<String> loadKeys;
+  private final Measurements measurements = Measurements.getMeasurements();
+  private int clientNumber;
   private final String recordId = "record_id";
 
   /** Test Type. */
@@ -221,7 +224,7 @@ public class Couchbase3Client extends DB {
         bucket = cluster.bucket(bucketName);
       }
     }
-    OPEN_CLIENTS.incrementAndGet();
+    clientNumber = OPEN_CLIENTS.incrementAndGet();
   }
 
   private void compileOptions(final Boolean useDurability, int seconds) {
@@ -319,17 +322,30 @@ public class Couchbase3Client extends DB {
 
   @Override
   public synchronized void cleanup() {
+    OPEN_CLIENTS.decrementAndGet();
+
     if (loading && ttlSeconds > 0) {
-      LOGGER.error(String.format("Setting expiration to %d seconds on %d keys", ttlSeconds, loadKeys.size()));
+      waitForClients();
+      long ist = measurements.getIntendedStartTimeNs();
+      long st = System.nanoTime();
       setExpiry();
+      long en = System.nanoTime();
+      measurements.measure("SET-EXPIRY", (int) ((en - st) / 1000));
+      measurements.measureIntended("SET-EXPIRY", (int) ((en - ist) / 1000));
     }
-    OPEN_CLIENTS.get();
-    if (OPEN_CLIENTS.get() == 0 && environment != null) {
-      cluster.disconnect();
-      environment.shutdown();
-      environment = null;
-      for (Throwable t : errors) {
-        LOGGER.error(t.getMessage(), t);
+
+    for (Throwable t : errors) {
+      LOGGER.error(t.getMessage(), t);
+    }
+  }
+
+  private void waitForClients() {
+    LOGGER.info(String.format("Client %d waiting for %d clients to finish", clientNumber, OPEN_CLIENTS.get()));
+    while (OPEN_CLIENTS.get() > 0) {
+      try {
+        Thread.sleep(100L);
+      } catch (InterruptedException ex) {
+        Thread.currentThread().interrupt();
       }
     }
   }
@@ -356,7 +372,7 @@ public class Couchbase3Client extends DB {
       try {
         return block.call();
       } catch (Exception e) {
-        LOGGER.error(String.format("Retry count %d: error: %s", retryCount, e.getMessage()));
+        LOGGER.error(String.format("Retry count %d: %s: error: %s", retryCount, e.getClass(), e.getMessage()));
         if (retryNumber == retryCount) {
           throw e;
         } else {
@@ -450,6 +466,9 @@ public class Couchbase3Client extends DB {
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     Status result;
+    if (loading) {
+      loadKeys.add(formatId(table, key));
+    }
     if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
       result = updateArray(table, key, values);
     } else {
@@ -468,7 +487,7 @@ public class Couchbase3Client extends DB {
           try {
             updateSwitch(collection, formatId(table, key), document);
           } catch (DocumentNotFoundException e) {
-            updateSwitch(collection, formatId(table, key), document);
+            insertSwitch(collection, formatId(table, key), document);
           }
           return Status.OK;
         });
@@ -538,7 +557,7 @@ public class Couchbase3Client extends DB {
           try {
             insertSwitch(collection, formatId(table, key), document);
           } catch (DocumentExistsException e) {
-            insertSwitch(collection, formatId(table, key), document);
+            updateSwitch(collection, formatId(table, key), document);
           }
           return Status.OK;
         });
@@ -559,7 +578,7 @@ public class Couchbase3Client extends DB {
           try {
             insertSwitch(collection, formatId(table, key), document);
           } catch (DocumentExistsException e) {
-            insertSwitch(collection, formatId(table, key), document);
+            updateSwitch(collection, formatId(table, key), document);
           }
           return Status.OK;
         });
