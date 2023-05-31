@@ -8,7 +8,9 @@
 
 recordcount=1000
 operationcount=1000
-workload=site.ycsb.workloads.CoreWorkload
+zipfianconstant=0.5
+fieldlength=32
+workload=site.ycsb.workloads.CorePlusWorkload
 
 readallfields=true
 writeallfields=true
