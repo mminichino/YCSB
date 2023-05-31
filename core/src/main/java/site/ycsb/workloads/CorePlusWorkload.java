@@ -716,7 +716,6 @@ public class CorePlusWorkload extends Workload {
         keynum = keychooser.nextValue().intValue();
       } while (keynum > transactioninsertkeysequence.lastValue());
     }
-    System.out.println(keynum);
     return keynum;
   }
 
