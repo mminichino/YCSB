@@ -114,6 +114,7 @@ public class Couchbase3Client extends DB {
   private UpsertOptions dbUpsertOptions;
   private boolean doUpsert;
   private boolean loading;
+  private boolean delayExpiry;
   private List<String> loadKeys;
   private final Measurements measurements = Measurements.getMeasurements();
   private int clientNumber;
@@ -172,6 +173,7 @@ public class Couchbase3Client extends DB {
     String certificateFile = props.getProperty("couchbase.certificateFile", "none");
     doUpsert = props.getProperty("couchbase.upsert", "false").equals("true");
     loading = props.getProperty("couchbase.loading", "false").equals("true");
+    delayExpiry = props.getProperty("couchbase.delayExpiry", "false").equals("true");
     loadKeys = new ArrayList<>();
     ttlSeconds = Integer.parseInt(props.getProperty("couchbase.ttlSeconds", "0"));
 
@@ -243,7 +245,7 @@ public class Couchbase3Client extends DB {
       dbRemoveOptions = dbRemoveOptions.durability(persistTo, replicateTo);
     }
 
-    if (!loading && seconds > 0) {
+    if (!delayExpiry && seconds > 0) {
       dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(seconds));
       dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(seconds));
       dbReplaceOptions = dbReplaceOptions.preserveExpiry(true);
@@ -322,7 +324,7 @@ public class Couchbase3Client extends DB {
   public synchronized void cleanup() {
     OPEN_CLIENTS.decrementAndGet();
 
-    if (loading && ttlSeconds > 0) {
+    if (loading && delayExpiry && ttlSeconds > 0) {
       waitForClients();
       long ist = measurements.getIntendedStartTimeNs();
       long st = System.nanoTime();
@@ -464,7 +466,7 @@ public class Couchbase3Client extends DB {
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     Status result;
-    if (loading) {
+    if (loading && delayExpiry && ttlSeconds > 0) {
       loadKeys.add(formatId(table, key));
     }
     if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
@@ -531,7 +533,7 @@ public class Couchbase3Client extends DB {
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     Status result;
-    if (loading) {
+    if (loading && delayExpiry && ttlSeconds > 0) {
       loadKeys.add(formatId(table, key));
     }
     if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
