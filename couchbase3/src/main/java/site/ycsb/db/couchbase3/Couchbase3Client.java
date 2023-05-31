@@ -37,6 +37,9 @@ import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.io.Writer;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
@@ -390,7 +393,10 @@ public class Couchbase3Client extends DB {
         return block.call();
       } catch (Exception e) {
         LOGGER.error(String.format("Retry count %d: %s: error: %s", retryCount, e.getClass(), e.getMessage()));
-        LOGGER.error(String.format("%s", (Object) e.getStackTrace()));
+        Writer buffer = new StringWriter();
+        PrintWriter pw = new PrintWriter(buffer);
+        e.printStackTrace(pw);
+        LOGGER.error(String.format("%s", buffer));
         if (retryNumber == retryCount) {
           throw e;
         } else {
