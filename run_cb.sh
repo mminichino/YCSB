@@ -257,7 +257,7 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:N:T:P:R:K:Q:lrMBIX:Zc:S:Y:L:WFGvD" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:A:T:P:R:K:Q:lrMBIX:Zc:S:Y:L:WFGvD" opt
 do
   case $opt in
     h)
@@ -302,6 +302,8 @@ do
       ;;
     N)
       THREADCOUNT_RUN=$OPTARG
+      ;;
+    A)
       THREADCOUNT_LOAD=$OPTARG
       ;;
     T)
