@@ -33,8 +33,8 @@ import com.couchbase.client.java.kv.*;
 import com.couchbase.client.java.query.QueryOptions;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
+import com.couchbase.client.java.query.ReactiveQueryResult;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 
 import java.io.PrintWriter;
@@ -45,10 +45,10 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
+import reactor.core.publisher.Mono;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
-import reactor.core.publisher.Mono;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -110,7 +110,6 @@ public class Couchbase3Client extends DB {
   private TestType testMode;
   private String arrayKey;
   private int ttlSeconds;
-  private int ttlLoadSeconds;
   private RemoveOptions dbRemoveOptions;
   private MutateInOptions dbMutateOptions;
   private InsertOptions dbInsertOptions;
@@ -181,6 +180,7 @@ public class Couchbase3Client extends DB {
     loadKeys = new ArrayList<>();
     String ttlProperty = props.getProperty("couchbase.ttlSeconds", "0");
     String[] ttlArray = ttlProperty.split(":");
+    int ttlLoadSeconds;
     if (ttlArray.length == 2) {
       ttlLoadSeconds = Integer.parseInt(ttlArray[0]);
       ttlSeconds = Integer.parseInt(ttlArray[1]);
@@ -728,6 +728,33 @@ public class Couchbase3Client extends DB {
     result.addAll(data);
     return Status.OK;
   }
+
+//  private Status scanAllFields(final String table, final String startkey, final int recordcount,
+//                               final Vector<HashMap<String, ByteIterator>> result) {
+//    try {
+//      return retryBlock(() -> {
+//          System.out.printf("Scan start %s -> %d\n", startkey, recordcount);
+//          Collection collection = collectionEnabled ?
+//              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+//          String n = startkey.replaceAll("[^0-9]", "");
+//          String prefix = startkey.replaceAll("[0-9]", "");
+//          long d = Long.parseLong(n) + recordcount;
+//          String maxKey = prefix + d;
+//          ScanTerm from = ScanTerm.inclusive(ScanTerm.minimum().id().concat(formatId(table, startkey)));
+//          ScanTerm to = ScanTerm.inclusive(ScanTerm.maximum().id().concat(formatId(table, maxKey)));
+//          ScanType thisScan = ScanType.rangeScan(from, to);
+//          Stream<ScanResult> results = collection.scan(thisScan);
+//          for (ScanResult r : (Iterable<ScanResult>) results::iterator) {
+//            System.out.printf("ID: %s\n", r.id());
+//          }
+//          return Status.OK;
+//        });
+//    } catch (Throwable t) {
+//      errors.add(t);
+//      LOGGER.error("read failed with exception : " + t);
+//      return Status.ERROR;
+//    }
+//  }
 
   /**
    * Performs the {@link #scan(String, String, int, Set, Vector)} operation only for a subset of the fields.
