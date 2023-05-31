@@ -390,6 +390,7 @@ public class Couchbase3Client extends DB {
         return block.call();
       } catch (Exception e) {
         LOGGER.error(String.format("Retry count %d: %s: error: %s", retryCount, e.getClass(), e.getMessage()));
+        LOGGER.error(String.format("%s", (Object) e.getStackTrace()));
         if (retryNumber == retryCount) {
           throw e;
         } else {
