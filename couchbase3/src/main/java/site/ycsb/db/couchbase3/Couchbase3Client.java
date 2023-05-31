@@ -537,7 +537,11 @@ public class Couchbase3Client extends DB {
             Map<String, Object> document = new HashMap<>();
             document.put(recordId, String.valueOf(primaryKeySeq.incrementAndGet()));
             document.put(arrayKey, value);
-            collection.insert(formatId(table, key), document, dbInsertOptions);
+            try {
+              insertSwitch(collection, formatId(table, key), document);
+            } catch (DocumentExistsException ex) {
+              updateSwitch(collection, formatId(table, key), document);
+            }
           }
           return Status.OK;
         });
