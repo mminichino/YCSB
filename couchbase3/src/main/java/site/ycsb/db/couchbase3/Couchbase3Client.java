@@ -339,8 +339,8 @@ public class Couchbase3Client extends DB {
         bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
 
     try {
-      List<GetResult> results = Flux.fromIterable(loadKeys)
-          .flatMap(key -> collection.reactive().getAndTouch(key, Duration.ofSeconds(ttlSeconds))
+      List<MutationResult> results = Flux.fromIterable(loadKeys)
+          .flatMap(key -> collection.reactive().touch(key, Duration.ofSeconds(ttlSeconds))
               .retryWhen(Retry.backoff(10, Duration.ofMillis(10)))).collectList()
           .block();
     } catch (Exception e) {
