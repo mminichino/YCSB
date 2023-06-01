@@ -123,6 +123,7 @@ LICENSE file.
     <module>distribution</module>
     <!-- all the datastore bindings, lex sorted please -->
     <module>couchbase3</module>
+    <module>googlefirestore</module>
     <module>s3</module>
   </modules>
 
