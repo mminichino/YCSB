@@ -77,8 +77,10 @@ import site.ycsb.measurements.Measurements;
  * <li><b>couchbase.sslMode=false</b> Set to true to use SSL to connect to the cluster.</li>
  * <li><b>couchbase.sslNoVerify=true</b> Set to false to check the SSL server certificate.</li>
  * <li><b>couchbase.certificateFile=</b> Path to file containing certificates to trust.</li>
- * <li><b>couchbase.mode=</b> Test operating mode (DEFAULT or ARRAY).</li>
- * <li><b>couchbase.ttlSeconds=</b> Set document expiration (TTL) in seconds.</li>
+ * <li><b>couchbase.kvTimeout=2000</b> KV operation timeout (milliseconds).</li>
+ * <li><b>couchbase.queryTimeout=14000</b> Query timeout (milliseconds).</li>
+ * <li><b>couchbase.mode=DEFAULT</b> Test operating mode (DEFAULT or ARRAY).</li>
+ * <li><b>couchbase.ttlSeconds=0</b> Set document expiration (TTL) in seconds.</li>
  * </ul>
  */
 

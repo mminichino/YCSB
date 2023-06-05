@@ -144,3 +144,5 @@ You can set the following properties (with the default settings applied):
 - couchbase.certificateFile=: Path to file containing certificates to trust.
 - couchbase.kvTimeout=2000: KV operation timeout (milliseconds)
 - couchbase.queryTimeout=14000: Query timeout (milliseconds)
+- couchbase.mode=DEFAULT: Test operating mode (DEFAULT or ARRAY).
+- couchbase.ttlSeconds=0: Set document expiration (TTL) in seconds.
