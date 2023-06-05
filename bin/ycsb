@@ -267,6 +267,7 @@ def main():
         error("can not find Maven, please make sure mvn is in your path")
         sys.exit(1)
 
+    os.environ["MAVEN_OPTS"] = "--illegal-access=permit --add-opens java.base/java.lang=ALL-UNNAMED"
     # Use JAVA_HOME to find java binary if set, otherwise just use PATH.
     java = "java"
     java_home = os.getenv("JAVA_HOME")
@@ -328,7 +329,7 @@ def main():
         classpath = os.pathsep.join([args.classpath, classpath])
 
     ycsb_command = ([java] + args.jvm_args +
-                    ["--illegal-access=permit", "--add-opens", "java.base/java.lang=ALL-UNNAMED"] +
+                    # ["--illegal-access=permit", "--add-opens", "java.base/java.lang=ALL-UNNAMED"] +
                     ["-cp", classpath,
                      main_classname, "-db", db_classname] + remaining)
     if command:
