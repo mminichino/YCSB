@@ -457,8 +457,7 @@ public class Couchbase3Client extends DB {
           Collection collection = collectionEnabled ?
               bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
           try {
-            GetResult document = collection.get(formatId(table, key));
-            extractFields(document.contentAsObject(), fields, result);
+            collection.get(formatId(table, key));
           } catch (DocumentNotFoundException e) {
             return Status.NOT_FOUND;
           }

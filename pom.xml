@@ -121,10 +121,6 @@ LICENSE file.
     <module>core</module>
     <module>binding-parent</module>
     <module>distribution</module>
-    <!-- all the datastore bindings, lex sorted please -->
-<!--    <module>couchbase3</module>-->
-<!--    <module>googlefirestore</module>-->
-<!--    <module>s3</module>-->
   </modules>
 
   <build>
@@ -249,12 +245,18 @@ LICENSE file.
     </profile>
     <profile>
       <id>google</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
       <modules>
         <module>googlefirestore</module>
       </modules>
     </profile>
     <profile>
       <id>spanner</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
       <modules>
         <module>cloudspanner</module>
       </modules>
