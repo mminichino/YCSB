@@ -23,13 +23,24 @@ LICENSE file.
     <file>output.log</file>
     <append>false</append>
     <immediateFlush>false</immediateFlush>
-    <encoder>
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
       <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
 
-  <root level="info">
-    <appender-ref ref="FILE" />
-  </root>
+  <appender name="STATISTICS" class="ch.qos.logback.core.FileAppender">
+    <file>statistics.dat</file>
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>%msg</pattern>
+    </encoder>
+  </appender>
+
+  <logger name="com.couchbase.statistics" level="INFO">
+    <appender-ref ref="STATISTICS"/>
+  </logger>
+
+  <logger name="com.couchbase.CouchbaseClient" level="INFO">
+    <appender-ref ref="FILE"/>
+  </logger>
 
 </configuration>

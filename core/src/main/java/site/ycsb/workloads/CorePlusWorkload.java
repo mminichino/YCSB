@@ -20,6 +20,7 @@ package site.ycsb.workloads;
 import site.ycsb.*;
 import site.ycsb.generator.*;
 import site.ycsb.measurements.Measurements;
+import site.ycsb.measurements.Statistics;
 
 import java.io.IOException;
 import java.util.*;
@@ -370,7 +371,8 @@ public class CorePlusWorkload extends Workload {
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
 
-  private Measurements measurements = Measurements.getMeasurements();
+  private final Measurements measurements = Measurements.getMeasurements();
+  private final Statistics statistics = Statistics.getStatistics();
 
   public static String buildKeyName(long keynum, int zeropadding, boolean orderedinserts) {
     if (!orderedinserts) {
@@ -550,8 +552,9 @@ public class CorePlusWorkload extends Workload {
   /**
    * Builds a value for a randomly chosen field.
    */
-  private HashMap<String, ByteIterator> buildSingleValue(String key) {
+  private DocumentData buildSingleValue(String key) {
     HashMap<String, ByteIterator> value = new HashMap<>();
+    int size = 0;
 
     String fieldkey = fieldnames.get(fieldchooser.nextValue().intValue());
     ByteIterator data;
@@ -562,15 +565,17 @@ public class CorePlusWorkload extends Workload {
       data = new RandomByteIterator(fieldlengthgenerator.nextValue().longValue());
     }
     value.put(fieldkey, data);
+    size += fieldkey.length() + data.bytesLeft();
 
-    return value;
+    return new DocumentData(size, value);
   }
 
   /**
    * Builds values for all fields.
    */
-  private HashMap<String, ByteIterator> buildValues(String key) {
+  private DocumentData buildValues(String key) {
     HashMap<String, ByteIterator> values = new HashMap<>();
+    int size = 0;
 
     for (String fieldkey : fieldnames) {
       ByteIterator data;
@@ -581,8 +586,9 @@ public class CorePlusWorkload extends Workload {
         data = new RandomByteIterator(fieldlengthgenerator.nextValue().longValue());
       }
       values.put(fieldkey, data);
+      size += fieldkey.length() + data.bytesLeft();
     }
-    return values;
+    return new DocumentData(size, values);
   }
 
   /**
@@ -613,13 +619,17 @@ public class CorePlusWorkload extends Workload {
   public boolean doInsert(DB db, Object threadstate) {
     int keynum = keysequence.nextValue().intValue();
     String dbkey = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
-    HashMap<String, ByteIterator> values = buildValues(dbkey);
+    DocumentData data = buildValues(dbkey);
+    HashMap<String, ByteIterator> values = data.getMap();
+    int dataSize = data.getSize();
 
     Status status;
     int numOfRetries = 0;
     do {
       status = db.insert(table, dbkey, values);
       if (null != status && status.isOk()) {
+        statistics.incrementWrite();
+        statistics.insertKey(dbkey, dataSize);
         break;
       }
       // Retry if configured. Without retrying, the load process will fail
@@ -738,8 +748,9 @@ public class CorePlusWorkload extends Workload {
       fields = new HashSet<String>(fieldnames);
     }
 
-    HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
+    HashMap<String, ByteIterator> cells = new HashMap<>();
     db.read(table, keyname, fields, cells);
+    statistics.incrementRead();
 
     if (dataintegrity) {
       verifyRow(keyname, cells);
@@ -762,20 +773,23 @@ public class CorePlusWorkload extends Workload {
       fields.add(fieldname);
     }
 
+    DocumentData data;
     HashMap<String, ByteIterator> values;
+    int dataSize;
 
     if (writeallfields) {
       // new data for all the fields
-      values = buildValues(keyname);
+      data = buildValues(keyname);
     } else {
       // update a random field
-      values = buildSingleValue(keyname);
+      data = buildSingleValue(keyname);
     }
+    values = data.getMap();
+    dataSize = data.getSize();
 
     // do the transaction
 
     HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
-
 
     long ist = measurements.getIntendedStartTimeNs();
     long st = System.nanoTime();
@@ -789,6 +803,9 @@ public class CorePlusWorkload extends Workload {
       verifyRow(keyname, cells);
     }
 
+    statistics.incrementRead();
+    statistics.incrementUpdate();
+    statistics.updateKey(keyname, dataSize);
     measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
@@ -821,31 +838,45 @@ public class CorePlusWorkload extends Workload {
 
     String keyname = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
 
+    DocumentData data;
     HashMap<String, ByteIterator> values;
+    int dataSize;
 
     if (writeallfields) {
       // new data for all the fields
-      values = buildValues(keyname);
+      data = buildValues(keyname);
     } else {
       // update a random field
-      values = buildSingleValue(keyname);
+      data = buildSingleValue(keyname);
     }
+    values = data.getMap();
+    dataSize = data.getSize();
 
     db.update(table, keyname, values);
+    statistics.incrementUpdate();
+    statistics.updateKey(keyname, dataSize);
   }
 
   public void doTransactionInsert(DB db) {
     // choose the next key
     long keynum = transactioninsertkeysequence.nextValue();
+    DocumentData data;
+    HashMap<String, ByteIterator> values;
+    int dataSize;
+    String dbkey;
 
     try {
-      String dbkey = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+      dbkey = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
 
-      HashMap<String, ByteIterator> values = buildValues(dbkey);
+      data = buildValues(dbkey);
+      values = data.getMap();
+      dataSize = data.getSize();
       db.insert(table, dbkey, values);
     } finally {
       transactioninsertkeysequence.acknowledge(keynum);
     }
+    statistics.incrementUpdate();
+    statistics.insertKey(dbkey, dataSize);
   }
 
   /**

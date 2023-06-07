@@ -48,13 +48,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import reactor.core.publisher.Mono;
 
 import org.slf4j.LoggerFactory;
-import org.slf4j.Logger;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
-import site.ycsb.measurements.Measurements;
+import site.ycsb.measurements.Statistics;
 
 /**
  * A class that wraps the 3.x Couchbase SDK to be used with YCSB.
@@ -85,7 +84,10 @@ import site.ycsb.measurements.Measurements;
  */
 
 public class Couchbase3Client extends DB {
-  protected static final Logger LOGGER = LoggerFactory.getLogger(Couchbase3Client.class.getName());
+  protected static final ch.qos.logback.classic.Logger LOGGER =
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.CouchbaseClient");
+  protected static final ch.qos.logback.classic.Logger STATISTICS =
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
   private static final String KEY_SEPARATOR = "::";
   private static final String KEYSPACE_SEPARATOR = ".";
   private static volatile ClusterEnvironment environment;
@@ -111,7 +113,6 @@ public class Couchbase3Client extends DB {
   private static volatile AtomicInteger primaryKeySeq;
   private TestType testMode;
   private String arrayKey;
-  private int ttlSeconds;
   private RemoveOptions dbRemoveOptions;
   private MutateInOptions dbMutateOptions;
   private InsertOptions dbInsertOptions;
@@ -119,9 +120,8 @@ public class Couchbase3Client extends DB {
   private UpsertOptions dbUpsertOptions;
   private boolean doUpsert;
   private boolean loading;
-  private boolean delayExpiry;
-  private List<String> loadKeys;
-  private final Measurements measurements = Measurements.getMeasurements();
+  private boolean collectStats;
+  private final Statistics statistics = Statistics.getStatistics();
   private int clientNumber;
   private final String recordId = "record_id";
 
@@ -178,11 +178,11 @@ public class Couchbase3Client extends DB {
     String certificateFile = props.getProperty("couchbase.certificateFile", "none");
     doUpsert = props.getProperty("couchbase.upsert", "false").equals("true");
     loading = props.getProperty("couchbase.loading", "false").equals("true");
-    delayExpiry = props.getProperty("couchbase.delayExpiry", "false").equals("true");
-    loadKeys = new ArrayList<>();
+    collectStats = props.getProperty("statistics", "false").equals("true");
     String ttlProperty = props.getProperty("couchbase.ttlSeconds", "0");
     String[] ttlArray = ttlProperty.split(":");
     int ttlLoadSeconds;
+    int ttlSeconds;
     if (ttlArray.length == 2) {
       ttlLoadSeconds = Integer.parseInt(ttlArray[0]);
       ttlSeconds = Integer.parseInt(ttlArray[1]);
@@ -247,6 +247,8 @@ public class Couchbase3Client extends DB {
   }
 
   private void compileOptions(final Boolean useDurability, int seconds, int loadSeconds) {
+    int totalSeconds;
+
     dbRemoveOptions = RemoveOptions.removeOptions();
     dbInsertOptions = InsertOptions.insertOptions();
     dbUpsertOptions = UpsertOptions.upsertOptions();
@@ -264,10 +266,11 @@ public class Couchbase3Client extends DB {
       dbRemoveOptions = dbRemoveOptions.durability(persistTo, replicateTo);
     }
 
-    if (!delayExpiry && seconds > 0) {
-      int totalSeconds = seconds;
+    if (seconds > 0) {
       if (loadSeconds > 0 && loading) {
-        totalSeconds += loadSeconds;
+        totalSeconds = loadSeconds;
+      } else {
+        totalSeconds = seconds;
       }
       dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(totalSeconds));
       dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(totalSeconds));
@@ -345,16 +348,11 @@ public class Couchbase3Client extends DB {
 
   @Override
   public synchronized void cleanup() {
-    OPEN_CLIENTS.decrementAndGet();
+    int runningClients = OPEN_CLIENTS.decrementAndGet();
 
-    if (loading && delayExpiry && ttlSeconds > 0) {
-      waitForClients();
-      long ist = measurements.getIntendedStartTimeNs();
-      long st = System.nanoTime();
-      setExpiry();
-      long en = System.nanoTime();
-      measurements.measure("SET-EXPIRY", (int) ((en - st) / 1000));
-      measurements.measureIntended("SET-EXPIRY", (int) ((en - ist) / 1000));
+    if (collectStats && runningClients == 0) {
+      String output =  statistics.getSummary();
+      STATISTICS.info(output);
     }
 
     for (Throwable t : errors) {
@@ -370,21 +368,6 @@ public class Couchbase3Client extends DB {
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
       }
-    }
-  }
-
-  private void setExpiry() {
-    TouchOptions options = TouchOptions.touchOptions().timeout(Duration.ofSeconds(5));
-    Collection collection = collectionEnabled ?
-        bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-
-    try {
-      for (String key : loadKeys) {
-        retryBlock(() -> collection.touch(key, Duration.ofSeconds(ttlSeconds), options));
-      }
-    } catch (Exception e) {
-      LOGGER.error(String.format("Set expiry error: %s", e.getMessage()));
-      errors.add(e);
     }
   }
 
@@ -492,9 +475,6 @@ public class Couchbase3Client extends DB {
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     Status result;
-    if (loading && delayExpiry && ttlSeconds > 0) {
-      loadKeys.add(formatId(table, key));
-    }
     if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
       result = updateArray(table, key, values);
     } else {
@@ -564,9 +544,6 @@ public class Couchbase3Client extends DB {
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     Status result;
-    if (loading && delayExpiry && ttlSeconds > 0) {
-      loadKeys.add(formatId(table, key));
-    }
     if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
       result = insertArray(table, key, values);
     } else {
@@ -627,7 +604,7 @@ public class Couchbase3Client extends DB {
    * @return the map of encoded values.
    */
   private static Map<String, String> encode(final Map<String, ByteIterator> values) {
-    Map<String, String> result = new HashMap<>(values.size());
+    Map<String, String> result = new HashMap<>();
     for (Map.Entry<String, ByteIterator> value : values.entrySet()) {
       result.put(value.getKey(), value.getValue().toString());
     }

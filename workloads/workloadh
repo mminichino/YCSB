@@ -10,6 +10,8 @@ recordcount=1000
 operationcount=1000
 zipfianconstant=0.5
 fieldlength=32
+fieldcount=14
+statistics=true
 workload=site.ycsb.workloads.CorePlusWorkload
 
 readallfields=true
