@@ -29,6 +29,7 @@ LICENSE file.
 
   <appender name="STATISTICS" class="ch.qos.logback.core.FileAppender">
     <file>statistics.dat</file>
+    <append>false</append>
     <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
       <pattern>%msg</pattern>
     </encoder>
