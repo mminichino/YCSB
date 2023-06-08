@@ -6,8 +6,10 @@ import org.slf4j.LoggerFactory;
 import site.ycsb.measurements.RemoteStatistics;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
+//import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -45,11 +47,17 @@ public class CouchbaseCollect extends RemoteStatistics {
           ResponseBody response = client.newCall(request).execute().body();
           if (response != null) {
             HashMap data = new ObjectMapper().readValue(response.string(), HashMap.class);
-            List nodeList = (List) data.get("nodes");
+            ArrayList nodeList = (ArrayList) data.get("nodes");
             for (Object element : nodeList) {
-              HashMap entry = (HashMap) element;
-              HashMap systemStats = (HashMap) data.get("systemStats");
+              LinkedHashMap sysEntry = (LinkedHashMap) element;
+              LinkedHashMap systemStats = (LinkedHashMap) sysEntry.get("systemStats");
               System.err.println(systemStats.get("cpu_utilization_rate"));
+              System.err.println(systemStats.get("mem_total"));
+              System.err.println(systemStats.get("mem_free"));
+              LinkedHashMap interestingStats = (LinkedHashMap) sysEntry.get("interestingStats");
+              System.err.println(interestingStats.get("curr_items"));
+              System.err.println(interestingStats.get("get_hits"));
+              System.err.println(interestingStats.get("ops"));
             }
           }
         } catch (IOException e) {
