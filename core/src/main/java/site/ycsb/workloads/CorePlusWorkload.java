@@ -20,7 +20,9 @@ package site.ycsb.workloads;
 import site.ycsb.*;
 import site.ycsb.generator.*;
 import site.ycsb.measurements.Measurements;
+import site.ycsb.measurements.RemoteStatistics;
 import site.ycsb.measurements.Statistics;
+import site.ycsb.measurements.StatisticsFactory;
 
 import java.io.IOException;
 import java.util.*;
@@ -347,6 +349,18 @@ public class CorePlusWorkload extends Workload {
   public static final String INSERTION_RETRY_INTERVAL_DEFAULT = "3";
 
   /**
+   * API Statistics Parameters.
+   */
+  public static final String API_HOST_NAME = "api.host";
+  public static final String API_USER_NAME = "api.username";
+  public static final String API_PASSWORD = "api.password";
+  public static final String API_CLASS = "api.class";
+  protected String apiHostName;
+  protected String apiUserName;
+  protected String apiPassword;
+  protected String apiClass;
+
+  /**
    * Field name prefix.
    */
   public static final String FIELD_NAME_PREFIX = "fieldnameprefix";
@@ -547,6 +561,18 @@ public class CorePlusWorkload extends Workload {
         INSERTION_RETRY_LIMIT, INSERTION_RETRY_LIMIT_DEFAULT));
     insertionRetryInterval = Integer.parseInt(p.getProperty(
         INSERTION_RETRY_INTERVAL, INSERTION_RETRY_INTERVAL_DEFAULT));
+
+    apiHostName = p.getProperty(API_HOST_NAME, null);
+    apiUserName = p.getProperty(API_USER_NAME, null);
+    apiPassword = p.getProperty(API_PASSWORD, null);
+    apiClass = p.getProperty(API_CLASS, null);
+
+    if (apiHostName != null && apiUserName != null && apiPassword != null && apiClass != null) {
+      RemoteStatistics remoteStatistics = StatisticsFactory.initStatsClass(apiClass);
+      if (remoteStatistics != null) {
+        remoteStatistics.startCollectionThread(apiHostName, apiUserName, apiPassword);
+      }
+    }
   }
 
   /**
