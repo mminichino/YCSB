@@ -53,7 +53,9 @@ import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
+import site.ycsb.measurements.RemoteStatistics;
 import site.ycsb.measurements.Statistics;
+import site.ycsb.measurements.StatisticsFactory;
 
 /**
  * A class that wraps the 3.x Couchbase SDK to be used with YCSB.
@@ -351,6 +353,10 @@ public class Couchbase3Client extends DB {
     int runningClients = OPEN_CLIENTS.decrementAndGet();
 
     if (collectStats && runningClients == 0) {
+      RemoteStatistics remoteStatistics = StatisticsFactory.getInstance();
+      if (remoteStatistics != null) {
+        remoteStatistics.stopCollectionThread();
+      }
       String output =  statistics.getSummary();
       STATISTICS.info(output);
     }

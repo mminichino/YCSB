@@ -137,7 +137,7 @@ public class Statistics {
       append.recordValue(dbValues.get(OperationType.APPEND).get());
     }
 
-    output.append(String.format("==== %s ====\n", timeStampFormat.format(new Date())));
+    output.append(String.format("==== Workload Summary %s ====\n", timeStampFormat.format(new Date())));
 
     output.append(String.format("Reads: %d\n", readOps.get()));
     output.append(String.format("Inserts: %d\n", writeOps.get()));

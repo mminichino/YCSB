@@ -354,11 +354,16 @@ public class CorePlusWorkload extends Workload {
   public static final String API_HOST_NAME = "api.host";
   public static final String API_USER_NAME = "api.username";
   public static final String API_PASSWORD = "api.password";
+  public static final String API_INSTANCE = "api.instance";
+  public static final String API_TLS = "api.tls";
   public static final String API_CLASS = "api.class";
   protected String apiHostName;
   protected String apiUserName;
   protected String apiPassword;
+  protected String apiInstance;
+  protected Boolean apiTls;
   protected String apiClass;
+  protected Boolean collectStats;
 
   /**
    * Field name prefix.
@@ -565,12 +570,16 @@ public class CorePlusWorkload extends Workload {
     apiHostName = p.getProperty(API_HOST_NAME, null);
     apiUserName = p.getProperty(API_USER_NAME, null);
     apiPassword = p.getProperty(API_PASSWORD, null);
+    apiInstance = p.getProperty(API_INSTANCE, null);
+    apiTls = p.getProperty(API_TLS, "false").equals("true");
     apiClass = p.getProperty(API_CLASS, null);
+    collectStats = p.getProperty("statistics", "false").equals("true");
 
-    if (apiHostName != null && apiUserName != null && apiPassword != null && apiClass != null) {
-      RemoteStatistics remoteStatistics = StatisticsFactory.initStatsClass(apiClass);
+    if (apiHostName != null && apiUserName != null && apiPassword != null
+        && apiInstance != null && apiClass != null && collectStats) {
+      RemoteStatistics remoteStatistics = StatisticsFactory.newInstance(apiClass);
       if (remoteStatistics != null) {
-        remoteStatistics.startCollectionThread(apiHostName, apiUserName, apiPassword);
+        remoteStatistics.startCollectionThread(apiHostName, apiUserName, apiPassword, apiInstance, apiTls);
       }
     }
   }

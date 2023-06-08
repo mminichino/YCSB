@@ -8,7 +8,8 @@ public abstract class RemoteStatistics {
   public void init() {
   }
 
-  public abstract void startCollectionThread(String hostName, String userName, String password);
+  public abstract void startCollectionThread(String hostName, String userName,
+                                             String password, String instance, Boolean useTls);
 
   public abstract void stopCollectionThread();
 

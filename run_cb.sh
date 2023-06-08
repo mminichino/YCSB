@@ -224,8 +224,10 @@ ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-p couchbase.ttlSeconds=$TTL_SECONDS \
 	-p couchbase.loading="true" \
 	-p api.host=$HOST \
+	-p api.tls=$SSLMODE \
 	-p api.username=$USERNAME \
   -p api.password=$PASSWORD \
+  -p api.instance=$BUCKET \
   -p api.class=site.ycsb.db.couchbase3.CouchbaseCollect \
 	-p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \
@@ -252,8 +254,10 @@ ${SCRIPTDIR}/bin/ycsb run couchbase3 \
   -p couchbase.ttlSeconds=$TTL_SECONDS \
   -p couchbase.loading="false" \
   -p api.host=$HOST \
+  -p api.tls=$SSLMODE \
   -p api.username=$USERNAME \
   -p api.password=$PASSWORD \
+  -p api.instance=$BUCKET \
   -p api.class=site.ycsb.db.couchbase3.CouchbaseCollect \
   -p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \

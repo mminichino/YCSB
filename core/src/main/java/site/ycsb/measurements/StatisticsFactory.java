@@ -4,6 +4,20 @@ package site.ycsb.measurements;
  * Return Statistics Class.
  */
 public final class StatisticsFactory {
+
+  private static RemoteStatistics singleton = null;
+
+  public static synchronized RemoteStatistics newInstance(String className) {
+    if (singleton == null) {
+      singleton = StatisticsFactory.initStatsClass(className);
+    }
+    return singleton;
+  }
+
+  public static synchronized RemoteStatistics getInstance() {
+    return singleton;
+  }
+
   private StatisticsFactory() {
   }
 
