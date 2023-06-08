@@ -271,6 +271,8 @@ public class Couchbase3Client extends DB {
     if (seconds > 0) {
       if (loadSeconds > 0 && loading) {
         totalSeconds = loadSeconds;
+      } else if (loadSeconds == 0 && loading) {
+        return;
       } else {
         totalSeconds = seconds;
       }

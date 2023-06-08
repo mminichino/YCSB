@@ -9,6 +9,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
+import java.io.IOException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.text.DecimalFormat;
@@ -17,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -84,6 +86,9 @@ public class CouchbaseCollect extends RemoteStatistics {
       public void run() {
         OkHttpClient client = new OkHttpClient.Builder()
             .sslSocketFactory(sslSocketFactory, (X509TrustManager) trustAllCerts[0])
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
             .build();
         String credential = Credentials.basic(userName, password);
         StringBuilder output = new StringBuilder();
@@ -113,6 +118,8 @@ public class CouchbaseCollect extends RemoteStatistics {
             output.append(String.format("CPU: %.1f Mem: %s Free: %s ",
                 cpu / count, formatDataSize(mem), formatDataSize(free)));
           }
+        } catch (IOException i) {
+          output.append(String.format(" ** Error: %s", i.getMessage()));
         } catch (Exception e) {
           LOGGER.error(e.getMessage(), e);
         }
@@ -136,6 +143,8 @@ public class CouchbaseCollect extends RemoteStatistics {
               output.append(String.format("%s: %.1f ", dataPoint.getKey(), average));
             }
           }
+        } catch (IOException i) {
+          output.append(String.format(" ** Error: %s", i.getMessage()));
         } catch (Exception e) {
           LOGGER.error(e.getMessage(), e);
         }
