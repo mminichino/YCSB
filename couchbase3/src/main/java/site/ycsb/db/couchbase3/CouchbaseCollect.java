@@ -212,7 +212,10 @@ public class CouchbaseCollect extends RemoteStatistics {
     newMap.put("CacheMiss", "ep_cache_miss_rate");
     newMap.put("ResidentItems", "ep_resident_items_rate");
     newMap.put("QueueAge", "vb_avg_total_queue_age");
-    newMap.put("DiskCommit", "avg_disk_commit_time");
+    newMap.put("CommitTime", "avg_disk_commit_time");
+    newMap.put("DiskCommit", "disk_commit_total");
+    newMap.put("DiskUpdate", "disk_update_total");
+    newMap.put("DiskQueue", "ep_diskqueue_items");
     newMap.put("WaitTime", "avg_bg_wait_time");
     newMap.put("BytesRead", "bytes_read");
     newMap.put("BytesWriten", "bytes_written");
@@ -223,6 +226,8 @@ public class CouchbaseCollect extends RemoteStatistics {
     newMap.put("Con", "curr_connections");
     newMap.put("Items", "curr_items_tot");
     newMap.put("WriteQueue", "disk_write_queue");
+    newMap.put("DCPReplica", "ep_dcp_replica_total_bytes");
+    newMap.put("DCPOther", "ep_dcp_other_total_bytes");
     return newMap;
   }
 
