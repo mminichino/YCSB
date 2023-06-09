@@ -533,13 +533,9 @@ public class CorePlusWorkload extends Workload {
           p.getProperty(ZIPFIAN_CONSTANT, ZIPFIAN_CONSTANT_DEFAULT));
 
       int operand = (int)(Math.log(recordcount) / Math.log(10));
-      System.err.println(operand);
       int divisor = (int)(.0001 * recordcount);
-      System.err.println(divisor);
       double f = (double) operand / divisor;
-      System.err.println(f);
       long sum = (long) (recordcount * f);
-      System.err.println(sum);
 
       keychooser = new ZipfianGenerator(insertstart,
           insertstart + insertcount + expectednewkeys, zipfianConstant, sum);
