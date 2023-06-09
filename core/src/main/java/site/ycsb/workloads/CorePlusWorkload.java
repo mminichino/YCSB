@@ -664,7 +664,7 @@ public class CorePlusWorkload extends Workload {
       status = db.insert(table, dbkey, values);
       if (null != status && status.isOk()) {
         statistics.incrementWrite();
-        statistics.insertKey(dbkey, dataSize);
+        statistics.updateKey(dbkey, dataSize);
         break;
       }
       // Retry if configured. Without retrying, the load process will fail
@@ -911,7 +911,7 @@ public class CorePlusWorkload extends Workload {
       transactioninsertkeysequence.acknowledge(keynum);
     }
     statistics.incrementUpdate();
-    statistics.insertKey(dbkey, dataSize);
+    statistics.updateKey(dbkey, dataSize);
   }
 
   /**
