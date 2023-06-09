@@ -16,15 +16,14 @@
  */
 
 package site.ycsb.measurements;
-import org.HdrHistogram.Histogram;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-
-import static java.lang.Math.round;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.*;
 
 /**
  * Collects latency measurements, and reports them when requested.
@@ -43,10 +42,8 @@ public class Statistics {
     return singleton;
   }
 
-  private final ConcurrentHashMap<String, AtomicLong> keyStats;
-  private final AtomicLong readOps;
-  private final AtomicLong writeOps;
-  private final AtomicLong updateOps;
+  private final ConcurrentHashMap<String, AtomicInteger> keyStats;
+
   /**
    * Operation type.
    */
@@ -59,30 +56,28 @@ public class Statistics {
 
   public Statistics() {
     keyStats = new ConcurrentHashMap<>();
-    readOps = new AtomicLong(0);
-    writeOps = new AtomicLong(0);
-    updateOps = new AtomicLong(0);
   }
 
-  public void updateKey(String name, int bytes) {
+  public void updateKey(String name) {
     if (keyStats.get(name) == null) {
-      AtomicLong dp = new AtomicLong(bytes);
+      AtomicInteger dp = new AtomicInteger(1);
       keyStats.put(name, dp);
     } else {
-      keyStats.get(name).addAndGet(bytes);
+      keyStats.get(name).incrementAndGet();
     }
   }
 
-  public void incrementRead() {
-    readOps.incrementAndGet();
-  }
+  public static HashMap<String, Integer> sortMap(ConcurrentHashMap<String, AtomicInteger> input)
+  {
+    List<Map.Entry<String, AtomicInteger>> list = new LinkedList<>(input.entrySet());
 
-  public void incrementWrite() {
-    writeOps.incrementAndGet();
-  }
+    list.sort((o1, o2) -> Integer.compare(o2.getValue().get(), o1.getValue().get()));
 
-  public void incrementUpdate() {
-    updateOps.incrementAndGet();
+    HashMap<String, Integer> temp = new LinkedHashMap<>();
+    for (Map.Entry<String, AtomicInteger> item : list) {
+      temp.put(item.getKey(), item.getValue().get());
+    }
+    return temp;
   }
 
   /**
@@ -92,31 +87,13 @@ public class Statistics {
     StringBuilder output = new StringBuilder();
     String dateFormat = "yyyy-MM-dd HH:mm:ss";
     SimpleDateFormat timeStampFormat = new SimpleDateFormat(dateFormat);
-    Histogram keyHistory = new Histogram(Long.MAX_VALUE, 3);
+    HashMap<String, Integer> sortedData = sortMap(keyStats);
 
-    for (Map.Entry<String, AtomicLong> entry : keyStats.entrySet()) {
-      keyHistory.recordValue(entry.getValue().get());
+    output.append(String.format("==== Begin Key Dump %s ====\n", timeStampFormat.format(new Date())));
+
+    for (Map.Entry<String, Integer> entry : sortedData.entrySet()) {
+      output.append(String.format("Key: %s Count: %d\n", entry.getKey(), entry.getValue()));
     }
-
-    output.append(String.format("==== Workload Summary %s ====\n", timeStampFormat.format(new Date())));
-
-    output.append(String.format("Reads: %d\n", readOps.get()));
-    output.append(String.format("Inserts: %d\n", writeOps.get()));
-    output.append(String.format("Updates: %d\n", updateOps.get()));
-
-    long minimum = keyHistory.getMinValue();
-    output.append(String.format("Key Min Data Size: %d\n", minimum));
-    output.append(String.format("Key Avg Data Size: %.0f\n", keyHistory.getMean()));
-    output.append(String.format("Key Max Data Size: %d\n", keyHistory.getMaxValue()));
-    long percentile = keyHistory.getValueAtPercentile(50.0);
-    long count = round((float) percentile / minimum);
-    output.append(String.format("Key 50 percentile: %d (%d) operations\n", percentile, count));
-    percentile = keyHistory.getValueAtPercentile(90.0);
-    count = round((float) percentile / minimum);
-    output.append(String.format("Key 90 percentile: %d (%d) operations\n", percentile, count));
-    percentile = keyHistory.getValueAtPercentile(99.0);
-    count = round((float) percentile / minimum);
-    output.append(String.format("Key 99 percentile: %d (%d) operations\n", percentile, count));
 
     return output.toString();
   }

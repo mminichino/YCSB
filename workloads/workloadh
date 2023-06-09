@@ -8,7 +8,7 @@
 
 recordcount=1000
 operationcount=1000
-zipfianconstant=0.5
+zipfianconstant=0.1
 fieldlength=32
 fieldcount=14
 statistics=true

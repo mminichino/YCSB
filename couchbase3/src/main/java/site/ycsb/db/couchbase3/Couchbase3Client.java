@@ -123,6 +123,7 @@ public class Couchbase3Client extends DB {
   private boolean doUpsert;
   private boolean loading;
   private boolean collectStats;
+  private boolean collectKeyStats;
   private final Statistics statistics = Statistics.getStatistics();
   private int clientNumber;
   private final String recordId = "record_id";
@@ -181,6 +182,8 @@ public class Couchbase3Client extends DB {
     doUpsert = props.getProperty("couchbase.upsert", "false").equals("true");
     loading = props.getProperty("couchbase.loading", "false").equals("true");
     collectStats = props.getProperty("statistics", "false").equals("true");
+    collectKeyStats = props.getProperty("keyStatistics", "false").equals("true");
+
     String ttlProperty = props.getProperty("couchbase.ttlSeconds", "0");
     String[] ttlArray = ttlProperty.split(":");
     int ttlLoadSeconds;
@@ -359,6 +362,10 @@ public class Couchbase3Client extends DB {
       if (remoteStatistics != null) {
         remoteStatistics.stopCollectionThread();
       }
+    }
+
+    if (collectKeyStats && runningClients == 0) {
+      STATISTICS.info(statistics.getSummary());
     }
 
     for (Throwable t : errors) {

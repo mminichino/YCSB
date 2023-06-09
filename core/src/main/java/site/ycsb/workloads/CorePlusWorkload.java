@@ -364,6 +364,7 @@ public class CorePlusWorkload extends Workload {
   protected Boolean apiTls;
   protected String apiClass;
   protected Boolean collectStats;
+  protected Boolean collectKeyStats;
 
   /**
    * Field name prefix.
@@ -532,9 +533,13 @@ public class CorePlusWorkload extends Workload {
           p.getProperty(ZIPFIAN_CONSTANT, ZIPFIAN_CONSTANT_DEFAULT));
 
       int operand = (int)(Math.log(recordcount) / Math.log(10));
-      int divisor = (int)(.02 * recordcount);
+      System.err.println(operand);
+      int divisor = (int)(.0001 * recordcount);
+      System.err.println(divisor);
       double f = (double) operand / divisor;
-      long sum = (long) (recordcount * f * 1.5);
+      System.err.println(f);
+      long sum = (long) (recordcount * f);
+      System.err.println(sum);
 
       keychooser = new ZipfianGenerator(insertstart,
           insertstart + insertcount + expectednewkeys, zipfianConstant, sum);
@@ -574,6 +579,7 @@ public class CorePlusWorkload extends Workload {
     apiTls = p.getProperty(API_TLS, "false").equals("true");
     apiClass = p.getProperty(API_CLASS, null);
     collectStats = p.getProperty("statistics", "false").equals("true");
+    collectKeyStats = p.getProperty("keyStatistics", "false").equals("true");
 
     if (apiHostName != null && apiUserName != null && apiPassword != null
         && apiInstance != null && apiClass != null && collectStats) {
@@ -777,7 +783,9 @@ public class CorePlusWorkload extends Workload {
 
     HashMap<String, ByteIterator> cells = new HashMap<>();
     db.read(table, keyname, fields, cells);
-    statistics.incrementRead();
+    if (collectKeyStats) {
+      statistics.updateKey(keyname);
+    }
 
     if (dataintegrity) {
       verifyRow(keyname, cells);
@@ -826,6 +834,10 @@ public class CorePlusWorkload extends Workload {
       verifyRow(keyname, cells);
     }
 
+    if (collectKeyStats) {
+      statistics.updateKey(keyname);
+    }
+
     measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
@@ -869,6 +881,9 @@ public class CorePlusWorkload extends Workload {
     }
 
     db.update(table, keyname, values);
+    if (collectKeyStats) {
+      statistics.updateKey(keyname);
+    }
   }
 
   public void doTransactionInsert(DB db) {
@@ -880,6 +895,9 @@ public class CorePlusWorkload extends Workload {
 
       HashMap<String, ByteIterator> values = buildValues(dbkey);
       db.insert(table, dbkey, values);
+      if (collectKeyStats) {
+        statistics.updateKey(dbkey);
+      }
     } finally {
       transactioninsertkeysequence.acknowledge(keynum);
     }
