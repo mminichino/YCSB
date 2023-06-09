@@ -663,8 +663,6 @@ public class CorePlusWorkload extends Workload {
     do {
       status = db.insert(table, dbkey, values);
       if (null != status && status.isOk()) {
-        statistics.incrementWrite();
-        statistics.updateKey(dbkey, dataSize);
         break;
       }
       // Retry if configured. Without retrying, the load process will fail
@@ -838,9 +836,6 @@ public class CorePlusWorkload extends Workload {
       verifyRow(keyname, cells);
     }
 
-    statistics.incrementRead();
-    statistics.incrementUpdate();
-    statistics.updateKey(keyname, dataSize);
     measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
@@ -888,8 +883,6 @@ public class CorePlusWorkload extends Workload {
     dataSize = data.getSize();
 
     db.update(table, keyname, values);
-    statistics.incrementUpdate();
-    statistics.updateKey(keyname, dataSize);
   }
 
   public void doTransactionInsert(DB db) {
@@ -910,8 +903,6 @@ public class CorePlusWorkload extends Workload {
     } finally {
       transactioninsertkeysequence.acknowledge(keynum);
     }
-    statistics.incrementUpdate();
-    statistics.updateKey(dbkey, dataSize);
   }
 
   /**

@@ -359,8 +359,8 @@ public class Couchbase3Client extends DB {
       if (remoteStatistics != null) {
         remoteStatistics.stopCollectionThread();
       }
-      String output =  statistics.getSummary();
-      STATISTICS.info(output);
+//      String output =  statistics.getSummary();
+//      STATISTICS.info(output);
     }
 
     for (Throwable t : errors) {
