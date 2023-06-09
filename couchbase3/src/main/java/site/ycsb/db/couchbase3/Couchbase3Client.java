@@ -278,8 +278,8 @@ public class Couchbase3Client extends DB {
       }
       dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(totalSeconds));
       dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(totalSeconds));
-      dbReplaceOptions = dbReplaceOptions.preserveExpiry(true);
-      dbMutateOptions = dbMutateOptions.preserveExpiry(true);
+      dbReplaceOptions = dbReplaceOptions.expiry(Duration.ofSeconds(totalSeconds));
+      dbMutateOptions = dbMutateOptions.expiry(Duration.ofSeconds(totalSeconds));
     }
   }
 
@@ -359,8 +359,6 @@ public class Couchbase3Client extends DB {
       if (remoteStatistics != null) {
         remoteStatistics.stopCollectionThread();
       }
-//      String output =  statistics.getSummary();
-//      STATISTICS.info(output);
     }
 
     for (Throwable t : errors) {
