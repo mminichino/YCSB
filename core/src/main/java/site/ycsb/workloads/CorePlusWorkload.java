@@ -587,9 +587,8 @@ public class CorePlusWorkload extends Workload {
   /**
    * Builds a value for a randomly chosen field.
    */
-  private DocumentData buildSingleValue(String key) {
+  private HashMap<String, ByteIterator> buildSingleValue(String key) {
     HashMap<String, ByteIterator> value = new HashMap<>();
-    int size = 0;
 
     String fieldkey = fieldnames.get(fieldchooser.nextValue().intValue());
     ByteIterator data;
@@ -600,17 +599,15 @@ public class CorePlusWorkload extends Workload {
       data = new RandomByteIterator(fieldlengthgenerator.nextValue().longValue());
     }
     value.put(fieldkey, data);
-    size += fieldkey.length() + data.bytesLeft();
 
-    return new DocumentData(size, value);
+    return value;
   }
 
   /**
    * Builds values for all fields.
    */
-  private DocumentData buildValues(String key) {
+  private HashMap<String, ByteIterator> buildValues(String key) {
     HashMap<String, ByteIterator> values = new HashMap<>();
-    int size = 0;
 
     for (String fieldkey : fieldnames) {
       ByteIterator data;
@@ -621,9 +618,8 @@ public class CorePlusWorkload extends Workload {
         data = new RandomByteIterator(fieldlengthgenerator.nextValue().longValue());
       }
       values.put(fieldkey, data);
-      size += fieldkey.length() + data.bytesLeft();
     }
-    return new DocumentData(size, values);
+    return values;
   }
 
   /**
@@ -654,9 +650,7 @@ public class CorePlusWorkload extends Workload {
   public boolean doInsert(DB db, Object threadstate) {
     int keynum = keysequence.nextValue().intValue();
     String dbkey = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
-    DocumentData data = buildValues(dbkey);
-    HashMap<String, ByteIterator> values = data.getMap();
-    int dataSize = data.getSize();
+    HashMap<String, ByteIterator> values = buildValues(dbkey);
 
     Status status;
     int numOfRetries = 0;
@@ -806,19 +800,15 @@ public class CorePlusWorkload extends Workload {
       fields.add(fieldname);
     }
 
-    DocumentData data;
     HashMap<String, ByteIterator> values;
-    int dataSize;
 
     if (writeallfields) {
       // new data for all the fields
-      data = buildValues(keyname);
+      values = buildValues(keyname);
     } else {
       // update a random field
-      data = buildSingleValue(keyname);
+      values = buildSingleValue(keyname);
     }
-    values = data.getMap();
-    dataSize = data.getSize();
 
     // do the transaction
 
@@ -868,19 +858,15 @@ public class CorePlusWorkload extends Workload {
 
     String keyname = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
 
-    DocumentData data;
     HashMap<String, ByteIterator> values;
-    int dataSize;
 
     if (writeallfields) {
       // new data for all the fields
-      data = buildValues(keyname);
+      values = buildValues(keyname);
     } else {
       // update a random field
-      data = buildSingleValue(keyname);
+      values = buildSingleValue(keyname);
     }
-    values = data.getMap();
-    dataSize = data.getSize();
 
     db.update(table, keyname, values);
   }
@@ -888,17 +874,11 @@ public class CorePlusWorkload extends Workload {
   public void doTransactionInsert(DB db) {
     // choose the next key
     long keynum = transactioninsertkeysequence.nextValue();
-    DocumentData data;
-    HashMap<String, ByteIterator> values;
-    int dataSize;
-    String dbkey;
 
     try {
-      dbkey = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+      String dbkey = CorePlusWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
 
-      data = buildValues(dbkey);
-      values = data.getMap();
-      dataSize = data.getSize();
+      HashMap<String, ByteIterator> values = buildValues(dbkey);
       db.insert(table, dbkey, values);
     } finally {
       transactioninsertkeysequence.acknowledge(keynum);
