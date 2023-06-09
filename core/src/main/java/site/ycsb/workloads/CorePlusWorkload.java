@@ -535,7 +535,7 @@ public class CorePlusWorkload extends Workload {
       int operand = (int)(Math.log(recordcount) / Math.log(10));
       int divisor = (int)(.0001 * recordcount);
       double f = (double) operand / divisor;
-      long sum = (long) (recordcount * f);
+      long sum = (long) (recordcount * f * 2);
 
       keychooser = new ZipfianGenerator(insertstart,
           insertstart + insertcount + expectednewkeys, zipfianConstant, sum);
