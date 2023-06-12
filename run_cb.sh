@@ -385,7 +385,7 @@ do
       VERBOSE=1
       ;;
     X)
-      EXTRA_ARGS="-p $OPTARG"
+      EXTRA_ARGS="${EXTRA_ARGS} -p $OPTARG"
       ;;
     \?)
       print_usage

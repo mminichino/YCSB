@@ -17,8 +17,6 @@
 
 package site.ycsb.measurements;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -85,14 +83,13 @@ public class Statistics {
    */
   public synchronized String getSummary() {
     StringBuilder output = new StringBuilder();
-    String dateFormat = "yyyy-MM-dd HH:mm:ss";
-    SimpleDateFormat timeStampFormat = new SimpleDateFormat(dateFormat);
     HashMap<String, Integer> sortedData = sortMap(keyStats);
+    int number = 1;
 
-    output.append(String.format("==== Begin Key Dump %s ====\n", timeStampFormat.format(new Date())));
+    output.append("Number,Key,Count\n");
 
     for (Map.Entry<String, Integer> entry : sortedData.entrySet()) {
-      output.append(String.format("Key: %s Count: %d\n", entry.getKey(), entry.getValue()));
+      output.append(String.format("%d,%s,%d\n", number++, entry.getKey(), entry.getValue()));
     }
 
     return output.toString();

@@ -376,7 +376,9 @@ public class CorePlusWorkload extends Workload {
    */
   public static final String FIELD_NAME_PREFIX_DEFAULT = "field";
   public static final String ZIPFIAN_CONSTANT = "zipfianconstant";
-  public static final String ZIPFIAN_CONSTANT_DEFAULT = "0.99";
+  public static final String ZIPFIAN_CONSTANT_DEFAULT = "0.1";
+  public static final String SKEW_CONSTANT = "skewconstant";
+  public static final String SKEW_CONSTANT_DEFAULT = "0.0001";
 
   protected NumberGenerator keysequence;
   protected DiscreteGenerator operationchooser;
@@ -531,9 +533,11 @@ public class CorePlusWorkload extends Workload {
       int expectednewkeys = (int) ((opcount) * insertproportion * 2.0);
       final double zipfianConstant = Double.parseDouble(
           p.getProperty(ZIPFIAN_CONSTANT, ZIPFIAN_CONSTANT_DEFAULT));
+      final double skewConstant = Double.parseDouble(
+          p.getProperty(SKEW_CONSTANT, SKEW_CONSTANT_DEFAULT));
 
       int operand = (int)(Math.log(recordcount) / Math.log(10));
-      int divisor = (int)(.0001 * recordcount);
+      int divisor = (int)(skewConstant * recordcount);
       double f = (double) operand / divisor;
       long sum = (long) (recordcount * f * 2);
 

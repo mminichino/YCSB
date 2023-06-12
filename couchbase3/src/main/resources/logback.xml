@@ -34,8 +34,20 @@ LICENSE file.
     </encoder>
   </appender>
 
+  <appender name="KEYSTATS" class="ch.qos.logback.core.FileAppender">
+    <file>key_stats.dat</file>
+    <append>false</append>
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>%msg</pattern>
+    </encoder>
+  </appender>
+
   <logger name="com.couchbase.statistics" level="INFO">
     <appender-ref ref="STATISTICS"/>
+  </logger>
+
+  <logger name="com.couchbase.KeyStats" level="INFO">
+    <appender-ref ref="KEYSTATS"/>
   </logger>
 
   <logger name="com.couchbase.CouchbaseClient" level="INFO">

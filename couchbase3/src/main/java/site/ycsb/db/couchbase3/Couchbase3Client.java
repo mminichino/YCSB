@@ -90,6 +90,8 @@ public class Couchbase3Client extends DB {
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.CouchbaseClient");
   protected static final ch.qos.logback.classic.Logger STATISTICS =
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
+  protected static final ch.qos.logback.classic.Logger KEY_STATS =
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.KeyStats");
   private static final String KEY_SEPARATOR = "::";
   private static final String KEYSPACE_SEPARATOR = ".";
   private static volatile ClusterEnvironment environment;
@@ -364,8 +366,8 @@ public class Couchbase3Client extends DB {
       }
     }
 
-    if (collectKeyStats && runningClients == 0) {
-      STATISTICS.info(statistics.getSummary());
+    if (collectKeyStats && runningClients == 0 && !loading) {
+      KEY_STATS.info(statistics.getSummary());
     }
 
     for (Throwable t : errors) {
