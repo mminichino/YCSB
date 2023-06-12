@@ -5,6 +5,7 @@ target
 output*
 workloads/*.dat
 statistics.dat
+key_stats.dat
 
 # ignore standard Eclipse files
 .project
