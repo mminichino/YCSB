@@ -375,10 +375,28 @@ public class CorePlusWorkload extends Workload {
    * Default value of the field name prefix.
    */
   public static final String FIELD_NAME_PREFIX_DEFAULT = "field";
+
+  /**
+   * Zipfian Generator Values.
+   */
   public static final String ZIPFIAN_CONSTANT = "zipfianconstant";
   public static final String ZIPFIAN_CONSTANT_DEFAULT = "0.1";
   public static final String SKEW_CONSTANT = "skewconstant";
   public static final String SKEW_CONSTANT_DEFAULT = "0.0001";
+
+  /**
+   * Skew Normal Generator Values.
+   */
+  public static final String SKEW_NORMAL_PARAMETER = "skewnormstdev";
+  public static final String SKEW_NORMAL_STDEV_DEFAULT = "300";
+
+  /**
+   * Beta Generator.
+   */
+  public static final String BETA_ALPHA_PARAMETER = "betaalpha";
+  public static final String BETA_BETA_PARAMETER = "betabeta";
+  public static final String BETA_ALPHA_DEFAULT = "1000";
+  public static final String BETA_BETA_DEFAULT = "9000";
 
   protected NumberGenerator keysequence;
   protected DiscreteGenerator operationchooser;
@@ -552,6 +570,13 @@ public class CorePlusWorkload extends Workload {
           Double.parseDouble(p.getProperty(HOTSPOT_OPN_FRACTION, HOTSPOT_OPN_FRACTION_DEFAULT));
       keychooser = new HotspotIntegerGenerator(insertstart, insertstart + insertcount - 1,
           hotsetfraction, hotopnfraction);
+    } else if (requestdistrib.equals("skewnormal")) {
+      final long stdevFactor = Long.parseLong(p.getProperty(SKEW_NORMAL_PARAMETER, SKEW_NORMAL_STDEV_DEFAULT));
+      keychooser = new SkewNormalGenerator(stdevFactor, insertcount);
+    } else if (requestdistrib.equals("beta")) {
+      final long betaAlpha = Long.parseLong(p.getProperty(BETA_ALPHA_PARAMETER, BETA_ALPHA_DEFAULT));
+      final long betaBeta = Long.parseLong(p.getProperty(BETA_BETA_PARAMETER, BETA_BETA_DEFAULT));
+      keychooser = new BetaGenerator(betaAlpha, betaBeta, insertcount);
     } else {
       throw new WorkloadException("Unknown request distribution \"" + requestdistrib + "\"");
     }

@@ -9,6 +9,9 @@
 recordcount=1000
 operationcount=1000
 zipfianconstant=0.1
+skewnormstdev=300
+betaalpha=1000
+betabeta=9000
 fieldlength=32
 fieldcount=14
 statistics=true

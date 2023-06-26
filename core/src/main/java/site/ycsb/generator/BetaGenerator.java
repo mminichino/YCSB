@@ -5,7 +5,7 @@ import org.apache.commons.math3.distribution.BetaDistribution;
 /**
  * Beta Distribution Generator.
  */
-public class BetaGenerator {
+public class BetaGenerator extends NumberGenerator {
   private final long max;
   private final BetaDistribution dist;
 

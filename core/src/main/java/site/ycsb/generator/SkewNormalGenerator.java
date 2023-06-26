@@ -3,7 +3,7 @@ package site.ycsb.generator;
 /**
  * Skew Normal Generator.
  */
-public class SkewNormalGenerator {
+public class SkewNormalGenerator extends NumberGenerator {
 
   private final double stdev;
   private final double mean;
