@@ -25,4 +25,4 @@ updateproportion=1
 scanproportion=0
 insertproportion=0
 
-requestdistribution=zipfian
+requestdistribution=skewnormal
