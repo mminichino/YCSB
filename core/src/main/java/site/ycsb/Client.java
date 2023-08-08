@@ -32,6 +32,7 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import static java.lang.Math.toIntExact;
 
 /**
  * Turn seconds remaining into more useful units.
@@ -408,18 +409,18 @@ public final class Client {
 
     final List<ClientThread> clients = new ArrayList<>(threadcount);
     try (final TraceScope span = tracer.newScope(CLIENT_INIT_SPAN)) {
-      int opcount;
+      long opcount;
       if (dotransactions) {
-        opcount = Integer.parseInt(props.getProperty(OPERATION_COUNT_PROPERTY, "0"));
+        opcount = Long.parseLong(props.getProperty(OPERATION_COUNT_PROPERTY, "0"));
       } else {
         if (props.containsKey(INSERT_COUNT_PROPERTY)) {
-          opcount = Integer.parseInt(props.getProperty(INSERT_COUNT_PROPERTY, "0"));
+          opcount = Long.parseLong(props.getProperty(INSERT_COUNT_PROPERTY, "0"));
         } else {
-          opcount = Integer.parseInt(props.getProperty(RECORD_COUNT_PROPERTY, DEFAULT_RECORD_COUNT));
+          opcount = Long.parseLong(props.getProperty(RECORD_COUNT_PROPERTY, DEFAULT_RECORD_COUNT));
         }
       }
       if (threadcount > opcount && opcount > 0){
-        threadcount = opcount;
+        threadcount = (int) opcount;
         System.out.println("Warning: the threadcount is bigger than recordcount, the threadcount will be recordcount!");
       }
       for (int threadid = 0; threadid < threadcount; threadid++) {
@@ -432,7 +433,14 @@ public final class Client {
           break;
         }
 
-        int threadopcount = opcount / threadcount;
+        int threadopcount;
+        try {
+          threadopcount = toIntExact(opcount / threadcount);
+        } catch (ArithmeticException e) {
+          System.out.println("Not enough threads for operation count " + opcount);
+          initFailed = true;
+          break;
+        }
 
         // ensure correct number of operations, in case opcount is not a multiple of threadcount
         if (threadid < opcount % threadcount) {
