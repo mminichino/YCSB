@@ -120,6 +120,41 @@ LICENSE file.
       </dependencies>
     </profile>
     <profile>
+      <id>jdbc</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>${maven.assembly.version}</version>
+            <configuration>
+              <descriptors>
+                <descriptor>src/main/assembly/jdbc.xml</descriptor>
+              </descriptors>
+              <finalName>ycsb-jdbc</finalName>
+              <appendAssemblyId>false</appendAssemblyId>
+              <tarLongFileMode>posix</tarLongFileMode>
+            </configuration>
+            <executions>
+              <execution>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <dependencies>
+        <dependency>
+          <groupId>site.ycsb</groupId>
+          <artifactId>jdbc-binding</artifactId>
+          <version>${project.version}</version>
+        </dependency>
+      </dependencies>
+    </profile>
+    <profile>
       <id>couchbase</id>
       <activation>
         <activeByDefault>true</activeByDefault>

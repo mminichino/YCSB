@@ -262,6 +262,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>jdbc</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>jdbc</module>
+      </modules>
+    </profile>
+    <profile>
       <id>couchbase</id>
       <activation>
         <activeByDefault>true</activeByDefault>

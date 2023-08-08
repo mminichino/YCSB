@@ -68,13 +68,14 @@ public final class JdbcDBCreateTable {
 
       sql = new StringBuilder("CREATE TABLE ");
       sql.append(tablename);
-      sql.append(" (YCSB_KEY VARCHAR PRIMARY KEY");
+      sql.append(" (YCSB_KEY varchar(255) NOT NULL");
 
       for (int idx = 0; idx < fieldcount; idx++) {
         sql.append(", FIELD");
         sql.append(idx);
-        sql.append(" TEXT");
+        sql.append(" varchar(100) NOT NULL");
       }
+      sql.append(" CONSTRAINT pk_usertable PRIMARY KEY (YCSB_KEY)");
       sql.append(");");
 
       stmt.execute(sql.toString());
