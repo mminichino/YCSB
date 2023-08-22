@@ -253,6 +253,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>cosmos</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>azurecosmos</module>
+      </modules>
+    </profile>
+    <profile>
       <id>spanner</id>
       <activation>
         <activeByDefault>false</activeByDefault>
