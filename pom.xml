@@ -109,11 +109,7 @@ LICENSE file.
   <properties>
     <maven.assembly.version>3.6.0</maven.assembly.version>
     <maven.dependency.version>3.6.0</maven.dependency.version>
-
-    <!-- datastore binding versions, lex sorted -->
-    <couchbase3.version>3.4.6</couchbase3.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <s3.version>1.12.239</s3.version>
   </properties>
 
   <modules>
