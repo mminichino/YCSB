@@ -4,7 +4,7 @@
 
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.com.google.gson.JsonParser;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.TimeoutConfig;
@@ -23,11 +23,32 @@ import com.couchbase.client.dcp.StreamFrom;
 import com.couchbase.client.dcp.StreamTo;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.core.deps.com.google.gson.JsonObject;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.time.Duration;
 import java.util.function.Consumer;
+
+final class DCPDocument {
+  private final String key;
+  private final JsonObject document;
+
+  public DCPDocument(String key, JsonObject document) {
+    this.key = key;
+    this.document = document;
+  }
+
+  public String getKey() {
+    return key;
+  }
+
+  public JsonObject getDocument() {
+    return document;
+  }
+}
 
 /**
  * Couchbase Connection Utility.
@@ -50,11 +71,15 @@ public final class CouchbaseConnect {
   private String primaryPassword;
   private String primaryConString;
   private String primaryBucket;
+  private String primaryScope;
+  private String primaryCollection;
   private Boolean primarySslSetting;
   private String xdcrUser;
   private String xdcrPassword;
   private String xdcrConString;
   private String xdcrBucket;
+  private String xdcrScope;
+  private String xdcrCollection;
   private Boolean xdcrSslSetting;
 
   /**
@@ -187,26 +212,20 @@ public final class CouchbaseConnect {
     }
   }
 
-  public void getDocs(String bucket, ConnectMode mode) {
-    String conString;
-    String username;
-    String password;
+  public List<DCPDocument> getDocs(String bucket, ConnectMode mode) {
+    List<DCPDocument> documents = new ArrayList<>();
+    String conString = mode == ConnectMode.PRIMARY ? primaryConString : xdcrConString;
+    String username = mode == ConnectMode.PRIMARY ? primaryUser : xdcrUser;
+    String password = mode == ConnectMode.PRIMARY ? primaryPassword : xdcrPassword;
+    Boolean ssl = mode == ConnectMode.PRIMARY ? primarySslSetting : xdcrSslSetting;
+    boolean collectionEnabled = mode == ConnectMode.PRIMARY ?
+        !primaryCollection.equals("_default") : !xdcrCollection.equals("_default");
 
     Consumer<com.couchbase.client.dcp.SecurityConfig.Builder> secClientConfig = securityConfig -> {
-      securityConfig.enableTls(primarySslSetting)
+      securityConfig.enableTls(ssl)
           .enableHostnameVerification(false)
           .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
     };
-
-    if (mode == ConnectMode.PRIMARY) {
-      conString = primaryConString;
-      username = primaryUser;
-      password = primaryPassword;
-    } else {
-      conString = xdcrConString;
-      username = xdcrUser;
-      password = xdcrPassword;
-    }
 
     Client client = Client.builder()
         .connectionString(conString)
@@ -220,19 +239,13 @@ public final class CouchbaseConnect {
       event.release();
     });
 
-    // Collect the statistics on mutations
-    final AtomicLong totalSize = new AtomicLong(0);
-    final AtomicLong docCount = new AtomicLong(0);
-
     client.dataEventHandler((flowController, event) -> {
       if (DcpMutationMessage.is(event)) {
-        CollectionIdAndKey key = MessageUtil.getCollectionIdAndKey(event, false);
-        ByteBuf content = DcpMutationMessage.content(event);
-        System.out.println("Key     : " + key.key());
-        System.out.println("Mutation: " + DcpMutationMessage.toString(event));
-        System.out.println("Document: " + DcpMutationMessage.content(event).toString(StandardCharsets.UTF_8));
-        docCount.incrementAndGet();
-        totalSize.addAndGet(DcpMutationMessage.content(event).readableBytes());
+        CollectionIdAndKey key = MessageUtil.getCollectionIdAndKey(event, collectionEnabled);
+        String content = DcpMutationMessage.content(event).toString(StandardCharsets.UTF_8);
+        JsonObject jsonObject = JsonParser.parseString(content).getAsJsonObject();
+        DCPDocument entry = new DCPDocument(key.key(), jsonObject);
+        documents.add(entry);
       }
       event.release();
     });
@@ -255,12 +268,9 @@ public final class CouchbaseConnect {
       }
     }
 
-    System.out.println("Total Docs: " + docCount.get());
-    System.out.println("Total Bytes: " + totalSize.get());
-    System.out.println("Average Size per Doc: " + totalSize.get() / docCount.get() + "b");
-
     // Proper Shutdown
     client.disconnect().block();
+    return documents;
   }
 
   public Collection keyspace(String bucket, ConnectMode mode) {
@@ -275,8 +285,14 @@ public final class CouchbaseConnect {
     Cluster cluster;
     if (mode == ConnectMode.PRIMARY) {
       cluster = pCluster;
+      primaryBucket = bucket;
+      primaryScope = scope;
+      primaryCollection = collection;
     } else {
       cluster = xCluster;
+      xdcrBucket = bucket;
+      xdcrScope = scope;
+      xdcrCollection = collection;
     }
     Bucket bucketObj = cluster.bucket(bucket);
     bucketObj.waitUntilReady(Duration.ofSeconds(10));

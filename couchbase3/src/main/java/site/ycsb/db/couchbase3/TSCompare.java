@@ -6,6 +6,7 @@ import org.apache.commons.cli.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -34,7 +35,7 @@ public final class TSCompare {
     Collection collection = db.keyspace(sourceBucket, CouchbaseConnect.ConnectMode.PRIMARY);
     GetResult result = collection.get("usertable::user1000053778378872380");
     System.out.println(result.toString());
-    db.getDocs(sourceBucket, CouchbaseConnect.ConnectMode.PRIMARY);
+    List<DCPDocument> documents = db.getDocs(sourceBucket, CouchbaseConnect.ConnectMode.PRIMARY);
   }
 
   public static void main(String[] args) {
