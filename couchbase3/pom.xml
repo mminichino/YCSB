@@ -32,22 +32,27 @@ LICENSE file.
     <packaging>jar</packaging>
 
     <dependencies>
-        <dependency>
-            <groupId>com.couchbase.client</groupId>
-            <artifactId>java-client</artifactId>
-            <version>3.4.11</version>
-        </dependency>
+      <dependency>
+          <groupId>com.couchbase.client</groupId>
+          <artifactId>java-client</artifactId>
+          <version>3.4.11</version>
+      </dependency>
+      <dependency>
+        <groupId>com.couchbase.client</groupId>
+        <artifactId>dcp-client</artifactId>
+        <version>0.47.0</version>
+      </dependency>
       <dependency>
         <groupId>com.couchbase.client</groupId>
         <artifactId>couchbase-transactions</artifactId>
         <version>1.2.4</version>
       </dependency>
-        <dependency>
-            <groupId>site.ycsb</groupId>
-            <artifactId>core</artifactId>
-            <version>${project.version}</version>
-            <scope>provided</scope>
-        </dependency>
+      <dependency>
+          <groupId>site.ycsb</groupId>
+          <artifactId>core</artifactId>
+          <version>${project.version}</version>
+          <scope>provided</scope>
+      </dependency>
       <dependency>
         <groupId>io.projectreactor</groupId>
         <artifactId>reactor-core</artifactId>
