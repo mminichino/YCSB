@@ -106,6 +106,11 @@ public final class CouchbaseConnect {
         DEFAULT_PROJECT, DEFAULT_DATABASE, DEFAULT_EXTERNAL_MODE, ConnectMode.PRIMARY);
   }
 
+  public void connect(String hostname, String username, String password) {
+    connectCluster(hostname, username, password, true,
+        DEFAULT_PROJECT, DEFAULT_DATABASE, DEFAULT_EXTERNAL_MODE, ConnectMode.PRIMARY);
+  }
+
   public void connect(String hostname, String username, String password, ConnectMode mode) {
     connectCluster(hostname, username, password, true,
         DEFAULT_PROJECT, DEFAULT_DATABASE, DEFAULT_EXTERNAL_MODE, mode);
@@ -271,6 +276,10 @@ public final class CouchbaseConnect {
     // Proper Shutdown
     client.disconnect().block();
     return documents;
+  }
+
+  public Collection keyspace(String bucket) {
+    return connectKeyspace(bucket, "_default", "_default", ConnectMode.PRIMARY);
   }
 
   public Collection keyspace(String bucket, ConnectMode mode) {
