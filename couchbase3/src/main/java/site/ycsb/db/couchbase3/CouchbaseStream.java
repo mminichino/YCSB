@@ -22,6 +22,9 @@ import java.util.stream.StreamSupport;
 
 import static java.util.Objects.requireNonNull;
 
+/**
+ * Couchbase Stream Utility.
+ */
 public class CouchbaseStream {
   private String hostname;
   private String username;

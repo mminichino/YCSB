@@ -1,6 +1,5 @@
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.java.Collection;
 import com.couchbase.client.core.deps.com.google.gson.JsonParser;
 import com.couchbase.client.core.deps.com.google.gson.JsonObject;
 
@@ -27,7 +26,6 @@ public final class TSCompare {
   public static final String TARGET_BUCKET = "target.bucket";
 
   private static void checkTimestamps(Properties properties) throws RuntimeException, InterruptedException {
-    CouchbaseConnect db;
     String sourceHost = properties.getProperty(SOURCE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
     String sourceUser = properties.getProperty(SOURCE_USER, CouchbaseConnect.DEFAULT_USER);
     String sourcePassword = properties.getProperty(SOURCE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
@@ -44,21 +42,15 @@ public final class TSCompare {
     System.out.println("Host: " + sourceHost);
     System.out.println("User: " + sourceUser);
 
-    db = CouchbaseConnect.getInstance();
-
-    db.connect(targetHost, targetUser, targetPassword);
-
-    Collection collection = db.keyspace(sourceBucket);
-
     AtomicLong sourceDocCount = new AtomicLong(0);
     AtomicLong targetDocCount = new AtomicLong(0);
 
     Thread sourceThread = new Thread(() -> {
       System.out.print("Starting source listener\n");
-      CouchbaseStream s_dcp = new CouchbaseStream(sourceHost, sourceUser, sourcePassword, sourceBucket, true);
-      s_dcp.streamDocuments();
-      s_dcp.startToNow();
-      s_dcp.getDrain().forEach(item -> {
+      CouchbaseStream sDcp = new CouchbaseStream(sourceHost, sourceUser, sourcePassword, sourceBucket, true);
+      sDcp.streamDocuments();
+      sDcp.startToNow();
+      sDcp.getDrain().forEach(item -> {
         JsonObject dataObject = JsonParser.parseString(item).getAsJsonObject();
         JsonObject metadata = dataObject.get("meta").getAsJsonObject();
         JsonObject document = dataObject.get("document").getAsJsonObject();
@@ -67,16 +59,16 @@ public final class TSCompare {
         sourceTimeMap.put(id, sourceTime);
         System.out.println("Source => " + id + " s_timestamp: " + sourceTime);
       });
-      s_dcp.stop();
-      sourceDocCount.set(s_dcp.getCount());
+      sDcp.stop();
+      sourceDocCount.set(sDcp.getCount());
     });
 
     Thread targetThread = new Thread(() -> {
       System.out.print("Starting target listener\n");
-      CouchbaseStream t_dcp = new CouchbaseStream(targetHost, targetUser, targetPassword, targetBucket, true);
-      t_dcp.streamDocuments();
-      t_dcp.startToNow();
-      t_dcp.getDrain().forEach(item -> {
+      CouchbaseStream tDcp = new CouchbaseStream(targetHost, targetUser, targetPassword, targetBucket, true);
+      tDcp.streamDocuments();
+      tDcp.startToNow();
+      tDcp.getDrain().forEach(item -> {
         JsonObject dataObject = JsonParser.parseString(item).getAsJsonObject();
         JsonObject metadata = dataObject.get("meta").getAsJsonObject();
         JsonObject document = dataObject.get("document").getAsJsonObject();
@@ -85,8 +77,8 @@ public final class TSCompare {
         targetTimeMap.put(id, targetTime);
         System.out.println("Target => " + id + " s_timestamp: " + targetTime);
       });
-      t_dcp.stop();
-      targetDocCount.set(t_dcp.getCount());
+      tDcp.stop();
+      targetDocCount.set(tDcp.getCount());
     });
 
     sourceThread.start();
@@ -104,97 +96,9 @@ public final class TSCompare {
       long targetTime = targetTimeMap.get(id);
       long timeDiff = targetTime - sourceTime;
       totalTime += timeDiff;
-      if (timeDiff > maxTime) maxTime = timeDiff;
-      totalCount += 1;
-      System.out.printf("Compare => %s :: %d, %d diff %d\n", id, entry.getValue(), targetTimeMap.get(id), timeDiff);
-    }
-
-    average = (double) totalTime / totalCount;
-    System.out.println(sourceDocCount);
-    System.out.println(targetDocCount);
-    System.out.printf("Average: %.02f\n", average);
-    System.out.printf("Maximum: %d\n", maxTime);
-  }
-
-  private static void listenTimestamps(Properties properties) throws RuntimeException, InterruptedException {
-    CouchbaseConnect db;
-    String sourceHost = properties.getProperty(SOURCE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
-    String sourceUser = properties.getProperty(SOURCE_USER, CouchbaseConnect.DEFAULT_USER);
-    String sourcePassword = properties.getProperty(SOURCE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
-    String sourceBucket = properties.getProperty(SOURCE_BUCKET, "ycsb");
-
-    String targetHost = properties.getProperty(TARGET_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
-    String targetUser = properties.getProperty(TARGET_USER, CouchbaseConnect.DEFAULT_USER);
-    String targetPassword = properties.getProperty(TARGET_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
-    String targetBucket = properties.getProperty(TARGET_BUCKET, "ycsb");
-
-    Map<String, Long> sourceTimeMap = new HashMap<>();
-    Map<String, Long> targetTimeMap = new HashMap<>();
-
-    System.out.println("Host: " + sourceHost);
-    System.out.println("User: " + sourceUser);
-
-    db = CouchbaseConnect.getInstance();
-
-    db.connect(targetHost, targetUser, targetPassword);
-
-    Collection collection = db.keyspace(sourceBucket);
-
-    AtomicLong sourceDocCount = new AtomicLong(0);
-    AtomicLong targetDocCount = new AtomicLong(0);
-
-    Thread sourceThread = new Thread(() -> {
-      System.out.print("Starting source listener\n");
-      CouchbaseStream s_dcp = new CouchbaseStream(sourceHost, sourceUser, sourcePassword, sourceBucket, true);
-      s_dcp.streamDocuments();
-      s_dcp.startFromNow();
-      s_dcp.getByCount(100_000).forEach(item -> {
-        JsonObject dataObject = JsonParser.parseString(item).getAsJsonObject();
-        JsonObject metadata = dataObject.get("meta").getAsJsonObject();
-//        JsonObject document = dataObject.get("document").getAsJsonObject();
-        String id = metadata.get("id").getAsString();
-        long sourceTime = metadata.get("timestamp").getAsLong();
-        sourceTimeMap.put(id, sourceTime);
-        System.out.println("Source => " + id + " s_timestamp: " + sourceTime);
-      });
-      s_dcp.stop();
-      sourceDocCount.set(s_dcp.getCount());
-    });
-
-    Thread targetThread = new Thread(() -> {
-      System.out.print("Starting target listener\n");
-      CouchbaseStream t_dcp = new CouchbaseStream(targetHost, targetUser, targetPassword, targetBucket, true);
-      t_dcp.streamDocuments();
-      t_dcp.startFromNow();
-      t_dcp.getByCount(100_000).forEach(item -> {
-        JsonObject dataObject = JsonParser.parseString(item).getAsJsonObject();
-        JsonObject metadata = dataObject.get("meta").getAsJsonObject();
-//        JsonObject document = dataObject.get("document").getAsJsonObject();
-        String id = metadata.get("id").getAsString();
-        long targetTime = metadata.get("timestamp").getAsLong();
-        targetTimeMap.put(id, targetTime);
-        System.out.println("Target => " + id + " s_timestamp: " + targetTime);
-      });
-      t_dcp.stop();
-      targetDocCount.set(t_dcp.getCount());
-    });
-
-    sourceThread.start();
-    targetThread.start();
-    sourceThread.join();
-    targetThread.join();
-
-    long totalCount = 0;
-    long totalTime = 0;
-    long maxTime = 0;
-    double average;
-    for (Map.Entry<String, Long> entry : sourceTimeMap.entrySet()) {
-      String id = entry.getKey();
-      long sourceTime = entry.getValue();
-      long targetTime = targetTimeMap.get(id);
-      long timeDiff = targetTime - sourceTime;
-      totalTime += timeDiff;
-      if (timeDiff > maxTime) maxTime = timeDiff;
+      if (timeDiff > maxTime) {
+        maxTime = timeDiff;
+      }
       totalCount += 1;
       System.out.printf("Compare => %s :: %d, %d diff %d\n", id, entry.getValue(), targetTimeMap.get(id), timeDiff);
     }
@@ -238,7 +142,7 @@ public final class TSCompare {
 
     try {
       System.out.println("Starting");
-      listenTimestamps(properties);
+      checkTimestamps(properties);
     } catch (RuntimeException | InterruptedException e) {
       System.err.println("Error: " + e);
       System.exit(1);
