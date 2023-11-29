@@ -230,71 +230,64 @@ public final class CouchbaseConnect {
     bucketName = bucket;
     scopeName = DEFAULT_SCOPE;
     collectionName = DEFAULT_COLLECTION;
-    return connectKeyspace(ramQuotaCalc(), 1, StorageBackend.COUCHSTORE);
-  }
-
-  public Collection keyspace(String bucket, long quota, int replicas, StorageBackend type)
-      throws CouchbaseConnectException {
-    bucketName = bucket;
-    scopeName = DEFAULT_SCOPE;
-    collectionName = DEFAULT_COLLECTION;
-    return connectKeyspace(quota, replicas, type);
+    return connectKeyspace();
   }
 
   public Collection keyspace(String bucket, String scope) throws CouchbaseConnectException {
     bucketName = bucket;
     scopeName = scope;
     collectionName = DEFAULT_COLLECTION;
-    return connectKeyspace(ramQuotaCalc(), 1, StorageBackend.COUCHSTORE);
+    return connectKeyspace();
   }
 
   public Collection keyspace(String bucket, String scope, String collection) throws CouchbaseConnectException {
     bucketName = bucket;
     scopeName = scope;
     collectionName = collection;
-    return connectKeyspace(ramQuotaCalc(), 1, StorageBackend.COUCHSTORE);
+    return connectKeyspace();
   }
 
-  public Collection keyspace(String bucket, String scope, String collection,
-                             long quota, int replicas, StorageBackend type) throws CouchbaseConnectException {
-    bucketName = bucket;
-    scopeName = scope;
-    collectionName = collection;
-    return connectKeyspace(quota, replicas, type);
+  public void bucketCreate(String bucket, int replicas) {
+    long quota = ramQuotaCalc();
+    bucketCreate(bucket, quota, replicas, StorageBackend.COUCHSTORE);
   }
 
-  public void bucketCreateCapella(String bucket, long quota, int replicas, BucketType type) {
+  public void bucketCreate(String bucket, long quota, int replicas) {
+    bucketCreate(bucket, quota, replicas, StorageBackend.COUCHSTORE);
+  }
 
+  public void bucketCreate(String bucket, int replicas, StorageBackend type) {
+    long quota = ramQuotaCalc();
+    bucketCreate(bucket, quota, replicas, type);
   }
 
   public void bucketCreate(String bucket, long quota, int replicas, StorageBackend type) {
-    try {
-      BucketSettings bucketSettings = BucketSettings.create(bucket)
-          .flushEnabled(false)
-          .replicaIndexes(true)
-          .ramQuotaMB(quota)
-          .numReplicas(replicas)
-          .bucketType(BucketType.COUCHBASE)
-          .storageBackend(type)
-          .conflictResolutionType(ConflictResolutionType.SEQUENCE_NUMBER);
+    if (project != null && capella != null) {
+      capella.createBucket(bucket, quota, replicas, type);
+    } else {
+      try {
+        BucketSettings bucketSettings = BucketSettings.create(bucket)
+            .flushEnabled(false)
+            .replicaIndexes(true)
+            .ramQuotaMB(quota)
+            .numReplicas(replicas)
+            .bucketType(BucketType.COUCHBASE)
+            .storageBackend(type)
+            .conflictResolutionType(ConflictResolutionType.SEQUENCE_NUMBER);
 
-      bucketMgr.createBucket(bucketSettings);
-    } catch (BucketExistsException e) {
-      System.out.println("Bucket already exists");
+        bucketMgr.createBucket(bucketSettings);
+      } catch (BucketExistsException e) {
+        //ignore
+      }
     }
   }
 
-  public Boolean isBucket(String bucket, long quota, int replicas, StorageBackend type) {
+  public Boolean isBucket(String bucket) {
     try {
       bucketMgr.getBucket(bucket);
       return true;
     } catch (BucketNotFoundException e) {
-      if (bucketMode == BucketMode.CREATE) {
-        bucketCreate(bucket, quota, replicas, type);
-        return true;
-      } else {
-        return false;
-      }
+      return false;
     }
   }
 
@@ -309,8 +302,8 @@ public final class CouchbaseConnect {
     return freeMemoryQuota;
   }
 
-  public Collection connectKeyspace(long quota, int replicas, StorageBackend type) throws CouchbaseConnectException {
-    if (isBucket(bucketName, quota, replicas, type)) {
+  public Collection connectKeyspace() throws CouchbaseConnectException {
+    if (isBucket(bucketName)) {
       bucket = cluster.bucket(bucketName);
     } else {
       throw new CouchbaseConnectException("bucket does not exist");

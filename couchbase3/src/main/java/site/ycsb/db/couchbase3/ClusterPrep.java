@@ -8,15 +8,18 @@ public class ClusterPrep {
 
   public static void clusterPrep(String hostname, String username, String password, String bucket,
                                  String project, String database) {
+    CouchbaseConnect db;
     try {
       if (project == null) {
-        CouchbaseConnect db = new CouchbaseConnect(hostname, username, password);
+        db = new CouchbaseConnect(hostname, username, password);
       } else {
-        CouchbaseConnect db = new CouchbaseConnect(hostname, username, password, project, database);
+        db = new CouchbaseConnect(hostname, username, password, project, database);
       }
     } catch (CouchbaseConnectException e) {
       throw new RuntimeException(e);
     }
+
+    db.bucketCreate(bucket, 1);
   }
 
   public static void main(String[] args) {

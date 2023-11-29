@@ -62,12 +62,18 @@ public class CouchbaseCapella {
   }
 
   public String getOrganizationId() {
-    List<JsonElement> result = capella.getCapella("/v4/organizations");
+    String endpoint = "/v4/organizations";
+
+    List<JsonElement> result = capella.getCapella(endpoint);
     return result.get(0).getAsJsonObject().get("id").getAsString();
   }
 
   public String getProjectId(String project) {
-    List<JsonElement> result = capella.getCapella("/v4/organizations/" + organizationId + "/projects");
+    String endpoint = "/v4/organizations/" +
+        organizationId +
+        "/projects";
+
+    List<JsonElement> result = capella.getCapella(endpoint);
     for (JsonElement entry : result) {
       if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), project)) {
         return entry.getAsJsonObject().get("id").getAsString();
@@ -77,8 +83,13 @@ public class CouchbaseCapella {
   }
 
   public String getDatabaseId(String database) {
-    List<JsonElement> result = capella.getCapella("/v4/organizations/"
-        + organizationId + "/projects/" + projectId + "/clusters");
+    String endpoint = "/v4/organizations/" +
+        organizationId +
+        "/projects/" +
+        projectId +
+        "/clusters";
+
+    List<JsonElement> result = capella.getCapella(endpoint);
     for (JsonElement entry : result) {
       if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), database)) {
         return entry.getAsJsonObject().get("id").getAsString();
@@ -88,8 +99,15 @@ public class CouchbaseCapella {
   }
 
   public Boolean isBucket(String bucket) {
-    List<JsonElement> result = capella.getCapella("/v4/organizations/"
-        + organizationId + "/projects/" + projectId + "/clusters/" + databaseId + "/buckets");
+    String endpoint = "/v4/organizations/" +
+        organizationId +
+        "/projects/" +
+        projectId +
+        "/clusters/" +
+        databaseId +
+        "/buckets";
+
+    List<JsonElement> result = capella.getCapella(endpoint);
     for (JsonElement entry : result) {
       if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), bucket)) {
         return true;
@@ -102,15 +120,30 @@ public class CouchbaseCapella {
     if (isBucket(bucket)) {
       return;
     }
+
+    String endpoint = "/v4/organizations/" +
+        organizationId +
+        "/projects/" +
+        projectId +
+        "/clusters/" +
+        databaseId +
+        "/buckets";
+
     JsonObject parameters = new JsonObject();
     parameters.addProperty("name", bucket);
     parameters.addProperty("type", "couchbase");
     parameters.addProperty("storageBackend", type == StorageBackend.COUCHSTORE ? "couchstore" : "magma");
     parameters.addProperty("memoryAllocationInMb", quota);
     parameters.addProperty("bucketConflictResolution", "seqno");
-    parameters.addProperty("durabilityLevel", bucket);
+    parameters.addProperty("durabilityLevel", "none");
     parameters.addProperty("replicas", replicas);
     parameters.addProperty("flush", false);
     parameters.addProperty("timeToLiveInSeconds", 0);
+
+    try {
+      capella.postJSON(endpoint, parameters);
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
   }
 }

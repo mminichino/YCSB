@@ -47,6 +47,7 @@ public class RESTInterface {
   private SSLContext sslContext;
   public static final String DEFAULT_HTTP_PREFIX = "http://";
   public static final String DEFAULT_HTTPS_PREFIX = "https://";
+  public static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
   public RESTInterface(String hostname, String username, String password, Boolean useSsl, Integer port) {
     this.hostname = hostname;
@@ -200,5 +201,21 @@ public class RESTInterface {
     }
     data.addAll(response.get("data").getAsJsonArray().asList());
     return data;
+  }
+
+  public String postJSON(String endpoint, JsonObject json) throws RESTException {
+    String url = urlPrefix + endpoint;
+    RequestBody body = RequestBody.create(json.toString(), JSON);
+    Request request = new Request.Builder()
+        .url(url)
+        .post(body)
+        .build();
+
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) throw new RESTException(response.code(), response.toString());
+      return response.body() != null ? response.body().string() : null;
+    } catch (IOException e) {
+      throw new RESTException(e.getMessage());
+    }
   }
 }
