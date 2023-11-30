@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import okhttp3.*;
+import okhttp3.internal.Util;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -27,6 +28,10 @@ class RESTException extends Exception {
 
   public RESTException(String message) {
     super(message);
+  }
+
+  public Integer getCode() {
+    return code;
   }
 }
 
@@ -214,6 +219,21 @@ public class RESTInterface {
     try (Response response = client.newCall(request).execute()) {
       if (!response.isSuccessful()) throw new RESTException(response.code(), response.toString());
       return response.body() != null ? response.body().string() : null;
+    } catch (IOException e) {
+      throw new RESTException(e.getMessage());
+    }
+  }
+
+  public void postEndpoint(String endpoint) throws RESTException {
+    String url = urlPrefix + endpoint;
+    RequestBody body = RequestBody.create(new JsonObject().toString(), JSON);
+    Request request = new Request.Builder()
+        .url(url)
+        .post(body)
+        .build();
+
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) throw new RESTException(response.code(), response.toString());
     } catch (IOException e) {
       throw new RESTException(e.getMessage());
     }
