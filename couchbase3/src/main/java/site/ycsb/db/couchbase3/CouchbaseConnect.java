@@ -462,7 +462,7 @@ public final class CouchbaseConnect {
       return;
     }
 
-    String endpoint = "/settings/replications/" + uuid + "%2F" + source + "%2F" + target;
+    String endpoint = "/controller/cancelXDCR/" + uuid + "%2F" + source + "%2F" + target;
 
     try {
       rest.deleteEndpoint(endpoint);
