@@ -28,7 +28,8 @@ LICENSE file.
     </parent>
 
     <artifactId>couchbase3-binding</artifactId>
-    <name>Couchbase Java SDK 3.x Binding</name>
+    <name>Couchbase Java SDK3 Binding</name>
+    <version>2.0.0b7</version>
     <packaging>jar</packaging>
 
     <dependencies>
