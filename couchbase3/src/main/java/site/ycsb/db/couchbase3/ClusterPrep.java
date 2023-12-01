@@ -25,8 +25,9 @@ public final class ClusterPrep {
   public static final String TARGET_PROJECT = "xdcr.project";
   public static final String TARGET_DATABASE = "xdcr.database";
   public static final String TARGET_EVENTING = "xdcr.eventing";
+  public static final String TARGET_EXTERNAL = "xdcr.external";
 
-  private static void prepCluster(Properties properties) {
+  private static void prepCluster(Properties properties, Boolean removeFlag) {
     String sourceHost = properties.getProperty(SOURCE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
     String sourceUser = properties.getProperty(SOURCE_USER, CouchbaseConnect.DEFAULT_USER);
     String sourcePassword = properties.getProperty(SOURCE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
@@ -42,13 +43,29 @@ public final class ClusterPrep {
     String targetProject = properties.getProperty(TARGET_PROJECT, null);
     String targetDatabase = properties.getProperty(TARGET_DATABASE, null);
     String targetEventing = properties.getProperty(TARGET_EVENTING, null);
+    Boolean targetExternal = properties.getProperty(TARGET_EXTERNAL, "false").equals("true");
 
-    System.out.println("Preparing cluster " + sourceHost);
-    doPrep(sourceHost, sourceUser, sourcePassword, sourceBucket, sourceProject, sourceDatabase, sourceEventing);
+    if (!removeFlag) {
+      System.out.println("Preparing cluster " + sourceHost);
+      doPrep(sourceHost, sourceUser, sourcePassword, sourceBucket, sourceProject, sourceDatabase, sourceEventing);
 
-    if (targetHost != null) {
-      System.out.println("Preparing XDCR target cluster " + targetHost);
-      doPrep(targetHost, targetUser, targetPassword, targetBucket, targetProject, targetDatabase, targetEventing);
+      if (targetHost != null) {
+        System.out.println("Preparing XDCR target cluster " + targetHost);
+        doPrep(targetHost, targetUser, targetPassword, targetBucket, targetProject, targetDatabase, targetEventing);
+        System.out.println("Configuring replication");
+        doReplicate(sourceHost, sourceBucket, sourceUser, sourcePassword,
+            targetHost, targetBucket, targetUser, targetPassword, targetExternal);
+      }
+    } else {
+      if (targetHost != null) {
+        System.out.println("Removing replication");
+        doDropReplication(sourceHost, sourceBucket, sourceUser, sourcePassword, targetHost, targetBucket);
+        System.out.println("Cleaning XDCR target cluster " + targetHost);
+        doDrop(targetHost, targetUser, targetPassword, targetBucket, targetProject, targetDatabase, targetEventing);
+      }
+
+      System.out.println("Cleaning cluster " + sourceHost);
+      doDrop(sourceHost, sourceUser, sourcePassword, sourceBucket, sourceProject, sourceDatabase, sourceEventing);
     }
   }
 
@@ -85,6 +102,53 @@ public final class ClusterPrep {
     }
   }
 
+  private static void doReplicate(String sourceHost, String sourceBucket, String sourceUser, String sourcePassword,
+                                  String targetHost, String targetBucket, String targetUser, String targetPassword,
+                                  Boolean external) {
+    CouchbaseConnect db;
+    try {
+      db = new CouchbaseConnect(sourceHost, sourceUser, sourcePassword);
+    } catch (CouchbaseConnectException e) {
+      throw new RuntimeException(e);
+    }
+
+    db.createXDCRReference(targetHost, targetUser, targetPassword, external);
+    db.createXDCRReplication(targetHost, sourceBucket, targetBucket);
+  }
+
+  private static void doDropReplication(String sourceHost, String sourceBucket, String sourceUser, String sourcePassword,
+                                        String targetHost, String targetBucket) {
+    CouchbaseConnect db;
+    try {
+      db = new CouchbaseConnect(sourceHost, sourceUser, sourcePassword);
+    } catch (CouchbaseConnectException e) {
+      throw new RuntimeException(e);
+    }
+
+    db.deleteXDCRReplication(targetHost, sourceBucket, targetBucket);
+    db.deleteXDCRReference(targetHost);
+  }
+
+  private static void doDrop(String hostname, String username, String password, String bucket,
+                             String project, String database, String function) {
+    CouchbaseConnect db;
+    try {
+      if (project == null) {
+        db = new CouchbaseConnect(hostname, username, password);
+      } else {
+        db = new CouchbaseConnect(hostname, username, password, project, database);
+      }
+    } catch (CouchbaseConnectException e) {
+      throw new RuntimeException(e);
+    }
+
+    if (function != null) {
+      db.dropBucket("eventing");
+    }
+
+    db.dropBucket(bucket);
+  }
+
   public static void main(String[] args) {
     Options options = new Options();
     CommandLine cmd = null;
@@ -93,6 +157,10 @@ public final class ClusterPrep {
     Option source = new Option("p", "properties", true, "source properties");
     source.setRequired(true);
     options.addOption(source);
+
+    Option remove = new Option("R", "remove", false, "Remove assets");
+    remove.setRequired(false);
+    options.addOption(remove);
 
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
@@ -115,7 +183,7 @@ public final class ClusterPrep {
     }
 
     try {
-      prepCluster(properties);
+      prepCluster(properties, cmd.hasOption("remove"));
     } catch (Exception e) {
       System.err.println("Error: " + e);
       System.exit(1);

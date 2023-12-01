@@ -16,9 +16,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 
 class RESTException extends Exception {
   private Integer code = 0;
@@ -278,6 +276,47 @@ public class RESTInterface {
     Request request = new Request.Builder()
         .url(url)
         .post(body)
+        .header("Authorization", credential)
+        .build();
+
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
+    } catch (IOException e) {
+      throw new RESTException(e.getMessage());
+    }
+  }
+
+  public void postParameters(String endpoint, Map<String, String> params) throws RESTException {
+    String url = urlPrefix + endpoint;
+    RequestBody body = RequestBody.create(new JsonObject().toString(), JSON);
+
+    HttpUrl.Builder httpBuilder = Objects.requireNonNull(HttpUrl.parse(url)).newBuilder();
+    for(Map.Entry<String, String> param : params.entrySet()) {
+      httpBuilder.addQueryParameter(param.getKey(), param.getValue());
+    }
+
+    Request request = new Request.Builder()
+        .url(httpBuilder.build())
+        .post(body)
+        .header("Authorization", credential)
+        .build();
+
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
+    } catch (IOException e) {
+      throw new RESTException(e.getMessage());
+    }
+  }
+
+  public void deleteEndpoint(String endpoint) throws RESTException {
+    String url = urlPrefix + endpoint;
+    Request request = new Request.Builder()
+        .url(url)
+        .delete()
         .header("Authorization", credential)
         .build();
 

@@ -93,6 +93,24 @@ public class CouchbaseCapella {
     return null;
   }
 
+  public String getBucketId(String bucket) {
+    String endpoint = "/v4/organizations/" +
+        organizationId +
+        "/projects/" +
+        projectId +
+        "/clusters/" +
+        databaseId +
+        "/buckets";
+
+    List<JsonElement> result = capella.getCapella(endpoint);
+    for (JsonElement entry : result) {
+      if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), bucket)) {
+        return entry.getAsJsonObject().get("id").getAsString();
+      }
+    }
+    return null;
+  }
+
   public Boolean isBucket(String bucket) {
     String endpoint = "/v4/organizations/" +
         organizationId +
@@ -137,6 +155,29 @@ public class CouchbaseCapella {
 
     try {
       capella.postJSON(endpoint, parameters);
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public void dropBucket(String bucket) {
+    if (!isBucket(bucket)) {
+      return;
+    }
+
+    String bucketId = getBucketId(bucket);
+
+    String endpoint = "/v4/organizations/" +
+        organizationId +
+        "/projects/" +
+        projectId +
+        "/clusters/" +
+        databaseId +
+        "/buckets/" +
+        bucketId;
+
+    try {
+      capella.deleteEndpoint(endpoint);
     } catch (RESTException e) {
       throw new RuntimeException(e);
     }

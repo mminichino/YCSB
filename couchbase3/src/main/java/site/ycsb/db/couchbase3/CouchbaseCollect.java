@@ -130,7 +130,35 @@ public class CouchbaseCollect extends RemoteStatistics {
             output.append(String.format("XDCRLag: %.1f ", average));
           }
         } catch (RESTException e) {
-          throw new RuntimeException(e);
+          if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        try {
+          String endpoint = "/pools/default/buckets/ycsb/stats/replications%2F" +
+              finalRemoteUUID +
+              "%2F" +
+              bucket +
+              "%2F" +
+              bucket +
+              "%2Fbandwidth_usage";
+          JsonObject data = rest.getJSON(endpoint);
+          ArrayList<Long> values = new ArrayList<>();
+          Gson gson = new Gson();
+          if (data.has("nodeStats")) {
+            for (Map.Entry<String, JsonElement> entry : data.get("nodeStats").getAsJsonObject().entrySet()) {
+              Type listType = new TypeToken<ArrayList<Long>>() {}.getType();
+              ArrayList<Long> nodeList = gson.fromJson(entry.getValue(), listType);
+              values.addAll(nodeList);
+            }
+            double average = averageArray(values);
+            output.append(String.format("XDCRBdw: %.1f ", average));
+          }
+        } catch (RESTException e) {
+          if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
+            throw new RuntimeException(e);
+          }
         }
       }
 

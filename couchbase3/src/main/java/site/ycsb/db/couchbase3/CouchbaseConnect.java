@@ -30,9 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -338,6 +336,18 @@ public final class CouchbaseConnect {
     }
   }
 
+  public void dropBucket(String bucket) {
+    if (project != null && capella != null) {
+      capella.dropBucket(bucket);
+    } else {
+      try {
+        bucketMgr.dropBucket(bucket);
+      } catch (BucketNotFoundException e) {
+        //ignore
+      }
+    }
+  }
+
   public Boolean isBucket(String bucket) {
     try {
       bucketMgr.getBucket(bucket);
@@ -368,6 +378,117 @@ public final class CouchbaseConnect {
     scope = bucket.scope(scopeName);
     collection = scope.collection(collectionName);
     return collection;
+  }
+
+  public void createXDCRReference(String hostname, String username, String password, Boolean external) {
+    Map<String, String> parameters = new HashMap<>();
+
+    if (getXDCRReference(hostname) != null) {
+      return;
+    }
+
+    parameters.put("name", hostname);
+    parameters.put("hostname", hostname);
+    parameters.put("username", username);
+    parameters.put("password", password);
+    if (external) {
+      parameters.put("network_type", "external");
+    }
+
+    try {
+      String endpoint = "/pools/default/remoteClusters";
+      rest.postParameters(endpoint, parameters);
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public String getXDCRReference(String hostname) {
+    try {
+      JsonArray remotes = rest.getJSONArray("/pools/default/remoteClusters");
+      for (JsonElement entry : remotes) {
+        if (entry.getAsJsonObject().get("name").getAsString().equals(hostname)) {
+          return entry.getAsJsonObject().get("uuid").getAsString();
+        }
+      }
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
+    return null;
+  }
+
+  public void deleteXDCRReference(String hostname) {
+    if (getXDCRReference(hostname) == null) {
+      return;
+    }
+
+    String endpoint = "/pools/default/remoteClusters/" + hostname;
+
+    try {
+      rest.deleteEndpoint(endpoint);
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public void createXDCRReplication(String remote, String source, String target) {
+    Map<String, String> parameters = new HashMap<>();
+
+    if (isXDCRReplicating(remote, source, target)) {
+      return;
+    }
+
+    parameters.put("replicationType", "continuous");
+    parameters.put("fromBucket", source);
+    parameters.put("toCluster", remote);
+    parameters.put("toBucket", target);
+
+    try {
+      String endpoint = "/controller/createReplication";
+      rest.postParameters(endpoint, parameters);
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public void deleteXDCRReplication(String remote, String source, String target) {
+    if (!isXDCRReplicating(remote, source, target)) {
+      return;
+    }
+
+    String uuid = getXDCRReference(remote);
+
+    if (uuid == null) {
+      return;
+    }
+
+    String endpoint = "/settings/replications/" + uuid + "%2F" + source + "%2F" + target;
+
+    try {
+      rest.deleteEndpoint(endpoint);
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public Boolean isXDCRReplicating(String remote, String source, String target) {
+    String uuid = getXDCRReference(remote);
+
+    if (uuid == null) {
+      return false;
+    }
+
+    String endpoint = "/settings/replications/" + uuid + "%2F" + source + "%2F" + target;
+
+    try {
+      rest.getJSON(endpoint);
+      return true;
+    } catch (RESTException e) {
+      if (ErrorCode.valueOf(e.getCode()) == ErrorCode.BADREQUEST) {
+        return false;
+      }
+      throw new RuntimeException(e);
+    }
   }
 
   public Boolean isEventingFunction(String name) throws CouchbaseConnectException {
