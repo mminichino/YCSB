@@ -1,11 +1,12 @@
 package site.ycsb.db.couchbase3;
 
+import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import okhttp3.*;
-import okhttp3.internal.Util;
+import okhttp3.logging.HttpLoggingInterceptor;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -16,6 +17,7 @@ import java.net.URL;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 class RESTException extends Exception {
@@ -50,6 +52,8 @@ public class RESTInterface {
   private OkHttpClient client;
   private Authenticator authenticator;
   private SSLContext sslContext;
+  private String credential;
+  private boolean enableDebug = false;
   public static final String DEFAULT_HTTP_PREFIX = "http://";
   public static final String DEFAULT_HTTPS_PREFIX = "https://";
   public static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
@@ -134,23 +138,17 @@ public class RESTInterface {
     clientBuilder.sslSocketFactory(sslContext.getSocketFactory(), (X509TrustManager) trustAllCerts[0]);
     clientBuilder.hostnameVerifier((hostname, session) -> true);
 
-    authenticator = (route, response) -> {
-      if (response.request().header("Authorization") != null) {
-        return null;
-      }
-      if (token != null ) {
-        return response.request().newBuilder()
-            .header("Authorization", "Bearer " + token)
-            .build();
-      } else {
-        String credential = Credentials.basic(username, password);
-        return response.request().newBuilder()
-            .header("Authorization", credential)
-            .build();
-      }
-    };
+    if (token != null) {
+      credential = "Bearer " + token;
+    } else {
+      credential = Credentials.basic(username, password);
+    }
 
-    clientBuilder.authenticator(authenticator);
+    if (enableDebug) {
+      HttpLoggingInterceptor logging = new HttpLoggingInterceptor();
+      logging.setLevel(HttpLoggingInterceptor.Level.HEADERS);
+      clientBuilder.addInterceptor(logging);
+    }
 
     client = clientBuilder.build();
   }
@@ -159,18 +157,65 @@ public class RESTInterface {
     String url = urlPrefix + endpoint;
     Request request = new Request.Builder()
         .url(url)
+        .header("Authorization", credential)
         .build();
 
     try (Response response = client.newCall(request).execute()) {
-      if (!response.isSuccessful()) throw new RESTException(response.code(), response.toString());
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
       if (response.body() != null) {
         String responseText = response.body().string();
-        return JsonParser.parseString(responseText).getAsJsonObject();
+        Gson gson = new Gson();
+        return gson.fromJson(responseText, JsonObject.class);
       }
     } catch (IOException e) {
       throw new RESTException(e.getMessage());
     }
     return new JsonObject();
+  }
+
+  public JsonArray getJSONArray(String endpoint) throws RESTException {
+    String url = urlPrefix + endpoint;
+    Request request = new Request.Builder()
+        .url(url)
+        .header("Authorization", credential)
+        .build();
+
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
+      if (response.body() != null) {
+        String responseText = response.body().string();
+        Gson gson = new Gson();
+        return gson.fromJson(responseText, JsonArray.class);
+      }
+    } catch (IOException e) {
+      throw new RESTException(e.getMessage());
+    }
+    return new JsonArray();
+  }
+
+  public HashMap<?, ?> getMap(String endpoint) throws RESTException {
+    String url = urlPrefix + endpoint;
+    Request request = new Request.Builder()
+        .url(url)
+        .header("Authorization", credential)
+        .build();
+
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
+      if (response.body() != null) {
+        String responseText = response.body().string();
+        return new ObjectMapper().readValue(responseText, HashMap.class);
+      }
+    } catch (IOException e) {
+      throw new RESTException(e.getMessage());
+    }
+    return new HashMap<>();
   }
 
   public List<JsonElement> getCapella(String endpoint) {
@@ -214,10 +259,13 @@ public class RESTInterface {
     Request request = new Request.Builder()
         .url(url)
         .post(body)
+        .header("Authorization", credential)
         .build();
 
     try (Response response = client.newCall(request).execute()) {
-      if (!response.isSuccessful()) throw new RESTException(response.code(), response.toString());
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
       return response.body() != null ? response.body().string() : null;
     } catch (IOException e) {
       throw new RESTException(e.getMessage());
@@ -230,10 +278,13 @@ public class RESTInterface {
     Request request = new Request.Builder()
         .url(url)
         .post(body)
+        .header("Authorization", credential)
         .build();
 
     try (Response response = client.newCall(request).execute()) {
-      if (!response.isSuccessful()) throw new RESTException(response.code(), response.toString());
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
     } catch (IOException e) {
       throw new RESTException(e.getMessage());
     }

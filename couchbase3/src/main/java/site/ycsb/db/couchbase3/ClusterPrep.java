@@ -2,12 +2,58 @@ package site.ycsb.db.couchbase3;
 
 import org.apache.commons.cli.*;
 
-public class ClusterPrep {
-  public static final String DEFAULT_USER = "Administrator";
-  public static final String DEFAULT_PASSWORD = "password";
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Properties;
 
-  public static void clusterPrep(String hostname, String username, String password, String bucket,
-                                 String project, String database, String function) {
+/**
+ * Prepare Cluster for Testing.
+ */
+public final class ClusterPrep {
+  public static final String SOURCE_HOST = "couchbase.hostname";
+  public static final String SOURCE_USER = "couchbase.username";
+  public static final String SOURCE_PASSWORD = "couchbase.password";
+  public static final String SOURCE_BUCKET = "couchbase.bucket";
+  public static final String SOURCE_PROJECT = "couchbase.project";
+  public static final String SOURCE_DATABASE = "couchbase.database";
+  public static final String SOURCE_EVENTING = "couchbase.eventing";
+  public static final String TARGET_HOST = "xdcr.hostname";
+  public static final String TARGET_USER = "xdcr.username";
+  public static final String TARGET_PASSWORD = "xdcr.password";
+  public static final String TARGET_BUCKET = "xdcr.bucket";
+  public static final String TARGET_PROJECT = "xdcr.project";
+  public static final String TARGET_DATABASE = "xdcr.database";
+  public static final String TARGET_EVENTING = "xdcr.eventing";
+
+  private static void prepCluster(Properties properties) {
+    String sourceHost = properties.getProperty(SOURCE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
+    String sourceUser = properties.getProperty(SOURCE_USER, CouchbaseConnect.DEFAULT_USER);
+    String sourcePassword = properties.getProperty(SOURCE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
+    String sourceBucket = properties.getProperty(SOURCE_BUCKET, "ycsb");
+    String sourceProject = properties.getProperty(SOURCE_PROJECT, null);
+    String sourceDatabase = properties.getProperty(SOURCE_DATABASE, null);
+    String sourceEventing = properties.getProperty(SOURCE_EVENTING, null);
+
+    String targetHost = properties.getProperty(TARGET_HOST, null);
+    String targetUser = properties.getProperty(TARGET_USER, CouchbaseConnect.DEFAULT_USER);
+    String targetPassword = properties.getProperty(TARGET_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
+    String targetBucket = properties.getProperty(TARGET_BUCKET, "ycsb");
+    String targetProject = properties.getProperty(TARGET_PROJECT, null);
+    String targetDatabase = properties.getProperty(TARGET_DATABASE, null);
+    String targetEventing = properties.getProperty(TARGET_EVENTING, null);
+
+    System.out.println("Preparing cluster " + sourceHost);
+    doPrep(sourceHost, sourceUser, sourcePassword, sourceBucket, sourceProject, sourceDatabase, sourceEventing);
+
+    if (targetHost != null) {
+      System.out.println("Preparing XDCR target cluster " + targetHost);
+      doPrep(targetHost, targetUser, targetPassword, targetBucket, targetProject, targetDatabase, targetEventing);
+    }
+  }
+
+  private static void doPrep(String hostname, String username, String password, String bucket,
+                             String project, String database, String function) {
     CouchbaseConnect db;
     try {
       if (project == null) {
@@ -42,41 +88,11 @@ public class ClusterPrep {
   public static void main(String[] args) {
     Options options = new Options();
     CommandLine cmd = null;
-    String hostname;
-    String bucket;
-    String password;
-    String username;
-    String project = null;
-    String database = null;
-    String function = null;
+    Properties properties = new Properties();
 
-    Option hostOpt = new Option("h", "hostname", true, "Host name");
-    hostOpt.setRequired(true);
-    options.addOption(hostOpt);
-
-    Option userOpt = new Option("u", "user", true, "User name");
-    userOpt.setRequired(false);
-    options.addOption(userOpt);
-
-    Option passOpt = new Option("p", "password", true, "Password");
-    passOpt.setRequired(false);
-    options.addOption(passOpt);
-
-    Option bucketOpt = new Option("b", "bucket", true, "Bucket");
-    bucketOpt.setRequired(true);
-    options.addOption(bucketOpt);
-
-    Option projectOpt = new Option("P", "project", true, "Project");
-    projectOpt.setRequired(false);
-    options.addOption(projectOpt);
-
-    Option databaseOpt = new Option("D", "database", true, "Database");
-    databaseOpt.setRequired(false);
-    options.addOption(databaseOpt);
-
-    Option eventingOpt = new Option("E", "eventing", true, "Eventing function");
-    eventingOpt.setRequired(false);
-    options.addOption(eventingOpt);
+    Option source = new Option("p", "properties", true, "source properties");
+    source.setRequired(true);
+    options.addOption(source);
 
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
@@ -89,33 +105,24 @@ public class ClusterPrep {
       System.exit(1);
     }
 
-    hostname = cmd.getOptionValue("hostname");
-    bucket = cmd.getOptionValue("bucket");
-    if (cmd.hasOption("user")) {
-      username = cmd.getOptionValue("user");
-    } else {
-      username = DEFAULT_USER;
-    }
-    if (cmd.hasOption("password")) {
-      password = cmd.getOptionValue("password");
-    } else {
-      password = DEFAULT_PASSWORD;
-    }
-    if (cmd.hasOption("project")) {
-      project = cmd.getOptionValue("project");
-    }
-    if (cmd.hasOption("database")) {
-      database = cmd.getOptionValue("database");
-    }
-    if (cmd.hasOption("eventing")) {
-      function = cmd.getOptionValue("eventing");
+    String propFile = cmd.getOptionValue("properties");
+
+    try {
+      properties.load(Files.newInputStream(Paths.get(propFile)));
+    } catch (IOException e) {
+      System.out.println("can not open properties file: " + e.getMessage());
+      System.exit(1);
     }
 
     try {
-      clusterPrep(hostname, username, password, bucket, project, database, function);
+      prepCluster(properties);
     } catch (Exception e) {
       System.err.println("Error: " + e);
       System.exit(1);
     }
+  }
+
+  private ClusterPrep() {
+    super();
   }
 }

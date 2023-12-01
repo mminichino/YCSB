@@ -1,24 +1,20 @@
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
-import okhttp3.*;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
 import org.slf4j.LoggerFactory;
 import site.ycsb.measurements.RemoteStatistics;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-import java.io.IOException;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
+import java.lang.reflect.Type;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -33,24 +29,8 @@ public class CouchbaseCollect extends RemoteStatistics {
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
   private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
   private ScheduledFuture<?> apiHandle = null;
-  private final String dateFormat = "yyyy-MM-dd HH:mm:ss";
+  private final String dateFormat = "yy-MM-dd'T'HH:mm:ss";
   private final SimpleDateFormat timeStampFormat = new SimpleDateFormat(dateFormat);
-  private final TrustManager[] trustAllCerts = new TrustManager[]{
-      new X509TrustManager() {
-        @Override
-        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {
-        }
-
-        @Override
-        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {
-        }
-
-        @Override
-        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-          return new java.security.cert.X509Certificate[]{};
-        }
-      }
-  };
 
   @Override
   public void init() {
@@ -59,98 +39,103 @@ public class CouchbaseCollect extends RemoteStatistics {
 
   @Override
   public void startCollectionThread(String hostName, String userName, String password, String bucket, Boolean tls) {
-    String prefix;
-    String port;
+    int port;
+    String remoteUUID = null;
+
     if (tls) {
-      prefix = "https";
-      port = "18091";
+      port = 18091;
     } else {
-      prefix = "http";
-      port = "8091";
+      port = 8091;
     }
-    String urlSystem = String.format("%s://%s:%s/pools/default", prefix, hostName, port);
-    String urlBucket = String.format("%s://%s:%s/pools/default/buckets/%s/stats", prefix, hostName, port, bucket);
-    SSLContext sslContext;
+
+    RESTInterface rest = new RESTInterface(hostName, userName, password, tls, port);
+
     try {
-      sslContext = SSLContext.getInstance("SSL");
-      sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
-    } catch (NoSuchAlgorithmException | KeyManagementException e) {
-      LOGGER.error(e.getMessage(), e);
-      return;
+      JsonArray remotes = rest.getJSONArray("/pools/default/remoteClusters");
+      if (!remotes.isEmpty()) {
+        remoteUUID = remotes.get(0).getAsJsonObject().get("uuid").getAsString();
+      }
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
     }
-    final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+
+    String finalRemoteUUID = remoteUUID;
 
     STATISTICS.info(String.format("==== Begin Cluster Collection %s ====\n", timeStampFormat.format(new Date())));
 
-    Runnable callApi = new Runnable() {
-      public void run() {
-        OkHttpClient client = new OkHttpClient.Builder()
-            .sslSocketFactory(sslSocketFactory, (X509TrustManager) trustAllCerts[0])
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .build();
-        String credential = Credentials.basic(userName, password);
-        StringBuilder output = new StringBuilder();
+    Runnable callApi = () -> {
+      StringBuilder output = new StringBuilder();
+      String timeStamp = timeStampFormat.format(new Date());
+      output.append(String.format("%s ", timeStamp));
 
-        Request sysRequest = new Request.Builder()
-            .url(urlSystem)
-            .header("Authorization", credential)
-            .build();
-
-        try {
-          ResponseBody response = client.newCall(sysRequest).execute().body();
-          if (response != null) {
-            double cpu = 0;
-            double mem = 0;
-            double free = 0;
-            int count = 0;
-            HashMap<?, ?> data = new ObjectMapper().readValue(response.string(), HashMap.class);
-            ArrayList<?> nodeList = (ArrayList<?>) data.get("nodes");
-            for (Object element : nodeList) {
-              LinkedHashMap<?, ?> sysEntry = (LinkedHashMap<?, ?>) element;
-              LinkedHashMap<?, ?> systemStats = (LinkedHashMap<?, ?>) sysEntry.get("systemStats");
-              cpu += wildCardToDouble(systemStats.get("cpu_utilization_rate"));
-              mem += wildCardToDouble(systemStats.get("mem_total"));
-              free += wildCardToDouble(systemStats.get("mem_free"));
-              count++;
-            }
-            output.append(String.format("CPU: %.1f Mem: %s Free: %s ",
-                cpu / count, formatDataSize(mem), formatDataSize(free)));
-          }
-        } catch (IOException i) {
-          output.append(String.format(" ** Error: %s", i.getMessage()));
-        } catch (Exception e) {
-          LOGGER.error(e.getMessage(), e);
+      try {
+        double cpu = 0;
+        double mem = 0;
+        double free = 0;
+        int count = 0;
+        HashMap<?, ?> data = rest.getMap("/pools/default");
+        ArrayList<?> nodeList = (ArrayList<?>) data.get("nodes");
+        for (Object element : nodeList) {
+          LinkedHashMap<?, ?> sysEntry = (LinkedHashMap<?, ?>) element;
+          LinkedHashMap<?, ?> systemStats = (LinkedHashMap<?, ?>) sysEntry.get("systemStats");
+          cpu += wildCardToDouble(systemStats.get("cpu_utilization_rate"));
+          mem += wildCardToDouble(systemStats.get("mem_total"));
+          free += wildCardToDouble(systemStats.get("mem_free"));
+          count++;
         }
-
-        Request bucketRequest = new Request.Builder()
-            .url(urlBucket)
-            .header("Authorization", credential)
-            .build();
-
-        try {
-          ResponseBody response = client.newCall(bucketRequest).execute().body();
-          if (response != null) {
-            HashMap<?, ?> data = new ObjectMapper().readValue(response.string(), HashMap.class);
-            LinkedHashMap<?, ?> op = (LinkedHashMap<?, ?>) data.get("op");
-            LinkedHashMap<?, ?> samples = (LinkedHashMap<?, ?>) op.get("samples");
-
-            Map<String, String> itemsToGet = createBucketStatMap();
-            for (Map.Entry<String, String> dataPoint : itemsToGet.entrySet()) {
-              ArrayList<?> dpList = (ArrayList<?>) samples.get(dataPoint.getValue());
-              double average = averageArray(dpList);
-              output.append(String.format("%s: %.1f ", dataPoint.getKey(), average));
-            }
-          }
-        } catch (IOException i) {
-          output.append(String.format(" ** Error: %s", i.getMessage()));
-        } catch (Exception e) {
-          LOGGER.error(e.getMessage(), e);
-        }
-        STATISTICS.info(String.format("%s\n", output));
-        output.delete(0, output.length());
+        output.append(String.format("CPU: %.1f Mem: %s Free: %s ",
+            cpu / count, formatDataSize(mem), formatDataSize(free)));
+      } catch (RESTException i) {
+        output.append(String.format(" ** Error: %s", i.getMessage()));
+      } catch (Exception e) {
+        LOGGER.error(e.getMessage(), e);
       }
+
+      try {
+        HashMap<?, ?> data = rest.getMap("/pools/default/buckets/" + bucket + "/stats");
+        LinkedHashMap<?, ?> op = (LinkedHashMap<?, ?>) data.get("op");
+        LinkedHashMap<?, ?> samples = (LinkedHashMap<?, ?>) op.get("samples");
+
+        Map<String, String> itemsToGet = createBucketStatMap();
+        for (Map.Entry<String, String> dataPoint : itemsToGet.entrySet()) {
+          ArrayList<?> dpList = (ArrayList<?>) samples.get(dataPoint.getValue());
+          double average = averageArray(dpList);
+          output.append(String.format("%s: %.1f ", dataPoint.getKey(), average));
+        }
+      } catch (RESTException i) {
+        output.append(String.format(" ** Error: %s", i.getMessage()));
+      } catch (Exception e) {
+        LOGGER.error(e.getMessage(), e);
+      }
+
+      if (finalRemoteUUID != null) {
+        try {
+          String endpoint = "/pools/default/buckets/ycsb/stats/replications%2F" +
+              finalRemoteUUID +
+              "%2F" +
+              bucket +
+              "%2F" +
+              bucket +
+              "%2Fwtavg_docs_latency";
+          JsonObject data = rest.getJSON(endpoint);
+          ArrayList<Long> values = new ArrayList<>();
+          Gson gson = new Gson();
+          if (data.has("nodeStats")) {
+            for (Map.Entry<String, JsonElement> entry : data.get("nodeStats").getAsJsonObject().entrySet()) {
+              Type listType = new TypeToken<ArrayList<Long>>() {}.getType();
+              ArrayList<Long> nodeList = gson.fromJson(entry.getValue(), listType);
+              values.addAll(nodeList);
+            }
+            double average = averageArray(values);
+            output.append(String.format("XDCRLag: %.1f ", average));
+          }
+        } catch (RESTException e) {
+          throw new RuntimeException(e);
+        }
+      }
+
+      STATISTICS.info(String.format("%s\n", output));
+      output.delete(0, output.length());
     };
     System.err.println("Starting remote statistics thread...");
     apiHandle = scheduler.scheduleWithFixedDelay(callApi, 0, 30, SECONDS);

@@ -1,6 +1,5 @@
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.java.manager.bucket.BucketType;
 import com.couchbase.client.java.manager.bucket.StorageBackend;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -10,11 +9,8 @@ import java.io.FileNotFoundException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Scanner;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Couchbase Capella Utility.
@@ -44,8 +40,7 @@ public class CouchbaseCapella {
       throw new RuntimeException(e);
     }
 
-    while(input.hasNext())
-    {
+    while(input.hasNext()) {
       String token = input.nextLine();
       String[] items = token.split("\\s*:\\s*");
       String key = items[0];
