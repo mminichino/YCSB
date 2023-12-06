@@ -1,14 +1,11 @@
 package site.ycsb.db.couchbase3;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.reflect.TypeToken;
 import org.slf4j.LoggerFactory;
 import site.ycsb.measurements.RemoteStatistics;
 
-import java.lang.reflect.Type;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -31,6 +28,12 @@ public class CouchbaseCollect extends RemoteStatistics {
   private ScheduledFuture<?> apiHandle = null;
   private final String dateFormat = "yy-MM-dd'T'HH:mm:ss";
   private final SimpleDateFormat timeStampFormat = new SimpleDateFormat(dateFormat);
+  /**
+   * Metric Type.
+   */
+  public enum MetricMode {
+    SYSTEM, BUCKET, XDCR, DISK
+  }
 
   @Override
   public void init() {
@@ -68,105 +71,251 @@ public class CouchbaseCollect extends RemoteStatistics {
       String timeStamp = timeStampFormat.format(new Date());
       output.append(String.format("%s ", timeStamp));
 
-      try {
-        double cpu = 0;
-        double mem = 0;
-        double free = 0;
-        int count = 0;
-        HashMap<?, ?> data = rest.getMap("/pools/default");
-        ArrayList<?> nodeList = (ArrayList<?>) data.get("nodes");
-        for (Object element : nodeList) {
-          LinkedHashMap<?, ?> sysEntry = (LinkedHashMap<?, ?>) element;
-          LinkedHashMap<?, ?> systemStats = (LinkedHashMap<?, ?>) sysEntry.get("systemStats");
-          cpu += wildCardToDouble(systemStats.get("cpu_utilization_rate"));
-          mem += wildCardToDouble(systemStats.get("mem_total"));
-          free += wildCardToDouble(systemStats.get("mem_free"));
-          count++;
-        }
-        output.append(String.format("CPU: %.1f Mem: %s Free: %s ",
-            cpu / count, formatDataSize(mem), formatDataSize(free)));
-      } catch (RESTException i) {
-        output.append(String.format(" ** Error: %s", i.getMessage()));
-      } catch (Exception e) {
-        LOGGER.error(e.getMessage(), e);
-      }
+//      try {
+//        double cpu = 0;
+//        double mem = 0;
+//        double free = 0;
+//        int count = 0;
+//        HashMap<?, ?> data = rest.getMap("/pools/default");
+//        ArrayList<?> nodeList = (ArrayList<?>) data.get("nodes");
+//        for (Object element : nodeList) {
+//          LinkedHashMap<?, ?> sysEntry = (LinkedHashMap<?, ?>) element;
+//          LinkedHashMap<?, ?> systemStats = (LinkedHashMap<?, ?>) sysEntry.get("systemStats");
+//          cpu += wildCardToDouble(systemStats.get("cpu_utilization_rate"));
+//          mem += wildCardToDouble(systemStats.get("mem_total"));
+//          free += wildCardToDouble(systemStats.get("mem_free"));
+//          count++;
+//        }
+//        output.append(String.format("CPU: %.1f Mem: %s Free: %s ",
+//            cpu / count, formatDataSize(mem), formatDataSize(free)));
+//      } catch (RESTException i) {
+//        output.append(String.format(" ** Error: %s", i.getMessage()));
+//      } catch (Exception e) {
+//        LOGGER.error(e.getMessage(), e);
+//      }
+//
+//      try {
+//        HashMap<?, ?> data = rest.getMap("/pools/default/buckets/" + bucket + "/stats");
+//        LinkedHashMap<?, ?> op = (LinkedHashMap<?, ?>) data.get("op");
+//        LinkedHashMap<?, ?> samples = (LinkedHashMap<?, ?>) op.get("samples");
+//
+//        Map<String, String> itemsToGet = createBucketStatMap();
+//        for (Map.Entry<String, String> dataPoint : itemsToGet.entrySet()) {
+//          ArrayList<?> dpList = (ArrayList<?>) samples.get(dataPoint.getValue());
+//          double average = averageArray(dpList);
+//          output.append(String.format("%s: %.1f ", dataPoint.getKey(), average));
+//        }
+//      } catch (RESTException i) {
+//        output.append(String.format(" ** Error: %s", i.getMessage()));
+//      } catch (Exception e) {
+//        LOGGER.error(e.getMessage(), e);
+//      }
+
+      JsonArray metrics = new JsonArray();
+      addMetric("sys_cpu_host_utilization_rate", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+      addMetric("sys_mem_total", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+      addMetric("sys_mem_free", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+      addMetric("n1ql_active_requests", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+      addMetric("n1ql_load", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+      addMetric("n1ql_request_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+      addMetric("n1ql_service_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+
+      addMetric("kv_ep_num_non_resident", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucket);
+      addMetric("kv_ep_queue_size", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucket);
+      addMetric("kv_ep_flusher_todo", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucket);
+
+      addMetric("kv_ep_io_total_read_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucket);
+      addMetric("kv_ep_io_total_write_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucket);
+      addMetric("kv_curr_items", MetricFunction.MAX, metrics, MetricMode.DISK, bucket);
+
+      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucket);
+      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.AVG, metrics, MetricMode.XDCR, bucket);
+      addMetric("xdcr_wtavg_docs_latency_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucket);
+      addMetric("xdcr_data_replicated_bytes", MetricFunction.MAX, metrics, MetricMode.XDCR, bucket);
 
       try {
-        HashMap<?, ?> data = rest.getMap("/pools/default/buckets/" + bucket + "/stats");
-        LinkedHashMap<?, ?> op = (LinkedHashMap<?, ?>) data.get("op");
-        LinkedHashMap<?, ?> samples = (LinkedHashMap<?, ?>) op.get("samples");
+        String endpoint = "/pools/default/stats/range";
+//        System.err.println(metrics.toString());
+        JsonArray data = rest.postJSONArray(endpoint, metrics);
 
-        Map<String, String> itemsToGet = createBucketStatMap();
-        for (Map.Entry<String, String> dataPoint : itemsToGet.entrySet()) {
-          ArrayList<?> dpList = (ArrayList<?>) samples.get(dataPoint.getValue());
-          double average = averageArray(dpList);
-          output.append(String.format("%s: %.1f ", dataPoint.getKey(), average));
-        }
-      } catch (RESTException i) {
-        output.append(String.format(" ** Error: %s", i.getMessage()));
-      } catch (Exception e) {
-        LOGGER.error(e.getMessage(), e);
-      }
+        double cpuUtil = getMetricAvgDouble(data.getAsJsonArray().get(0).getAsJsonObject());
+        long memTotal = getMetricMaxLong(data.getAsJsonArray().get(1).getAsJsonObject());
+        long memFree = getMetricMaxLong(data.getAsJsonArray().get(2).getAsJsonObject());
+        long sqlReq  = getMetricMaxLong(data.getAsJsonArray().get(3).getAsJsonObject());
+        long sqlLoad  = getMetricMaxLong(data.getAsJsonArray().get(4).getAsJsonObject());
+        long sqlReqTime  = getMetricMaxLong(data.getAsJsonArray().get(5).getAsJsonObject());
+        long sqlSvcTime  = getMetricMaxLong(data.getAsJsonArray().get(6).getAsJsonObject());
 
-      if (finalRemoteUUID != null) {
-        try {
-          String endpoint = "/pools/default/buckets/ycsb/stats/replications%2F" +
-              finalRemoteUUID +
-              "%2F" +
-              bucket +
-              "%2F" +
-              bucket +
-              "%2Fwtavg_docs_latency";
-          JsonObject data = rest.getJSON(endpoint);
-          ArrayList<Long> values = new ArrayList<>();
-          Gson gson = new Gson();
-          if (data.has("nodeStats")) {
-            for (Map.Entry<String, JsonElement> entry : data.get("nodeStats").getAsJsonObject().entrySet()) {
-              Type listType = new TypeToken<ArrayList<Long>>() {}.getType();
-              ArrayList<Long> nodeList = gson.fromJson(entry.getValue(), listType);
-              values.addAll(nodeList);
-            }
-            double average = averageArray(values);
-            output.append(String.format("XDCRLag: %.1f ", average));
-          }
-        } catch (RESTException e) {
-          if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
-            throw new RuntimeException(e);
-          }
-        }
+        double nonResident = getMetricAvgDouble(data.getAsJsonArray().get(7).getAsJsonObject());
+        double queueSize = getMetricAvgDouble(data.getAsJsonArray().get(8).getAsJsonObject());
+        double flushTodo = getMetricAvgDouble(data.getAsJsonArray().get(9).getAsJsonObject());
 
-        try {
-          String endpoint = "/pools/default/buckets/ycsb/stats/replications%2F" +
-              finalRemoteUUID +
-              "%2F" +
-              bucket +
-              "%2F" +
-              bucket +
-              "%2Fbandwidth_usage";
-          JsonObject data = rest.getJSON(endpoint);
-          ArrayList<Long> values = new ArrayList<>();
-          Gson gson = new Gson();
-          if (data.has("nodeStats")) {
-            for (Map.Entry<String, JsonElement> entry : data.get("nodeStats").getAsJsonObject().entrySet()) {
-              Type listType = new TypeToken<ArrayList<Long>>() {}.getType();
-              ArrayList<Long> nodeList = gson.fromJson(entry.getValue(), listType);
-              values.addAll(nodeList);
-            }
-            double average = averageArray(values);
-            output.append(String.format("XDCRBdw: %.1f ", average));
-          }
-        } catch (RESTException e) {
-          if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
-            throw new RuntimeException(e);
-          }
+        long bytesRead = getMetricSumLong(data.getAsJsonArray().get(10).getAsJsonObject());
+        long bytesWrite = getMetricSumLong(data.getAsJsonArray().get(11).getAsJsonObject());
+        long curItems = getMetricMaxLong(data.getAsJsonArray().get(12).getAsJsonObject());
+
+        double xdcrMax = getMetricAvgDouble(data.getAsJsonArray().get(13).getAsJsonObject());
+        double xdcrAvg = getMetricAvgDouble(data.getAsJsonArray().get(14).getAsJsonObject());
+        double wtavgMax = getMetricAvgDouble(data.getAsJsonArray().get(15).getAsJsonObject());
+        double xdcrBytes = getMetricDiffDouble(data.getAsJsonArray().get(16).getAsJsonObject());
+
+        output.append(String.format("CPU: %.1f ", cpuUtil));
+        output.append(String.format("Mem: %d ", memTotal));
+        output.append(String.format("Free: %d ", memFree));
+        output.append(String.format("sqlReq: %d ", sqlReq));
+        output.append(String.format("sqlLoad: %d ", sqlLoad));
+        output.append(String.format("sqlReqTime: %d ", sqlReqTime));
+        output.append(String.format("sqlSvcTime: %d ", sqlSvcTime));
+
+        output.append(String.format("Resident: %d ", 100L - (long) nonResident));
+
+        output.append(String.format("Queue: %d ", (long) queueSize + (long) flushTodo));
+        output.append(String.format("Read: %d ", bytesRead));
+        output.append(String.format("Write: %d ", bytesWrite));
+        output.append(String.format("Items: %d ", curItems));
+
+        output.append(String.format("XDCRMax: %.1f ", xdcrMax * 1000));
+        output.append(String.format("XDCRAvg: %.1f ", xdcrAvg * 1000));
+        output.append(String.format("wtavgMax: %.1f ", wtavgMax * 1000));
+        output.append(String.format("Bandwidth: %.1f ", xdcrBytes));
+
+      } catch (RESTException e) {
+        if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
+          throw new RuntimeException(e);
         }
       }
+
+//        try {
+//          String endpoint = "/pools/default/buckets/ycsb/stats/replications%2F" +
+//              finalRemoteUUID +
+//              "%2F" +
+//              bucket +
+//              "%2F" +
+//              bucket +
+//              "%2Fbandwidth_usage";
+//          JsonObject data = rest.getJSON(endpoint);
+//          ArrayList<Long> values = new ArrayList<>();
+//          Gson gson = new Gson();
+//          if (data.has("nodeStats")) {
+//            for (Map.Entry<String, JsonElement> entry : data.get("nodeStats").getAsJsonObject().entrySet()) {
+//              Type listType = new TypeToken<ArrayList<Long>>() {}.getType();
+//              ArrayList<Long> nodeList = gson.fromJson(entry.getValue(), listType);
+//              values.addAll(nodeList);
+//            }
+//            double average = averageArray(values);
+//            output.append(String.format("XDCRBdw: %.1f ", average));
+//          }
+//        } catch (RESTException e) {
+//          if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
+//            throw new RuntimeException(e);
+//          }
+//        }
 
       STATISTICS.info(String.format("%s\n", output));
       output.delete(0, output.length());
     };
     System.err.println("Starting remote statistics thread...");
     apiHandle = scheduler.scheduleWithFixedDelay(callApi, 0, 30, SECONDS);
+  }
+
+  private static void addMetric(String name, MetricFunction func, JsonArray metrics, MetricMode mode, String bucket) {
+    JsonObject block = new JsonObject();
+    JsonArray metric = new JsonArray();
+    JsonObject definition = new JsonObject();
+    definition.addProperty("label", "name");
+    definition.addProperty("value", name);
+    metric.add(definition);
+    if (mode == MetricMode.BUCKET || mode == MetricMode.DISK) {
+      JsonObject bucketDefinition = new JsonObject();
+      bucketDefinition.addProperty("label", "bucket");
+      bucketDefinition.addProperty("value", bucket);
+      metric.add(bucketDefinition);
+    } else if (mode == MetricMode.XDCR) {
+      JsonObject source = new JsonObject();
+      source.addProperty("label", "sourceBucketName");
+      source.addProperty("value", bucket);
+      metric.add(source);
+      JsonObject pipeLine = new JsonObject();
+      pipeLine.addProperty("label", "pipelineType");
+      pipeLine.addProperty("value", "Main");
+      metric.add(pipeLine);
+    }
+    JsonArray applyFunctions = new JsonArray();
+    applyFunctions.add(func.getValue());
+    block.add("metric", metric);
+    block.add("applyFunctions", applyFunctions);
+    if (mode == MetricMode.DISK) {
+      block.addProperty("nodesAggregation", "sum");
+    } else {
+      block.addProperty("nodesAggregation", "avg");
+    }
+    block.addProperty("alignTimestamps", true);
+    block.addProperty("step", 15);
+    block.addProperty("start", -60);
+    metrics.add(block);
+  }
+
+  private double getMetricAvgDouble(JsonObject block) {
+    double metric = 0.0;
+    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
+      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
+      for (JsonElement entry : values) {
+        metric += Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
+      }
+      return metric / values.size();
+    }
+    return 0.0;
+  }
+
+  private long getMetricAvgLong(JsonObject block) {
+    long metric = 0;
+    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
+      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
+      for (JsonElement entry : values) {
+        metric += Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
+      }
+      return metric / values.size();
+    }
+    return 0;
+  }
+
+  private long getMetricMaxLong(JsonObject block) {
+    long metric = 0;
+    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
+      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
+      for (JsonElement entry : values) {
+        long thisMetric = (long) Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
+        if (thisMetric > metric) {
+          metric = thisMetric;
+        }
+      }
+    }
+    return metric;
+  }
+
+  private long getMetricSumLong(JsonObject block) {
+    long metric = 0;
+    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
+      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
+      for (JsonElement entry : values) {
+        metric += (long) Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
+      }
+    }
+    return metric;
+  }
+
+  private double getMetricDiffDouble(JsonObject block) {
+    double metric = 0.0;
+    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
+      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
+      for (int i = 0; i < values.size() - 1; i++) {
+        long a = (long) Double.parseDouble(values.getAsJsonArray().get(i).getAsJsonArray().get(1).getAsString());
+        long b = (long) Double.parseDouble(values.getAsJsonArray().get(i+1).getAsJsonArray().get(1).getAsString());
+        metric += b - a;
+      }
+      return metric / values.size() - 1;
+    }
+    return metric;
   }
 
   private static String formatDataSize(double bytes) {

@@ -270,6 +270,30 @@ public class RESTInterface {
     }
   }
 
+  public JsonArray postJSONArray(String endpoint, JsonArray json) throws RESTException {
+    return postJSONString(endpoint, json.toString());
+  }
+
+  public JsonArray postJSONString(String endpoint, String json) throws RESTException {
+    String url = urlPrefix + endpoint;
+    RequestBody body = RequestBody.create(json, JSON);
+    Request request = new Request.Builder()
+        .url(url)
+        .post(body)
+        .header("Authorization", credential)
+        .build();
+
+    try (Response response = client.newCall(request).execute()) {
+      if (!response.isSuccessful()) {
+        throw new RESTException(response.code(), response.toString());
+      }
+      Gson gson = new Gson();
+      return response.body() != null ? gson.fromJson(response.body().string(), JsonArray.class) : new JsonArray();
+    } catch (IOException e) {
+      throw new RESTException(e.getMessage());
+    }
+  }
+
   public void postEndpoint(String endpoint) throws RESTException {
     String url = urlPrefix + endpoint;
     RequestBody body = RequestBody.create(new JsonObject().toString(), JSON);
