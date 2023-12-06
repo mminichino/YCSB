@@ -6,6 +6,7 @@ output*
 workloads/*.dat
 statistics.dat
 key_stats.dat
+test.properties
 
 # ignore standard Eclipse files
 .project

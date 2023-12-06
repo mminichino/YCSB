@@ -10,6 +10,8 @@ import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.BucketExistsException;
 import com.couchbase.client.core.error.BucketNotFoundException;
+import com.couchbase.client.core.error.DocumentNotFoundException;
+import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.retry.BestEffortRetryStrategy;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.java.Bucket;
@@ -17,9 +19,11 @@ import com.couchbase.client.java.Scope;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.ClusterOptions;
 import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.codec.RawStringTranscoder;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import com.couchbase.client.java.kv.*;
 import com.couchbase.client.java.manager.bucket.*;
 import com.couchbase.client.core.diagnostics.DiagnosticsResult;
 import com.google.gson.*;
@@ -33,6 +37,8 @@ import java.time.Duration;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+
+import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 
 class CouchbaseConnectException extends Exception {
   public CouchbaseConnectException() {}
@@ -56,8 +62,11 @@ public final class CouchbaseConnect {
   private static final Boolean DEFAULT_SSL_MODE = true;
   private static final String DEFAULT_PROJECT = null;
   private static final String DEFAULT_DATABASE = null;
+  private static final BucketMode DEFAULT_BUCKET_MODE = BucketMode.PASSIVE;
   private static final String DEFAULT_SCOPE = "_default";
   private static final String DEFAULT_COLLECTION = "_default";
+  private static int DEFAULT_REPLICA_NUM = 1;
+  private static StorageBackend DEFAULT_STORAGE_BACKEND = StorageBackend.COUCHSTORE;
   private static final Object CONNECT_COORDINATOR = new Object();
   private String hostname;
   private String username;
@@ -69,6 +78,9 @@ public final class CouchbaseConnect {
   private String bucketName;
   private String scopeName;
   private String collectionName;
+  private long bucketQuota;
+  private int replicaNum;
+  private StorageBackend bucketType;
   private Boolean useSsl;
   private BucketMode bucketMode;
   private String httpPrefix;
@@ -91,12 +103,171 @@ public final class CouchbaseConnect {
   private DiagnosticsResult diagnosticsResult;
   private BucketManager bucketMgr;
   private CouchbaseCapella capella;
+  private DurabilityLevel durability = DurabilityLevel.NONE;
+  private int ttlSeconds = 0;
+  private GetOptions getOptions = GetOptions.getOptions();
+  private RemoveOptions dbRemoveOptions = RemoveOptions.removeOptions();
+  private InsertOptions dbInsertOptions = InsertOptions.insertOptions();
+  private UpsertOptions dbUpsertOptions = UpsertOptions.upsertOptions();
+  private ReplaceOptions dbReplaceOptions = ReplaceOptions.replaceOptions();
+  private MutateInOptions dbMutateOptions = MutateInOptions.mutateInOptions();
 
   /**
    * Automatically Create Bucket.
    */
   public enum BucketMode {
     CREATE, PASSIVE
+  }
+
+  public static class CouchbaseBuilder {
+    private String hostName = DEFAULT_HOSTNAME;
+    private String userName = DEFAULT_USER;
+    private String passWord = DEFAULT_PASSWORD;
+    private Boolean sslMode = DEFAULT_SSL_MODE;
+    private BucketMode bucketMode = DEFAULT_BUCKET_MODE;
+    private String projectName = DEFAULT_PROJECT;
+    private String databaseName = DEFAULT_DATABASE;
+    private String bucketName;
+    private String scopeName = DEFAULT_SCOPE;
+    private String collectionName = DEFAULT_COLLECTION;
+    private long bucketQuota = 0L;
+    private int replicaNum = DEFAULT_REPLICA_NUM;
+    private StorageBackend storageBackEnd = DEFAULT_STORAGE_BACKEND;
+    private int ttlSeconds = 0;
+    private DurabilityLevel durabilityLevel = DurabilityLevel.NONE;
+
+    public CouchbaseBuilder durability(final int value) {
+      switch(value){
+        case 1:
+          this.durabilityLevel = DurabilityLevel.MAJORITY;
+          break;
+        case 2:
+          this.durabilityLevel = DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE;
+          break;
+        case 3:
+          this.durabilityLevel = DurabilityLevel.PERSIST_TO_MAJORITY;
+          break;
+        default :
+          this.durabilityLevel = DurabilityLevel.NONE;
+      }
+      return this;
+    }
+
+    public CouchbaseBuilder ttl(int value) {
+      this.ttlSeconds = value;
+      return this;
+    }
+
+    public CouchbaseBuilder host(final String name) {
+      this.hostName = name;
+      return this;
+    }
+
+    public CouchbaseBuilder user(final String name) {
+      this.userName = name;
+      return this;
+    }
+
+    public CouchbaseBuilder password(final String name) {
+      this.passWord = name;
+      return this;
+    }
+
+    public CouchbaseBuilder connect(final String host, final String user, final String password) {
+      this.hostName = host;
+      this.userName = user;
+      this.passWord = password;
+      return this;
+    }
+
+    public CouchbaseBuilder ssl(final Boolean mode) {
+      this.sslMode = mode;
+      return this;
+    }
+
+    public CouchbaseBuilder create(final Boolean mode) {
+      if (mode) {
+        this.bucketMode = BucketMode.CREATE;
+      }
+      return this;
+    }
+
+    public CouchbaseBuilder capella(final String project, final String database) {
+      this.projectName = project;
+      this.databaseName = database;
+      return this;
+    }
+
+    public CouchbaseBuilder bucket(final String name) {
+      this.bucketName = name;
+      return this;
+    }
+
+    public CouchbaseBuilder scope(final String name) {
+      this.scopeName = name;
+      return this;
+    }
+
+    public CouchbaseBuilder collection(final String name) {
+      this.collectionName = name;
+      return this;
+    }
+
+    public CouchbaseBuilder quota(final long value) {
+      this.bucketQuota = value;
+      return this;
+    }
+
+    public CouchbaseBuilder replicas(final int value) {
+      this.replicaNum = value;
+      return this;
+    }
+
+    public CouchbaseBuilder storage(final int value) {
+      if (value == 1) {
+        this.storageBackEnd = StorageBackend.MAGMA;
+      } else {
+        this.storageBackEnd = StorageBackend.COUCHSTORE;
+      }
+      return this;
+    }
+
+    public CouchbaseBuilder keyspace(final String bucket, final String scope, final String collection) {
+      this.bucketName = bucket;
+      this.scopeName = scope;
+      this.collectionName = collection;
+      return this;
+    }
+
+    public CouchbaseConnect build() throws CouchbaseConnectException {
+      return new CouchbaseConnect(this);
+    }
+  }
+
+  private CouchbaseConnect(CouchbaseBuilder builder) throws CouchbaseConnectException {
+    this.hostname = builder.hostName;
+    this.username = builder.userName;
+    this.password = builder.passWord;
+    this.useSsl = builder.sslMode;
+    this.project = builder.projectName;
+    this.database = builder.databaseName;
+    this.bucketMode = builder.bucketMode;
+    this.durability = builder.durabilityLevel;
+    this.ttlSeconds = builder.ttlSeconds;
+    this.bucketName = builder.bucketName;
+    this.scopeName = builder.scopeName;
+    this.collectionName = builder.collectionName;
+    this.replicaNum = builder.replicaNum;
+    this.bucketType = builder.storageBackEnd;
+    this.bucketQuota = builder.bucketQuota;
+    this.connect();
+    if (this.bucketQuota == 0) {
+      this.bucketQuota = ramQuotaCalc();
+    }
+    if (this.bucketMode == BucketMode.CREATE) {
+      this.bucketCreate(bucketName, this.bucketQuota, this.replicaNum, this.bucketType);
+    }
+    this.keyspace(this.bucketName, this.scopeName, this.collectionName);
   }
 
   public CouchbaseConnect(String hostname) throws CouchbaseConnectException {
@@ -368,6 +539,24 @@ public final class CouchbaseConnect {
     return freeMemoryQuota;
   }
 
+  private void setOptions() {
+    getOptions = getOptions.transcoder(RawStringTranscoder.INSTANCE);
+
+    if (durability != DurabilityLevel.NONE) {
+      dbInsertOptions = dbInsertOptions.durability(durability);
+      dbUpsertOptions = dbUpsertOptions.durability(durability);
+      dbReplaceOptions = dbReplaceOptions.durability(durability);
+      dbRemoveOptions = dbRemoveOptions.durability(durability);
+    }
+
+    if (ttlSeconds > 0) {
+      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbReplaceOptions = dbReplaceOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbMutateOptions = dbMutateOptions.expiry(Duration.ofSeconds(ttlSeconds));
+    }
+  }
+
   public Collection connectKeyspace() throws CouchbaseConnectException {
     if (isBucket(bucketName)) {
       bucket = cluster.bucket(bucketName);
@@ -377,7 +566,63 @@ public final class CouchbaseConnect {
     bucket.waitUntilReady(Duration.ofSeconds(10));
     scope = bucket.scope(scopeName);
     collection = scope.collection(collectionName);
+    setOptions();
     return collection;
+  }
+
+  public Collection getCollection() {
+    return collection;
+  }
+
+  public String getString(String id) throws Exception {
+    return RetryLogic.retryBlock(() -> {
+      GetResult result;
+      try {
+        result = collection.get(id, getOptions);
+        return result.contentAs(String.class);
+      } catch (DocumentNotFoundException e) {
+        return null;
+      }
+    });
+  }
+
+  public JsonObject getJSON(String id) throws Exception {
+    return RetryLogic.retryBlock(() -> {
+      GetResult result;
+      try {
+        result = collection.get(id, getOptions);
+        return result.contentAs(JsonObject.class);
+      } catch (DocumentNotFoundException e) {
+        return null;
+      }
+    });
+  }
+
+  public long upsert(String id, Object content) throws Exception {
+    return RetryLogic.retryBlock(() -> {
+      MutationResult result = collection.upsert(id, content, dbUpsertOptions);
+      return result.cas();
+    });
+  }
+
+  public long upsertArray(String id, String arrayKey, Object content) throws Exception {
+    return RetryLogic.retryBlock(() -> {
+      try {
+        MutationResult result = collection.mutateIn(id,
+            Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(content))),
+            dbMutateOptions);
+        return result.cas();
+      } catch (DocumentNotFoundException e) {
+        JsonObject document = new JsonObject();
+        JsonArray subDocArray = new JsonArray();
+        Gson gson = new Gson();
+        String subDoc = gson.toJson(content);
+        subDocArray.add(gson.fromJson(subDoc, JsonObject.class));
+        document.add(arrayKey, subDocArray);
+        MutationResult result = collection.upsert(id, document);
+        return result.cas();
+      }
+    });
   }
 
   public void createXDCRReference(String hostname, String username, String password, Boolean external) {

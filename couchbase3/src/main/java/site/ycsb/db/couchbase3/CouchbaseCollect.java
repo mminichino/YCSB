@@ -43,7 +43,7 @@ public class CouchbaseCollect extends RemoteStatistics {
   @Override
   public void startCollectionThread(String hostName, String userName, String password, String bucket, Boolean tls) {
     int port;
-    String remoteUUID = null;
+    DecimalFormat formatter = new DecimalFormat("#,###");
 
     if (tls) {
       port = 18091;
@@ -53,63 +53,12 @@ public class CouchbaseCollect extends RemoteStatistics {
 
     RESTInterface rest = new RESTInterface(hostName, userName, password, tls, port);
 
-    try {
-      JsonArray remotes = rest.getJSONArray("/pools/default/remoteClusters");
-      if (!remotes.isEmpty()) {
-        remoteUUID = remotes.get(0).getAsJsonObject().get("uuid").getAsString();
-      }
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
-    }
-
-    String finalRemoteUUID = remoteUUID;
-
     STATISTICS.info(String.format("==== Begin Cluster Collection %s ====\n", timeStampFormat.format(new Date())));
 
     Runnable callApi = () -> {
       StringBuilder output = new StringBuilder();
       String timeStamp = timeStampFormat.format(new Date());
       output.append(String.format("%s ", timeStamp));
-
-//      try {
-//        double cpu = 0;
-//        double mem = 0;
-//        double free = 0;
-//        int count = 0;
-//        HashMap<?, ?> data = rest.getMap("/pools/default");
-//        ArrayList<?> nodeList = (ArrayList<?>) data.get("nodes");
-//        for (Object element : nodeList) {
-//          LinkedHashMap<?, ?> sysEntry = (LinkedHashMap<?, ?>) element;
-//          LinkedHashMap<?, ?> systemStats = (LinkedHashMap<?, ?>) sysEntry.get("systemStats");
-//          cpu += wildCardToDouble(systemStats.get("cpu_utilization_rate"));
-//          mem += wildCardToDouble(systemStats.get("mem_total"));
-//          free += wildCardToDouble(systemStats.get("mem_free"));
-//          count++;
-//        }
-//        output.append(String.format("CPU: %.1f Mem: %s Free: %s ",
-//            cpu / count, formatDataSize(mem), formatDataSize(free)));
-//      } catch (RESTException i) {
-//        output.append(String.format(" ** Error: %s", i.getMessage()));
-//      } catch (Exception e) {
-//        LOGGER.error(e.getMessage(), e);
-//      }
-//
-//      try {
-//        HashMap<?, ?> data = rest.getMap("/pools/default/buckets/" + bucket + "/stats");
-//        LinkedHashMap<?, ?> op = (LinkedHashMap<?, ?>) data.get("op");
-//        LinkedHashMap<?, ?> samples = (LinkedHashMap<?, ?>) op.get("samples");
-//
-//        Map<String, String> itemsToGet = createBucketStatMap();
-//        for (Map.Entry<String, String> dataPoint : itemsToGet.entrySet()) {
-//          ArrayList<?> dpList = (ArrayList<?>) samples.get(dataPoint.getValue());
-//          double average = averageArray(dpList);
-//          output.append(String.format("%s: %.1f ", dataPoint.getKey(), average));
-//        }
-//      } catch (RESTException i) {
-//        output.append(String.format(" ** Error: %s", i.getMessage()));
-//      } catch (Exception e) {
-//        LOGGER.error(e.getMessage(), e);
-//      }
 
       JsonArray metrics = new JsonArray();
       addMetric("sys_cpu_host_utilization_rate", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
@@ -135,7 +84,6 @@ public class CouchbaseCollect extends RemoteStatistics {
 
       try {
         String endpoint = "/pools/default/stats/range";
-//        System.err.println(metrics.toString());
         JsonArray data = rest.postJSONArray(endpoint, metrics);
 
         double cpuUtil = getMetricAvgDouble(data.getAsJsonArray().get(0).getAsJsonObject());
@@ -150,8 +98,8 @@ public class CouchbaseCollect extends RemoteStatistics {
         double queueSize = getMetricAvgDouble(data.getAsJsonArray().get(8).getAsJsonObject());
         double flushTodo = getMetricAvgDouble(data.getAsJsonArray().get(9).getAsJsonObject());
 
-        long bytesRead = getMetricSumLong(data.getAsJsonArray().get(10).getAsJsonObject());
-        long bytesWrite = getMetricSumLong(data.getAsJsonArray().get(11).getAsJsonObject());
+        double bytesRead = getMetricDiffDouble(data.getAsJsonArray().get(10).getAsJsonObject());
+        double bytesWrite = getMetricDiffDouble(data.getAsJsonArray().get(11).getAsJsonObject());
         long curItems = getMetricMaxLong(data.getAsJsonArray().get(12).getAsJsonObject());
 
         double xdcrMax = getMetricAvgDouble(data.getAsJsonArray().get(13).getAsJsonObject());
@@ -159,57 +107,33 @@ public class CouchbaseCollect extends RemoteStatistics {
         double wtavgMax = getMetricAvgDouble(data.getAsJsonArray().get(15).getAsJsonObject());
         double xdcrBytes = getMetricDiffDouble(data.getAsJsonArray().get(16).getAsJsonObject());
 
+        long queueTotal = (long) queueSize + (long) flushTodo;
+
         output.append(String.format("CPU: %.1f ", cpuUtil));
-        output.append(String.format("Mem: %d ", memTotal));
-        output.append(String.format("Free: %d ", memFree));
+        output.append(String.format("Mem: %s ", formatDataSize(memTotal)));
+        output.append(String.format("Free: %s ", formatDataSize(memFree)));
         output.append(String.format("sqlReq: %d ", sqlReq));
         output.append(String.format("sqlLoad: %d ", sqlLoad));
         output.append(String.format("sqlReqTime: %d ", sqlReqTime));
         output.append(String.format("sqlSvcTime: %d ", sqlSvcTime));
 
-        output.append(String.format("Resident: %d ", 100L - (long) nonResident));
+        output.append(String.format("Resident: %d %% ", 100L - (long) nonResident));
 
-        output.append(String.format("Queue: %d ", (long) queueSize + (long) flushTodo));
-        output.append(String.format("Read: %d ", bytesRead));
-        output.append(String.format("Write: %d ", bytesWrite));
-        output.append(String.format("Items: %d ", curItems));
+        output.append(String.format("Queue: %s ", formatter.format(queueTotal)));
+        output.append(String.format("Read: %s ", formatDataSize(bytesRead)));
+        output.append(String.format("Write: %s ", formatDataSize(bytesWrite)));
+        output.append(String.format("Items: %s ", formatter.format(curItems)));
 
         output.append(String.format("XDCRMax: %.1f ", xdcrMax * 1000));
         output.append(String.format("XDCRAvg: %.1f ", xdcrAvg * 1000));
         output.append(String.format("wtavgMax: %.1f ", wtavgMax * 1000));
-        output.append(String.format("Bandwidth: %.1f ", xdcrBytes));
+        output.append(String.format("Bandwidth: %s ", formatDataSize(xdcrBytes)));
 
       } catch (RESTException e) {
         if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
           throw new RuntimeException(e);
         }
       }
-
-//        try {
-//          String endpoint = "/pools/default/buckets/ycsb/stats/replications%2F" +
-//              finalRemoteUUID +
-//              "%2F" +
-//              bucket +
-//              "%2F" +
-//              bucket +
-//              "%2Fbandwidth_usage";
-//          JsonObject data = rest.getJSON(endpoint);
-//          ArrayList<Long> values = new ArrayList<>();
-//          Gson gson = new Gson();
-//          if (data.has("nodeStats")) {
-//            for (Map.Entry<String, JsonElement> entry : data.get("nodeStats").getAsJsonObject().entrySet()) {
-//              Type listType = new TypeToken<ArrayList<Long>>() {}.getType();
-//              ArrayList<Long> nodeList = gson.fromJson(entry.getValue(), listType);
-//              values.addAll(nodeList);
-//            }
-//            double average = averageArray(values);
-//            output.append(String.format("XDCRBdw: %.1f ", average));
-//          }
-//        } catch (RESTException e) {
-//          if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
-//            throw new RuntimeException(e);
-//          }
-//        }
 
       STATISTICS.info(String.format("%s\n", output));
       output.delete(0, output.length());
@@ -309,11 +233,11 @@ public class CouchbaseCollect extends RemoteStatistics {
     if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
       JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
       for (int i = 0; i < values.size() - 1; i++) {
-        long a = (long) Double.parseDouble(values.getAsJsonArray().get(i).getAsJsonArray().get(1).getAsString());
-        long b = (long) Double.parseDouble(values.getAsJsonArray().get(i+1).getAsJsonArray().get(1).getAsString());
-        metric += b - a;
+        double a = Double.parseDouble(values.getAsJsonArray().get(i).getAsJsonArray().get(1).getAsString());
+        double b = Double.parseDouble(values.getAsJsonArray().get(i+1).getAsJsonArray().get(1).getAsString());
+        metric += ((b - a) / 15);
       }
-      return metric / values.size() - 1;
+      return metric / (values.size() - 1);
     }
     return metric;
   }

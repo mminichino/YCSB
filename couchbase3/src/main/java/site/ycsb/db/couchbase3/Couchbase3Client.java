@@ -18,9 +18,9 @@
 package site.ycsb.db.couchbase3;
 
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
-import com.couchbase.client.core.env.IoConfig;
-import com.couchbase.client.core.env.SecurityConfig;
-import com.couchbase.client.core.env.TimeoutConfig;
+//import com.couchbase.client.core.env.IoConfig;
+//import com.couchbase.client.core.env.SecurityConfig;
+//import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.*;
@@ -32,14 +32,17 @@ import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.*;
 import com.couchbase.client.java.query.QueryOptions;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
-import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+//import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
 import com.couchbase.client.java.query.ReactiveQueryResult;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
@@ -92,6 +95,17 @@ public class Couchbase3Client extends DB {
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
   protected static final ch.qos.logback.classic.Logger KEY_STATS =
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.KeyStats");
+  private static final String PROPERTY_FILE = "db.properties";
+  private static final String PROPERTY_TEST = "test.properties";
+  public static final String COUCHBASE_HOST = "couchbase.hostname";
+  public static final String COUCHBASE_USER = "couchbase.username";
+  public static final String COUCHBASE_PASSWORD = "couchbase.password";
+  public static final String COUCHBASE_BUCKET = "couchbase.bucket";
+  public static final String COUCHBASE_SCOPE = "couchbase.scope";
+  public static final String COUCHBASE_COLLECTION = "couchbase.collection";
+  public static final String COUCHBASE_PROJECT = "couchbase.project";
+  public static final String COUCHBASE_DATABASE = "couchbase.database";
+  public static CouchbaseConnect db;
   private static final String KEY_SEPARATOR = "::";
   private static final String KEYSPACE_SEPARATOR = ".";
   private static volatile ClusterEnvironment environment;
@@ -100,8 +114,8 @@ public class Couchbase3Client extends DB {
   private static volatile Cluster cluster;
   private static volatile ReactiveCluster reactiveCluster;
   private static volatile Bucket bucket;
+  private static volatile Collection collection;
   private static volatile ClusterOptions clusterOptions;
-  private volatile DurabilityLevel durabilityLevel;
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
@@ -111,9 +125,13 @@ public class Couchbase3Client extends DB {
   private String bucketName;
   private String scopeName;
   private String collectionName;
+  private String capellaProject;
+  private String capellaDatabase;
   private static boolean collectionEnabled;
   private static boolean scopeEnabled;
   private static String keyspaceName;
+  private static int ttlSeconds;
+  private static int durabilityLevel;
   private static volatile AtomicInteger primaryKeySeq;
   private TestType testMode;
   private String arrayKey;
@@ -137,155 +155,67 @@ public class Couchbase3Client extends DB {
 
   @Override
   public void init() throws DBException {
-    Properties props = getProperties();
+    ClassLoader classloader = Thread.currentThread().getContextClassLoader();
+    URL propFile;
+    Properties properties = new Properties();
     primaryKeySeq = new AtomicInteger();
+    CouchbaseConnect.CouchbaseBuilder builder = new CouchbaseConnect.CouchbaseBuilder();
 
-    bucketName = props.getProperty("couchbase.bucket", "ycsb");
-    scopeName = props.getProperty("couchbase.scope", "_default");
-    collectionName = props.getProperty("couchbase.collection", "_default");
-    scopeEnabled = !Objects.equals(scopeName, "_default");
-    collectionEnabled = !Objects.equals(collectionName, "_default");
-    keyspaceName = getKeyspaceName();
-
-    String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
-    if (rawDurabilityLevel != null) {
-      if (props.containsKey("couchbase.persistTo") || props.containsKey("couchbase.replicateTo")) {
-        throw new DBException("Durability setting and persist/replicate settings are mutually exclusive.");
-      }
+    if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
+        || (propFile = classloader.getResource(PROPERTY_TEST)) != null) {
+      System.err.println("Using file");
       try {
-        durabilityLevel = parseDurabilityLevel(rawDurabilityLevel);
-        useDurabilityLevels = true;
-      } catch (DBException e) {
-        LOGGER.error("Failed to parse durability level");
+        properties.load(Files.newInputStream(Paths.get(propFile.getFile())));
+      } catch (IOException e) {
+        throw new DBException(e);
       }
     } else {
-      try {
-        persistTo = parsePersistTo(props.getProperty("couchbase.persistTo", "0"));
-        replicateTo = parseReplicateTo(props.getProperty("couchbase.replicateTo", "0"));
-        useDurabilityLevels = false;
-      } catch (DBException e) {
-        LOGGER.error("Failed to parse persist/replicate levels");
-      }
+      properties = getProperties();
     }
 
-    testMode = TestType.valueOf(props.getProperty("couchbase.mode", "DEFAULT"));
-    arrayKey = props.getProperty("subdoc.arrayKey", "DataArray");
+    String hostname = properties.getProperty(COUCHBASE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
+    String username = properties.getProperty(COUCHBASE_USER, CouchbaseConnect.DEFAULT_USER);
+    String password = properties.getProperty(COUCHBASE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
+    bucketName = properties.getProperty(COUCHBASE_BUCKET, "ycsb");
+    scopeName = properties.getProperty(COUCHBASE_SCOPE, "_default");
+    collectionName = properties.getProperty(COUCHBASE_COLLECTION, "_default");
 
-    adhoc = props.getProperty("couchbase.adhoc", "false").equals("true");
-    maxParallelism = Integer.parseInt(props.getProperty("couchbase.maxParallelism", "0"));
+    capellaProject = properties.getProperty(COUCHBASE_PROJECT, null);
+    capellaDatabase = properties.getProperty(COUCHBASE_DATABASE, null);
 
-    String hostname = props.getProperty("couchbase.host", "127.0.0.1");
-    String username = props.getProperty("couchbase.username", "Administrator");
-    String password = props.getProperty("couchbase.password", "password");
+    durabilityLevel = Integer.parseInt(properties.getProperty("couchbase.durability", "0"));
 
-    boolean sslMode = props.getProperty("couchbase.sslMode", "false").equals("true");
-    boolean sslNoVerify = props.getProperty("couchbase.sslNoVerify", "true").equals("true");
-    String certificateFile = props.getProperty("couchbase.certificateFile", "none");
-    doUpsert = props.getProperty("couchbase.upsert", "false").equals("true");
-    loading = props.getProperty("couchbase.loading", "false").equals("true");
-    collectStats = props.getProperty("statistics", "false").equals("true");
-    collectKeyStats = props.getProperty("keyStatistics", "false").equals("true");
+    testMode = TestType.valueOf(properties.getProperty("couchbase.mode", "DEFAULT"));
+    arrayKey = properties.getProperty("subdoc.arrayKey", "DataArray");
 
-    String ttlProperty = props.getProperty("couchbase.ttlSeconds", "0");
-    String[] ttlArray = ttlProperty.split(":");
-    int ttlLoadSeconds;
-    int ttlSeconds;
-    if (ttlArray.length == 2) {
-      ttlLoadSeconds = Integer.parseInt(ttlArray[0]);
-      ttlSeconds = Integer.parseInt(ttlArray[1]);
-    } else if (ttlArray.length == 1) {
-      ttlLoadSeconds = 0;
-      ttlSeconds = Integer.parseInt(ttlArray[0]);
-    } else {
-      LOGGER.error("Improperly formatted TTL parameter");
-      ttlLoadSeconds = 0;
-      ttlSeconds = 0;
-    }
+    adhoc = properties.getProperty("couchbase.adhoc", "false").equals("true");
+    maxParallelism = Integer.parseInt(properties.getProperty("couchbase.maxParallelism", "0"));
 
-    compileOptions(useDurabilityLevels, ttlSeconds, ttlLoadSeconds);
+    doUpsert = properties.getProperty("couchbase.upsert", "false").equals("true");
+    loading = properties.getProperty("couchbase.loading", "false").equals("true");
+    collectStats = properties.getProperty("statistics", "false").equals("true");
+    collectKeyStats = properties.getProperty("keyStatistics", "false").equals("true");
+
+    ttlSeconds = Integer.parseInt(properties.getProperty("couchbase.ttlSeconds", "0"));
 
     synchronized (INIT_COORDINATOR) {
-      if (environment == null) {
-
-        boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
-
-        long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeout", "2000"));
-        long queryTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.queryTimeout", "14000"));
-        int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
-
-        if (sslMode) {
-          ClusterEnvironment.Builder clusterEnvironment = ClusterEnvironment
-              .builder()
-              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis))
-                  .queryTimeout(Duration.ofMillis(queryTimeoutMillis)))
-              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken)
-                  .numKvConnections(kvEndpoints));
-
-          if (sslNoVerify) {
-            clusterEnvironment.securityConfig(SecurityConfig.enableTls(true)
-                .enableHostnameVerification(false)
-                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE));
-          } else if (!certificateFile.equals("none")) {
-            clusterEnvironment.securityConfig(SecurityConfig.enableTls(true)
-                .trustCertificate(Paths.get(certificateFile)));
-          } else {
-            clusterEnvironment.securityConfig(SecurityConfig.enableTls(true));
-          }
-
-          environment = clusterEnvironment.build();
-        } else {
-          environment = ClusterEnvironment
-              .builder()
-              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis))
-                  .connectTimeout(Duration.ofMillis(15000)))
-              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken)
-                  .numKvConnections(kvEndpoints))
-              .build();
+      try {
+        builder.connect(hostname, username, password)
+            .create(true)
+            .ttl(ttlSeconds)
+            .durability(durabilityLevel)
+            .keyspace(bucketName, scopeName, collectionName);
+        if (capellaProject != null && capellaDatabase != null) {
+          builder.capella(capellaProject, capellaDatabase);
         }
-
-        clusterOptions = ClusterOptions.clusterOptions(username, password);
-        clusterOptions.environment(environment);
-        cluster = Cluster.connect(hostname, clusterOptions);
-        reactiveCluster = cluster.reactive();
-        bucket = cluster.bucket(bucketName);
+        db = builder.build();
+        collection = db.getCollection();
+      } catch (CouchbaseConnectException e) {
+        throw new DBException(e);
       }
     }
+
     clientNumber = OPEN_CLIENTS.incrementAndGet();
-  }
-
-  private void compileOptions(final Boolean useDurability, int seconds, int loadSeconds) {
-    int totalSeconds;
-
-    dbRemoveOptions = RemoveOptions.removeOptions();
-    dbInsertOptions = InsertOptions.insertOptions();
-    dbUpsertOptions = UpsertOptions.upsertOptions();
-    dbReplaceOptions = ReplaceOptions.replaceOptions();
-    dbMutateOptions = MutateInOptions.mutateInOptions();
-    if (useDurability) {
-      dbInsertOptions = dbInsertOptions.durability(durabilityLevel);
-      dbUpsertOptions = dbUpsertOptions.durability(durabilityLevel);
-      dbReplaceOptions = dbReplaceOptions.durability(durabilityLevel);
-      dbRemoveOptions = dbRemoveOptions.durability(durabilityLevel);
-    } else {
-      dbInsertOptions = dbInsertOptions.durability(persistTo, replicateTo);
-      dbUpsertOptions = dbUpsertOptions.durability(persistTo, replicateTo);
-      dbReplaceOptions = dbReplaceOptions.durability(persistTo, replicateTo);
-      dbRemoveOptions = dbRemoveOptions.durability(persistTo, replicateTo);
-    }
-
-    if (seconds > 0) {
-      if (loadSeconds > 0 && loading) {
-        totalSeconds = loadSeconds;
-      } else if (loadSeconds == 0 && loading) {
-        return;
-      } else {
-        totalSeconds = seconds;
-      }
-      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(totalSeconds));
-      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(totalSeconds));
-      dbReplaceOptions = dbReplaceOptions.expiry(Duration.ofSeconds(totalSeconds));
-      dbMutateOptions = dbMutateOptions.expiry(Duration.ofSeconds(totalSeconds));
-    }
   }
 
   /**
@@ -453,16 +383,12 @@ public class Couchbase3Client extends DB {
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
     try {
-      return retryBlock(() -> {
-          Collection collection = collectionEnabled ?
-              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          try {
-            collection.get(formatId(table, key));
-          } catch (DocumentNotFoundException e) {
-            return Status.NOT_FOUND;
-          }
-          return Status.OK;
-        });
+      String response = db.getString(formatId(table, key));
+      if (response != null) {
+        return Status.OK;
+      } else {
+        return Status.NOT_FOUND;
+      }
     } catch (Throwable t) {
       errors.add(t);
       LOGGER.error("read failed with exception : " + t);
@@ -722,33 +648,6 @@ public class Couchbase3Client extends DB {
     return Status.OK;
   }
 
-//  private Status scanAllFields(final String table, final String startkey, final int recordcount,
-//                               final Vector<HashMap<String, ByteIterator>> result) {
-//    try {
-//      return retryBlock(() -> {
-//          System.out.printf("Scan start %s -> %d\n", startkey, recordcount);
-//          Collection collection = collectionEnabled ?
-//              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-//          String n = startkey.replaceAll("[^0-9]", "");
-//          String prefix = startkey.replaceAll("[0-9]", "");
-//          long d = Long.parseLong(n) + recordcount;
-//          String maxKey = prefix + d;
-//          ScanTerm from = ScanTerm.inclusive(ScanTerm.minimum().id().concat(formatId(table, startkey)));
-//          ScanTerm to = ScanTerm.inclusive(ScanTerm.maximum().id().concat(formatId(table, maxKey)));
-//          ScanType thisScan = ScanType.rangeScan(from, to);
-//          Stream<ScanResult> results = collection.scan(thisScan);
-//          for (ScanResult r : (Iterable<ScanResult>) results::iterator) {
-//            System.out.printf("ID: %s\n", r.id());
-//          }
-//          return Status.OK;
-//        });
-//    } catch (Throwable t) {
-//      errors.add(t);
-//      LOGGER.error("read failed with exception : " + t);
-//      return Status.ERROR;
-//    }
-//  }
-
   /**
    * Performs the {@link #scan(String, String, int, Set, Vector)} operation only for a subset of the fields.
    * @param table The name of the table
@@ -780,6 +679,11 @@ public class Couchbase3Client extends DB {
         .flatMapMany(res -> res.rowsAs(String.class))
         .flatMap(id -> reactiveCollection
           .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE)))
+        .onErrorResume(e -> {
+          LOGGER.error("scanSpecificFields: Start Key: " + startkey + " Count: "
+              + recordcount + " Error:" + e.getClass() + " Info: " + e.getMessage());
+          return Mono.empty();
+        })
         .map(getResult -> {
             HashMap<String, ByteIterator> tuple = new HashMap<>();
             decodeStringSource(getResult.contentAs(String.class), fields, tuple);
