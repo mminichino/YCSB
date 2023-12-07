@@ -14,11 +14,9 @@ import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.retry.BestEffortRetryStrategy;
 import com.couchbase.client.core.service.ServiceType;
-import com.couchbase.client.java.Bucket;
-import com.couchbase.client.java.Scope;
-import com.couchbase.client.java.Cluster;
-import com.couchbase.client.java.ClusterOptions;
+import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.codec.RawJsonTranscoder;
 import com.couchbase.client.java.codec.RawStringTranscoder;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.core.env.SecurityConfig;
@@ -26,7 +24,10 @@ import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustMan
 import com.couchbase.client.java.kv.*;
 import com.couchbase.client.java.manager.bucket.*;
 import com.couchbase.client.core.diagnostics.DiagnosticsResult;
+import com.couchbase.client.java.query.QueryOptions;
 import com.google.gson.*;
+import reactor.core.publisher.Mono;
+import site.ycsb.ByteIterator;
 
 import java.io.*;
 import java.net.URL;
@@ -53,9 +54,11 @@ class CouchbaseConnectException extends Exception {
  */
 public final class CouchbaseConnect {
   private static Cluster cluster;
+  private ReactiveCluster reactor;
   private static Bucket bucket;
   private static Scope scope;
   private static Collection collection;
+  private static ReactiveCollection collectionReactor;
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";
@@ -105,12 +108,14 @@ public final class CouchbaseConnect {
   private CouchbaseCapella capella;
   private DurabilityLevel durability = DurabilityLevel.NONE;
   private int ttlSeconds = 0;
+  private int maxParallelism = 1;
   private GetOptions getOptions = GetOptions.getOptions();
   private RemoveOptions dbRemoveOptions = RemoveOptions.removeOptions();
   private InsertOptions dbInsertOptions = InsertOptions.insertOptions();
   private UpsertOptions dbUpsertOptions = UpsertOptions.upsertOptions();
   private ReplaceOptions dbReplaceOptions = ReplaceOptions.replaceOptions();
   private MutateInOptions dbMutateOptions = MutateInOptions.mutateInOptions();
+  private QueryOptions queryOptions = QueryOptions.queryOptions();
 
   /**
    * Automatically Create Bucket.
@@ -374,6 +379,7 @@ public final class CouchbaseConnect {
                   .environment(environment));
 
       cluster.waitUntilReady(Duration.ofSeconds(5));
+      reactor = cluster.reactive();
 
       DiagnosticsResult diagnosticsResult = cluster.diagnostics();
       for (Map.Entry<ServiceType, List<EndpointDiagnostics>> service : diagnosticsResult.endpoints().entrySet()) {
@@ -540,7 +546,8 @@ public final class CouchbaseConnect {
   }
 
   private void setOptions() {
-    getOptions = getOptions.transcoder(RawStringTranscoder.INSTANCE);
+    getOptions = getOptions.transcoder(RawJsonTranscoder.INSTANCE);
+    queryOptions = queryOptions.maxParallelism(maxParallelism).adhoc(false);
 
     if (durability != DurabilityLevel.NONE) {
       dbInsertOptions = dbInsertOptions.durability(durability);
@@ -566,6 +573,7 @@ public final class CouchbaseConnect {
     bucket.waitUntilReady(Duration.ofSeconds(10));
     scope = bucket.scope(scopeName);
     collection = scope.collection(collectionName);
+    collectionReactor = collection.reactive();
     setOptions();
     return collection;
   }
@@ -591,7 +599,8 @@ public final class CouchbaseConnect {
       GetResult result;
       try {
         result = collection.get(id, getOptions);
-        return result.contentAs(JsonObject.class);
+        String json = result.contentAs(String.class);
+        return new Gson().fromJson(json, JsonObject.class);
       } catch (DocumentNotFoundException e) {
         return null;
       }
@@ -619,10 +628,50 @@ public final class CouchbaseConnect {
         String subDoc = gson.toJson(content);
         subDocArray.add(gson.fromJson(subDoc, JsonObject.class));
         document.add(arrayKey, subDocArray);
-        MutationResult result = collection.upsert(id, document);
+        MutationResult result = collection.upsert(id, document, dbUpsertOptions);
         return result.cas();
       }
     });
+  }
+
+  public long insertArray(String id, String arrayKey, Object content) throws Exception {
+    return RetryLogic.retryBlock(() -> {
+      JsonObject document = new JsonObject();
+      JsonArray subDocArray = new JsonArray();
+      Gson gson = new Gson();
+      String subDoc = gson.toJson(content);
+      subDocArray.add(gson.fromJson(subDoc, JsonObject.class));
+      document.add(arrayKey, subDocArray);
+      MutationResult result = collection.upsert(id, document, dbUpsertOptions);
+      return result.cas();
+    });
+  }
+
+  public long remove(String id) throws Exception {
+    return RetryLogic.retryBlock(() -> {
+      MutationResult result = collection.remove(id, dbRemoveOptions);
+      return result.cas();
+    });
+  }
+
+  public List<JsonObject> getAllDocs(String query) throws Exception {
+    return RetryLogic.retryBlock(() -> {
+      final List<JsonObject> data = new ArrayList<>();
+      reactor.query(query, queryOptions)
+          .flatMapMany(res -> res.rowsAs(String.class))
+          .flatMap(id -> collectionReactor.get(id, getOptions))
+          .doOnError(e -> {
+            throw new RuntimeException(e.getMessage());
+          })
+          .onErrorStop()
+          .map(getResult -> {
+            String json = getResult.contentAs(String.class);
+            return new Gson().fromJson(json, JsonObject.class);
+          })
+          .toStream()
+          .forEach(data::add);
+          return data;
+      });
   }
 
   public void createXDCRReference(String hostname, String username, String password, Boolean external) {

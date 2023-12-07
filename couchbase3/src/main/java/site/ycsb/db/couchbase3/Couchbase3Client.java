@@ -415,13 +415,18 @@ public class Couchbase3Client extends DB {
    */
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
-    Status result;
-    if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
-      result = updateArray(table, key, values);
-    } else {
-      result = updateDocument(table, key, values);
+    try {
+      if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
+        db.upsertArray(formatId(table, key), arrayKey, values);
+      } else {
+        db.upsert(formatId(table, key), values);
+      }
+      return Status.OK;
+    } catch (Throwable t) {
+      errors.add(t);
+      LOGGER.error("update failed with exception :" + t);
+      return Status.ERROR;
     }
-    return result;
   }
 
   private Status updateDocument(final String table, final String key, final Map<String, ByteIterator> values) {
@@ -484,13 +489,18 @@ public class Couchbase3Client extends DB {
    */
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
-    Status result;
-    if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
-      result = insertArray(table, key, values);
-    } else {
-      result = insertDocument(table, key, values);
+    try {
+      if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
+        db.insertArray(formatId(table, key), arrayKey, values);
+      } else {
+        db.upsert(formatId(table, key), values);
+      }
+      return Status.OK;
+    } catch (Throwable t) {
+      errors.add(t);
+      LOGGER.error("update failed with exception :" + t);
+      return Status.ERROR;
     }
-    return result;
   }
 
   public Status insertArray(final String table, final String key, final Map<String, ByteIterator> values) {
@@ -560,16 +570,8 @@ public class Couchbase3Client extends DB {
   @Override
   public Status delete(final String table, final String key) {
     try {
-      return retryBlock(() -> {
-          Collection collection = collectionEnabled ?
-              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          try {
-            collection.remove(formatId(table, key), dbRemoveOptions);
-          } catch (DocumentNotFoundException e) {
-            assert true;
-          }
-          return Status.OK;
-        });
+      db.remove(formatId(table, key));
+      return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
       LOGGER.error("delete failed with exception :" + t);
@@ -589,13 +591,12 @@ public class Couchbase3Client extends DB {
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
     try {
-      return retryBlock(() -> {
-          if (fields == null || fields.isEmpty()) {
-            return scanAllFields(table, startkey, recordcount, result);
-          } else {
-            return scanSpecificFields(table, startkey, recordcount, fields, result);
-          }
-        });
+      if (fields == null || fields.isEmpty()) {
+//        db.getAllDocs();
+        return scanAllFields(table, startkey, recordcount, result);
+      } else {
+        return scanSpecificFields(table, startkey, recordcount, fields, result);
+      }
     } catch (Throwable t) {
       errors.add(t);
       LOGGER.error("scan failed with exception :" + t);
