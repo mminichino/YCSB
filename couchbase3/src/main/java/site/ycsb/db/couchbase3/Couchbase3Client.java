@@ -21,8 +21,14 @@ import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 //import com.couchbase.client.core.env.IoConfig;
 //import com.couchbase.client.core.env.SecurityConfig;
 //import com.couchbase.client.core.env.TimeoutConfig;
+//import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+//import com.couchbase.client.core.env.IoConfig;
+//import com.couchbase.client.core.env.NetworkResolution;
+//import com.couchbase.client.core.env.SecurityConfig;
+//import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
+//import com.couchbase.client.core.retry.BestEffortRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
@@ -44,18 +50,18 @@ import java.io.Writer;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+//import java.time.Duration;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
+//import java.util.function.Consumer;
+
+import com.google.gson.Gson;
 import reactor.core.publisher.Mono;
 
 import org.slf4j.LoggerFactory;
-import site.ycsb.ByteIterator;
-import site.ycsb.DB;
-import site.ycsb.DBException;
-import site.ycsb.Status;
-import site.ycsb.StringByteIterator;
+import site.ycsb.*;
 import site.ycsb.measurements.RemoteStatistics;
 import site.ycsb.measurements.Statistics;
 import site.ycsb.measurements.StatisticsFactory;
@@ -91,10 +97,10 @@ import site.ycsb.measurements.StatisticsFactory;
 public class Couchbase3Client extends DB {
   protected static final ch.qos.logback.classic.Logger LOGGER =
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.CouchbaseClient");
-  protected static final ch.qos.logback.classic.Logger STATISTICS =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
-  protected static final ch.qos.logback.classic.Logger KEY_STATS =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.KeyStats");
+//  protected static final ch.qos.logback.classic.Logger STATISTICS =
+//      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
+//  protected static final ch.qos.logback.classic.Logger KEY_STATS =
+//      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.KeyStats");
   private static final String PROPERTY_FILE = "db.properties";
   private static final String PROPERTY_TEST = "test.properties";
   public static final String COUCHBASE_HOST = "couchbase.hostname";
@@ -105,15 +111,17 @@ public class Couchbase3Client extends DB {
   public static final String COUCHBASE_COLLECTION = "couchbase.collection";
   public static final String COUCHBASE_PROJECT = "couchbase.project";
   public static final String COUCHBASE_DATABASE = "couchbase.database";
-  public static CouchbaseConnect db;
+  private static volatile CouchbaseConnect db;
   private static final String KEY_SEPARATOR = "::";
   private static final String KEYSPACE_SEPARATOR = ".";
   private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
   private static final Object INIT_COORDINATOR = new Object();
   private static volatile Cluster cluster;
+  private static volatile ReactiveCluster reactor;
   private static volatile ReactiveCluster reactiveCluster;
   private static volatile Bucket bucket;
+  private static volatile Scope scope;
   private static volatile Collection collection;
   private static volatile ClusterOptions clusterOptions;
   private volatile PersistTo persistTo;
@@ -135,11 +143,13 @@ public class Couchbase3Client extends DB {
   private static volatile AtomicInteger primaryKeySeq;
   private TestType testMode;
   private String arrayKey;
-  private RemoveOptions dbRemoveOptions;
-  private MutateInOptions dbMutateOptions;
-  private InsertOptions dbInsertOptions;
-  private ReplaceOptions dbReplaceOptions;
-  private UpsertOptions dbUpsertOptions;
+  private RemoveOptions dbRemoveOptions = RemoveOptions.removeOptions();
+  private MutateInOptions dbMutateOptions = MutateInOptions.mutateInOptions();
+  private InsertOptions dbInsertOptions = InsertOptions.insertOptions();
+  private ReplaceOptions dbReplaceOptions = ReplaceOptions.replaceOptions();
+  private UpsertOptions dbUpsertOptions = UpsertOptions.upsertOptions();
+  private GetOptions getOptions = GetOptions.getOptions();
+  private QueryOptions queryOptions = QueryOptions.queryOptions();
   private boolean doUpsert;
   private boolean loading;
   private boolean collectStats;
@@ -147,6 +157,8 @@ public class Couchbase3Client extends DB {
   private final Statistics statistics = Statistics.getStatistics();
   private int clientNumber;
   private final String recordId = "record_id";
+  protected long recordcount;
+  private static volatile DurabilityLevel durability = DurabilityLevel.NONE;
 
   /** Test Type. */
   public enum TestType {
@@ -163,15 +175,22 @@ public class Couchbase3Client extends DB {
 
     if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
         || (propFile = classloader.getResource(PROPERTY_TEST)) != null) {
-      System.err.println("Using file");
       try {
         properties.load(Files.newInputStream(Paths.get(propFile.getFile())));
       } catch (IOException e) {
         throw new DBException(e);
       }
-    } else {
-      properties = getProperties();
     }
+
+    properties.putAll(getProperties());
+
+    recordcount =
+        Long.parseLong(properties.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
+    if (recordcount == 0) {
+      recordcount = Integer.MAX_VALUE;
+    }
+
+    int threadcount = Integer.parseInt(properties.getProperty(Client.THREAD_COUNT_PROPERTY, "1"));
 
     String hostname = properties.getProperty(COUCHBASE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
     String username = properties.getProperty(COUCHBASE_USER, CouchbaseConnect.DEFAULT_USER);
@@ -197,6 +216,7 @@ public class Couchbase3Client extends DB {
     collectKeyStats = properties.getProperty("keyStatistics", "false").equals("true");
 
     ttlSeconds = Integer.parseInt(properties.getProperty("couchbase.ttlSeconds", "0"));
+    boolean sslMode = properties.getProperty("couchbase.sslMode", "false").equals("true");
 
     synchronized (INIT_COORDINATOR) {
       try {
@@ -211,11 +231,129 @@ public class Couchbase3Client extends DB {
         db = builder.build();
         collection = db.getCollection();
       } catch (CouchbaseConnectException e) {
+        LOGGER.error(e.getMessage());
         throw new DBException(e);
       }
     }
 
     clientNumber = OPEN_CLIENTS.incrementAndGet();
+
+    do {
+      try {
+        Thread.sleep(100L);
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      }
+    } while (OPEN_CLIENTS.get() < threadcount);
+  }
+
+  private DurabilityLevel setDurabilityLevel(final int value) {
+    switch(value){
+      case 1:
+        return DurabilityLevel.MAJORITY;
+      case 2:
+        return DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE;
+      case 3:
+        return DurabilityLevel.PERSIST_TO_MAJORITY;
+      default :
+        return DurabilityLevel.NONE;
+    }
+  }
+
+  private void setOptions() {
+    durability = setDurabilityLevel(durabilityLevel);
+    getOptions = getOptions.transcoder(RawJsonTranscoder.INSTANCE);
+    queryOptions = queryOptions.maxParallelism(maxParallelism).adhoc(false);
+
+    if (durability != DurabilityLevel.NONE) {
+      dbInsertOptions = dbInsertOptions.durability(durability);
+      dbUpsertOptions = dbUpsertOptions.durability(durability);
+      dbReplaceOptions = dbReplaceOptions.durability(durability);
+      dbRemoveOptions = dbRemoveOptions.durability(durability);
+    }
+
+    if (ttlSeconds > 0) {
+      dbInsertOptions = dbInsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbUpsertOptions = dbUpsertOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbReplaceOptions = dbReplaceOptions.expiry(Duration.ofSeconds(ttlSeconds));
+      dbMutateOptions = dbMutateOptions.expiry(Duration.ofSeconds(ttlSeconds));
+    }
+  }
+
+  public String getString(String id) throws Exception {
+    return retryBlock(() -> {
+      GetResult result;
+      try {
+        result = collection.get(id, getOptions);
+        return result.contentAs(String.class);
+      } catch (DocumentNotFoundException e) {
+        return null;
+      }
+    });
+  }
+
+  public long upsert(String id, Object content) throws Exception {
+    return retryBlock(() -> {
+      MutationResult result = collection.upsert(id, content, dbUpsertOptions);
+      return result.cas();
+    });
+  }
+
+  public long upsertArray(String id, String arrayKey, Object content) throws Exception {
+    return retryBlock(() -> {
+      try {
+        MutationResult result = collection.mutateIn(id,
+            Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(content))),
+            dbMutateOptions);
+        return result.cas();
+      } catch (DocumentNotFoundException e) {
+        com.google.gson.JsonObject document = new com.google.gson.JsonObject();
+        com.google.gson.JsonArray subDocArray = new com.google.gson.JsonArray();
+        Gson gson = new Gson();
+        String subDoc = gson.toJson(content);
+        subDocArray.add(gson.fromJson(subDoc, com.google.gson.JsonObject.class));
+        document.add(arrayKey, subDocArray);
+        MutationResult result = collection.upsert(id, document, dbUpsertOptions);
+        return result.cas();
+      }
+    });
+  }
+
+  public long insertArray(String id, String arrayKey, Object content) throws Exception {
+    return retryBlock(() -> {
+      com.google.gson.JsonObject document = new com.google.gson.JsonObject();
+      com.google.gson.JsonArray subDocArray = new com.google.gson.JsonArray();
+      Gson gson = new Gson();
+      String subDoc = gson.toJson(content);
+      subDocArray.add(gson.fromJson(subDoc, com.google.gson.JsonObject.class));
+      document.add(arrayKey, subDocArray);
+      MutationResult result = collection.upsert(id, document, dbUpsertOptions);
+      return result.cas();
+    });
+  }
+
+  public long remove(String id) throws Exception {
+    return retryBlock(() -> {
+      MutationResult result = collection.remove(id, dbRemoveOptions);
+      return result.cas();
+    });
+  }
+
+  public List<com.google.gson.JsonObject> getAllDocs(long offset, long limit) throws Exception {
+    return retryBlock(() -> {
+      final String query = String.format("select * from ycsb offset %d limit %d;", offset, limit);
+      final List<com.google.gson.JsonObject> data = new ArrayList<>();
+      reactor.query(query, queryOptions)
+          .flatMapMany(res -> res.rowsAs(String.class))
+          .doOnError(e -> {
+            throw new RuntimeException(e.getMessage());
+          })
+          .onErrorStop()
+          .map(getResult -> new Gson().fromJson(getResult, com.google.gson.JsonObject.class))
+          .toStream()
+          .forEach(data::add);
+      return data;
+    });
   }
 
   /**
@@ -296,9 +434,9 @@ public class Couchbase3Client extends DB {
       }
     }
 
-    if (collectKeyStats && runningClients == 0 && !loading) {
-      KEY_STATS.info(statistics.getSummary());
-    }
+//    if (collectKeyStats && runningClients == 0 && !loading) {
+//      KEY_STATS.info(statistics.getSummary());
+//    }
 
     for (Throwable t : errors) {
       LOGGER.error(t.getMessage(), t);
@@ -491,9 +629,9 @@ public class Couchbase3Client extends DB {
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
-        db.insertArray(formatId(table, key), arrayKey, values);
+        db.insertArray(formatId(table, key), arrayKey, encode(values));
       } else {
-        db.upsert(formatId(table, key), values);
+        db.upsert(formatId(table, key), encode(values));
       }
       return Status.OK;
     } catch (Throwable t) {
@@ -503,29 +641,29 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  public Status insertArray(final String table, final String key, final Map<String, ByteIterator> values) {
-    try {
-      return retryBlock(() -> {
-          List<Map<String, String>> value = new ArrayList<>();
-          value.add(encode(values));
-          Map<String, Object> document = new HashMap<>();
-          document.put(recordId, String.valueOf(primaryKeySeq.incrementAndGet()));
-          document.put(arrayKey, value);
-          Collection collection = collectionEnabled ?
-              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
-          try {
-            insertSwitch(collection, formatId(table, key), document);
-          } catch (DocumentExistsException e) {
-            updateSwitch(collection, formatId(table, key), document);
-          }
-          return Status.OK;
-        });
-    } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("insert failed with exception :" + t);
-      return Status.ERROR;
-    }
-  }
+//  public Status insertArray(final String table, final String key, final Map<String, ByteIterator> values) {
+//    try {
+//      return retryBlock(() -> {
+//          List<Map<String, String>> value = new ArrayList<>();
+//          value.add(encode(values));
+//          Map<String, Object> document = new HashMap<>();
+//          document.put(recordId, String.valueOf(primaryKeySeq.incrementAndGet()));
+//          document.put(arrayKey, value);
+//          Collection collection = collectionEnabled ?
+//              bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+//          try {
+//            insertSwitch(collection, formatId(table, key), document);
+//          } catch (DocumentExistsException e) {
+//            updateSwitch(collection, formatId(table, key), document);
+//          }
+//          return Status.OK;
+//        });
+//    } catch (Throwable t) {
+//      errors.add(t);
+//      LOGGER.error("insert failed with exception :" + t);
+//      return Status.ERROR;
+//    }
+//  }
 
   private Status insertDocument(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
@@ -591,12 +729,8 @@ public class Couchbase3Client extends DB {
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
     try {
-      if (fields == null || fields.isEmpty()) {
-//        db.getAllDocs();
-        return scanAllFields(table, startkey, recordcount, result);
-      } else {
-        return scanSpecificFields(table, startkey, recordcount, fields, result);
-      }
+      db.getAllDocs(getKeyHashNum(startkey), recordcount);
+      return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
       LOGGER.error("scan failed with exception :" + t);
@@ -756,4 +890,7 @@ public class Couchbase3Client extends DB {
     }
   }
 
+  private long getKeyHashNum(String key) {
+    return Math.abs(key.hashCode()) % recordcount;
+  }
 }

@@ -54,4 +54,8 @@ LICENSE file.
     <appender-ref ref="FILE"/>
   </logger>
 
+  <logger name="com.couchbase.CouchbaseConnect" level="INFO">
+    <appender-ref ref="FILE"/>
+  </logger>
+
 </configuration>

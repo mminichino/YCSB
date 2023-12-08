@@ -6,8 +6,11 @@ import java.io.Writer;
 import java.util.concurrent.Callable;
 import org.slf4j.LoggerFactory;
 
-public class RetryLogic {
-  protected static final ch.qos.logback.classic.Logger LOGGER =
+/**
+ * Retry Method.
+ */
+public final class RetryLogic {
+  private static final ch.qos.logback.classic.Logger LOGGER =
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.RetryLogic");
 
   public static <T>T retryBlock(Callable<T> block) throws Exception {
@@ -36,5 +39,9 @@ public class RetryLogic {
       }
     }
     return block.call();
+  }
+
+  private RetryLogic() {
+    super();
   }
 }

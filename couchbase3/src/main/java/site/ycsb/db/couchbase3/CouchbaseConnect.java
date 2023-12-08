@@ -12,12 +12,10 @@ import com.couchbase.client.core.error.BucketExistsException;
 import com.couchbase.client.core.error.BucketNotFoundException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
-import com.couchbase.client.core.retry.BestEffortRetryStrategy;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
-import com.couchbase.client.java.codec.RawStringTranscoder;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -25,9 +23,15 @@ import com.couchbase.client.java.kv.*;
 import com.couchbase.client.java.manager.bucket.*;
 import com.couchbase.client.core.diagnostics.DiagnosticsResult;
 import com.couchbase.client.java.query.QueryOptions;
+import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
+import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
+import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
+import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
+import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
+import static com.couchbase.client.java.kv.GetOptions.getOptions;
+import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import com.google.gson.*;
-import reactor.core.publisher.Mono;
-import site.ycsb.ByteIterator;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.URL;
@@ -37,9 +41,6 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
-
-import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 
 class CouchbaseConnectException extends Exception {
   public CouchbaseConnectException() {}
@@ -53,12 +54,10 @@ class CouchbaseConnectException extends Exception {
  * Couchbase Connection Utility.
  */
 public final class CouchbaseConnect {
+  private static final ch.qos.logback.classic.Logger LOGGER =
+      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("com.couchbase.CouchbaseConnect");
   private static Cluster cluster;
-  private ReactiveCluster reactor;
   private static Bucket bucket;
-  private static Scope scope;
-  private static Collection collection;
-  private static ReactiveCollection collectionReactor;
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";
@@ -68,47 +67,34 @@ public final class CouchbaseConnect {
   private static final BucketMode DEFAULT_BUCKET_MODE = BucketMode.PASSIVE;
   private static final String DEFAULT_SCOPE = "_default";
   private static final String DEFAULT_COLLECTION = "_default";
-  private static int DEFAULT_REPLICA_NUM = 1;
-  private static StorageBackend DEFAULT_STORAGE_BACKEND = StorageBackend.COUCHSTORE;
-  private static final Object CONNECT_COORDINATOR = new Object();
-  private String hostname;
-  private String username;
-  private String password;
-  private String project;
-  private String database;
-  private String connectString;
-  private boolean useExternal = false;
+  private static final int DEFAULT_REPLICA_NUM = 1;
+  private static final StorageBackend DEFAULT_STORAGE_BACKEND = StorageBackend.COUCHSTORE;
+  private final String hostname;
+  private final String username;
+  private final String password;
+  private final String project;
+  private final String database;
   private String bucketName;
   private String scopeName;
   private String collectionName;
   private long bucketQuota;
   private int replicaNum;
   private StorageBackend bucketType;
-  private Boolean useSsl;
-  private BucketMode bucketMode;
+  private final Boolean useSsl;
   private String httpPrefix;
   private String couchbasePrefix;
   private String srvPrefix;
   private Integer adminPort;
   private Integer nodePort;
   private Integer eventingPort;
-  private RESTInterface rest;
+  private final BucketMode bucketMode;
   private String rallyHost;
-  private long memoryQuota;
-  private long indexMemoryQuota;
-  private long ftsMemoryQuota;
-  private long cbasMemoryQuota;
-  private long eventingMemoryQuota;
+  private boolean scopeEnabled;
+  private boolean collectionEnabled;
   private final List<String> rallyHostList = new ArrayList<>();
-  private List<String> externalList = new ArrayList<>();
-  private List<String> eventingList = new ArrayList<>();
-  private final JsonArray hostMap = new JsonArray();
-  private DiagnosticsResult diagnosticsResult;
-  private BucketManager bucketMgr;
-  private CouchbaseCapella capella;
+  private final List<String> eventingList = new ArrayList<>();
   private DurabilityLevel durability = DurabilityLevel.NONE;
   private int ttlSeconds = 0;
-  private int maxParallelism = 1;
   private GetOptions getOptions = GetOptions.getOptions();
   private RemoveOptions dbRemoveOptions = RemoveOptions.removeOptions();
   private InsertOptions dbInsertOptions = InsertOptions.insertOptions();
@@ -124,6 +110,9 @@ public final class CouchbaseConnect {
     CREATE, PASSIVE
   }
 
+  /**
+   * Builder Class.
+   */
   public static class CouchbaseBuilder {
     private String hostName = DEFAULT_HOSTNAME;
     private String userName = DEFAULT_USER;
@@ -265,14 +254,10 @@ public final class CouchbaseConnect {
     this.replicaNum = builder.replicaNum;
     this.bucketType = builder.storageBackEnd;
     this.bucketQuota = builder.bucketQuota;
+    this.scopeEnabled = !Objects.equals(scopeName, "_default");
+    this.collectionEnabled = !Objects.equals(collectionName, "_default");
+    setOptions();
     this.connect();
-    if (this.bucketQuota == 0) {
-      this.bucketQuota = ramQuotaCalc();
-    }
-    if (this.bucketMode == BucketMode.CREATE) {
-      this.bucketCreate(bucketName, this.bucketQuota, this.replicaNum, this.bucketType);
-    }
-    this.keyspace(this.bucketName, this.scopeName, this.collectionName);
   }
 
   public CouchbaseConnect(String hostname) throws CouchbaseConnectException {
@@ -321,66 +306,59 @@ public final class CouchbaseConnect {
     this.connect();
   }
 
-  public void connect() throws CouchbaseConnectException {
-    synchronized (CONNECT_COORDINATOR) {
-      StringBuilder connectBuilder = new StringBuilder();
-      JsonObject clusterInfo;
+  public void connect() {
+    if (useSsl) {
+      httpPrefix = "https://";
+      couchbasePrefix = "couchbases://";
+      srvPrefix = "_couchbases._tcp.";
+      adminPort = 18091;
+      nodePort = 19102;
+      eventingPort = 18096;
+    } else {
+      httpPrefix = "http://";
+      couchbasePrefix = "couchbase://";
+      srvPrefix = "_couchbase._tcp.";
+      adminPort = 8091;
+      nodePort = 9102;
+      eventingPort = 8096;
+    }
 
-      if (useSsl) {
-        httpPrefix = "https://";
-        couchbasePrefix = "couchbases://";
-        srvPrefix = "_couchbases._tcp.";
-        adminPort = 18091;
-        nodePort = 19102;
-        eventingPort = 18096;
-      } else {
-        httpPrefix = "http://";
-        couchbasePrefix = "couchbase://";
-        srvPrefix = "_couchbase._tcp.";
-        adminPort = 8091;
-        nodePort = 9102;
-        eventingPort = 8096;
-      }
+    Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> {
+      securityConfig.enableTls(useSsl)
+      .enableHostnameVerification(false)
+      .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
+    };
 
-      connectBuilder.append(couchbasePrefix);
-      connectBuilder.append(hostname);
+    Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> {
+      ioConfig.numKvConnections(4)
+      .networkResolution(NetworkResolution.AUTO);
+    };
 
-      connectString = connectBuilder.toString();
+    Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> {
+      timeoutConfig.kvTimeout(Duration.ofSeconds(2))
+      .connectTimeout(Duration.ofSeconds(5))
+      .queryTimeout(Duration.ofSeconds(75));
+    };
 
-      Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> {
-        securityConfig.enableTls(useSsl)
-        .enableHostnameVerification(false)
-        .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
-      };
+    ClusterEnvironment environment = ClusterEnvironment
+        .builder()
+        .timeoutConfig(timeOutConfiguration)
+        .ioConfig(ioConfiguration)
+        .securityConfig(secConfiguration)
+        .build();
 
-      Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> {
-        ioConfig.enableTcpKeepAlives(true)
-        .tcpKeepAliveTime(Duration.ofSeconds(5))
-        .networkResolution(NetworkResolution.AUTO);
-      };
+    cluster = Cluster
+        .connect(hostname,
+            ClusterOptions.clusterOptions(username, password)
+                .environment(environment));
 
-      Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> {
-        timeoutConfig.kvTimeout(Duration.ofSeconds(2))
-        .connectTimeout(Duration.ofSeconds(5))
-        .queryTimeout(Duration.ofSeconds(75));
-      };
+    cluster.waitUntilReady(Duration.ofSeconds(5));
+    bucket = cluster.bucket(bucketName);
+  }
 
-      ClusterEnvironment environment = ClusterEnvironment
-          .builder()
-          .timeoutConfig(timeOutConfiguration)
-          .retryStrategy(BestEffortRetryStrategy.INSTANCE)
-          .ioConfig(ioConfiguration)
-          .securityConfig(secConfiguration)
-          .build();
-
-      cluster = Cluster
-          .connect(connectString,
-              ClusterOptions.clusterOptions(username, password)
-                  .environment(environment));
-
-      cluster.waitUntilReady(Duration.ofSeconds(5));
-      reactor = cluster.reactive();
-
+  private void buildHostList() {
+    cluster.waitUntilReady(Duration.ofSeconds(5));
+    if (rallyHostList.isEmpty() || rallyHost == null) {
       DiagnosticsResult diagnosticsResult = cluster.diagnostics();
       for (Map.Entry<ServiceType, List<EndpointDiagnostics>> service : diagnosticsResult.endpoints().entrySet()) {
         if (service.getKey() == ServiceType.KV) {
@@ -390,92 +368,41 @@ public final class CouchbaseConnect {
           }
         }
       }
-
       rallyHost = rallyHostList.get(0);
-
-      rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
-      if (project != null) {
-        capella = new CouchbaseCapella(project, database);
-      }
-
-      try {
-        clusterInfo = rest.getJSON("/pools/default");
-      } catch (RESTException e) {
-        throw new CouchbaseConnectException(e.getMessage());
-      }
-
-      memoryQuota = clusterInfo.get("memoryQuota").getAsLong();
-      indexMemoryQuota = clusterInfo.get("indexMemoryQuota").getAsLong();
-      ftsMemoryQuota = clusterInfo.get("ftsMemoryQuota").getAsLong();
-      cbasMemoryQuota = clusterInfo.get("cbasMemoryQuota").getAsLong();
-      eventingMemoryQuota = clusterInfo.get("eventingMemoryQuota").getAsLong();
-
-      for (JsonElement node : clusterInfo.getAsJsonArray("nodes").asList()) {
-        String hostEntry = node.getAsJsonObject().get("hostname").getAsString();
-        String[] endpoint = hostEntry.split(":", 2);
-        String hostname = endpoint[0];
-        String external;
-
-        if (node.getAsJsonObject().has("alternateAddresses")) {
-          external = node.getAsJsonObject().get("alternateAddresses").getAsJsonObject().get("external")
-              .getAsJsonObject().get("hostname").getAsString();
-          Stream<String> stream = rallyHostList.parallelStream();
-          boolean result = stream.anyMatch(e -> e.equals(external));
-          if (!useExternal && result) {
-            useExternal = true;
-          }
-        } else {
-          external = null;
-        }
-
-        JsonArray services = node.getAsJsonObject().getAsJsonArray("services");
-
-        JsonObject entry = new JsonObject();
-        entry.addProperty("hostname", hostname);
-        entry.addProperty("external", external);
-        entry.add("services", services);
-
-        hostMap.add(entry);
-      }
-
-      for (JsonElement node : hostMap.asList()) {
-        List<JsonElement> services = node.getAsJsonObject().getAsJsonArray("services").asList();
-        Stream<JsonElement> stream = services.parallelStream();
-        boolean result = stream.anyMatch(e -> e.getAsString().equals("eventing"));
-        if (result) {
-          if (useExternal) {
-            String external = node.getAsJsonObject().get("external").getAsString();
-            eventingList.add(external);
-          } else {
-            String hostname = node.getAsJsonObject().get("hostname").getAsString();
-            eventingList.add(hostname);
-          }
-        }
-      }
-
-      bucketMgr = cluster.buckets();
     }
   }
 
-  public Collection keyspace(String bucket) throws CouchbaseConnectException {
+  private long getMemQuota() {
+    buildHostList();
+    RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
+    JsonObject clusterInfo;
+    try {
+      clusterInfo = rest.getJSON("/pools/default");
+      return clusterInfo.get("memoryQuota").getAsLong();
+    } catch (RESTException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public void keyspace(String bucket) throws CouchbaseConnectException {
     bucketName = bucket;
     scopeName = DEFAULT_SCOPE;
     collectionName = DEFAULT_COLLECTION;
-    return connectKeyspace();
+    connectKeyspace();
   }
 
-  public Collection keyspace(String bucket, String scope) throws CouchbaseConnectException {
+  public void keyspace(String bucket, String scope) throws CouchbaseConnectException {
     bucketName = bucket;
     scopeName = scope;
     collectionName = DEFAULT_COLLECTION;
-    return connectKeyspace();
+    connectKeyspace();
   }
 
-  public Collection keyspace(String bucket, String scope, String collection) throws CouchbaseConnectException {
+  public void keyspace(String bucket, String scope, String collection) throws CouchbaseConnectException {
     bucketName = bucket;
     scopeName = scope;
     collectionName = collection;
-    return connectKeyspace();
+    connectKeyspace();
   }
 
   public void bucketCreate(String bucket, int replicas) {
@@ -493,7 +420,8 @@ public final class CouchbaseConnect {
   }
 
   public void bucketCreate(String bucket, long quota, int replicas, StorageBackend type) {
-    if (project != null && capella != null) {
+    if (project != null && database != null) {
+      CouchbaseCapella capella = new CouchbaseCapella(project, database);
       capella.createBucket(bucket, quota, replicas, type);
     } else {
       try {
@@ -506,18 +434,23 @@ public final class CouchbaseConnect {
             .storageBackend(type)
             .conflictResolutionType(ConflictResolutionType.SEQUENCE_NUMBER);
 
+        BucketManager bucketMgr = cluster.buckets();
         bucketMgr.createBucket(bucketSettings);
       } catch (BucketExistsException e) {
         //ignore
       }
     }
+    Bucket check = cluster.bucket(bucket);
+    check.waitUntilReady(Duration.ofSeconds(10));
   }
 
   public void dropBucket(String bucket) {
-    if (project != null && capella != null) {
+    if (project != null && database != null) {
+      CouchbaseCapella capella = new CouchbaseCapella(project, database);
       capella.dropBucket(bucket);
     } else {
       try {
+        BucketManager bucketMgr = cluster.buckets();
         bucketMgr.dropBucket(bucket);
       } catch (BucketNotFoundException e) {
         //ignore
@@ -527,6 +460,7 @@ public final class CouchbaseConnect {
 
   public Boolean isBucket(String bucket) {
     try {
+      BucketManager bucketMgr = cluster.buckets();
       bucketMgr.getBucket(bucket);
       return true;
     } catch (BucketNotFoundException e) {
@@ -535,7 +469,8 @@ public final class CouchbaseConnect {
   }
 
   public long ramQuotaCalc() {
-    long freeMemoryQuota = memoryQuota;
+    long freeMemoryQuota = getMemQuota();
+    BucketManager bucketMgr = cluster.buckets();
     Map<String, BucketSettings> buckets = bucketMgr.getAllBuckets();
     for (Map.Entry<String, BucketSettings> bucketEntry : buckets.entrySet()) {
       BucketSettings bucketSettings = bucketEntry.getValue();
@@ -546,9 +481,6 @@ public final class CouchbaseConnect {
   }
 
   private void setOptions() {
-    getOptions = getOptions.transcoder(RawJsonTranscoder.INSTANCE);
-    queryOptions = queryOptions.maxParallelism(maxParallelism).adhoc(false);
-
     if (durability != DurabilityLevel.NONE) {
       dbInsertOptions = dbInsertOptions.durability(durability);
       dbUpsertOptions = dbUpsertOptions.durability(durability);
@@ -564,29 +496,29 @@ public final class CouchbaseConnect {
     }
   }
 
-  public Collection connectKeyspace() throws CouchbaseConnectException {
-    if (isBucket(bucketName)) {
-      bucket = cluster.bucket(bucketName);
-    } else {
-      throw new CouchbaseConnectException("bucket does not exist");
-    }
-    bucket.waitUntilReady(Duration.ofSeconds(10));
-    scope = bucket.scope(scopeName);
-    collection = scope.collection(collectionName);
-    collectionReactor = collection.reactive();
+  public void connectKeyspace() {
+    bucket = cluster.bucket(bucketName);
+//    scope = bucket.scope(scopeName);
+//    collection = scope.collection(collectionName);
     setOptions();
-    return collection;
+//    return collection;
   }
 
   public Collection getCollection() {
-    return collection;
+    return collectionEnabled ?
+        bucket.scope(this.scopeName).collection(this.collectionName) : bucket.defaultCollection();
+  }
+
+  public Bucket getBucket() {
+    return bucket;
   }
 
   public String getString(String id) throws Exception {
+    Collection collection = getCollection();
     return RetryLogic.retryBlock(() -> {
       GetResult result;
       try {
-        result = collection.get(id, getOptions);
+        result = collection.get(id, getOptions().transcoder(RawJsonTranscoder.INSTANCE));
         return result.contentAs(String.class);
       } catch (DocumentNotFoundException e) {
         return null;
@@ -595,10 +527,11 @@ public final class CouchbaseConnect {
   }
 
   public JsonObject getJSON(String id) throws Exception {
+    Collection collection = getCollection();
     return RetryLogic.retryBlock(() -> {
       GetResult result;
       try {
-        result = collection.get(id, getOptions);
+        result = collection.get(id, getOptions().transcoder(RawJsonTranscoder.INSTANCE));
         String json = result.contentAs(String.class);
         return new Gson().fromJson(json, JsonObject.class);
       } catch (DocumentNotFoundException e) {
@@ -607,14 +540,17 @@ public final class CouchbaseConnect {
     });
   }
 
-  public long upsert(String id, Object content) throws Exception {
-    return RetryLogic.retryBlock(() -> {
-      MutationResult result = collection.upsert(id, content, dbUpsertOptions);
-      return result.cas();
-    });
+  public void upsert(String id, Object content) throws Exception {
+    Collection collection = getCollection();
+    try {
+      collection.upsert(id, content, dbUpsertOptions);
+    } catch (Exception e) {
+      LOGGER.error(e.getMessage());
+    }
   }
 
   public long upsertArray(String id, String arrayKey, Object content) throws Exception {
+    Collection collection = getCollection();
     return RetryLogic.retryBlock(() -> {
       try {
         MutationResult result = collection.mutateIn(id,
@@ -635,6 +571,7 @@ public final class CouchbaseConnect {
   }
 
   public long insertArray(String id, String arrayKey, Object content) throws Exception {
+    Collection collection = getCollection();
     return RetryLogic.retryBlock(() -> {
       JsonObject document = new JsonObject();
       JsonArray subDocArray = new JsonArray();
@@ -648,26 +585,25 @@ public final class CouchbaseConnect {
   }
 
   public long remove(String id) throws Exception {
+    Collection collection = getCollection();
     return RetryLogic.retryBlock(() -> {
       MutationResult result = collection.remove(id, dbRemoveOptions);
       return result.cas();
     });
   }
 
-  public List<JsonObject> getAllDocs(String query) throws Exception {
+  public List<JsonObject> getAllDocs(long offset, long limit) throws Exception {
     return RetryLogic.retryBlock(() -> {
+      ReactiveCluster reactor = cluster.reactive();
+      final String query = String.format("select * from ycsb offset %d limit %d;", offset, limit);
       final List<JsonObject> data = new ArrayList<>();
-      reactor.query(query, queryOptions)
+      reactor.query(query, queryOptions().maxParallelism(1).adhoc(false))
           .flatMapMany(res -> res.rowsAs(String.class))
-          .flatMap(id -> collectionReactor.get(id, getOptions))
           .doOnError(e -> {
             throw new RuntimeException(e.getMessage());
           })
           .onErrorStop()
-          .map(getResult -> {
-            String json = getResult.contentAs(String.class);
-            return new Gson().fromJson(json, JsonObject.class);
-          })
+          .map(getResult -> new Gson().fromJson(getResult, JsonObject.class))
           .toStream()
           .forEach(data::add);
           return data;
@@ -690,6 +626,7 @@ public final class CouchbaseConnect {
     }
 
     try {
+      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
       String endpoint = "/pools/default/remoteClusters";
       rest.postParameters(endpoint, parameters);
     } catch (RESTException e) {
@@ -699,6 +636,7 @@ public final class CouchbaseConnect {
 
   public String getXDCRReference(String hostname) {
     try {
+      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
       JsonArray remotes = rest.getJSONArray("/pools/default/remoteClusters");
       for (JsonElement entry : remotes) {
         if (entry.getAsJsonObject().get("name").getAsString().equals(hostname)) {
@@ -719,6 +657,7 @@ public final class CouchbaseConnect {
     String endpoint = "/pools/default/remoteClusters/" + hostname;
 
     try {
+      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
       rest.deleteEndpoint(endpoint);
     } catch (RESTException e) {
       throw new RuntimeException(e);
@@ -738,6 +677,7 @@ public final class CouchbaseConnect {
     parameters.put("toBucket", target);
 
     try {
+      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
       String endpoint = "/controller/createReplication";
       rest.postParameters(endpoint, parameters);
     } catch (RESTException e) {
@@ -759,6 +699,7 @@ public final class CouchbaseConnect {
     String endpoint = "/controller/cancelXDCR/" + uuid + "%2F" + source + "%2F" + target;
 
     try {
+      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
       rest.deleteEndpoint(endpoint);
     } catch (RESTException e) {
       throw new RuntimeException(e);
@@ -775,6 +716,7 @@ public final class CouchbaseConnect {
     String endpoint = "/settings/replications/" + uuid + "%2F" + source + "%2F" + target;
 
     try {
+      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
       rest.getJSON(endpoint);
       return true;
     } catch (RESTException e) {
