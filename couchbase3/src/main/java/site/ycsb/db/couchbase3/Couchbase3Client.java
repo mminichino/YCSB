@@ -23,6 +23,7 @@ import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
@@ -118,6 +119,7 @@ public class Couchbase3Client extends DB {
     URL propFile;
     Properties properties = new Properties();
     Bucket bucket;
+    String couchbasePrefix;
 
     if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
         || (propFile = classloader.getResource(PROPERTY_TEST)) != null) {
@@ -158,29 +160,56 @@ public class Couchbase3Client extends DB {
 
     ttlSeconds = Integer.parseInt(properties.getProperty("couchbase.ttlSeconds", "0"));
 
-    synchronized (INIT_COORDINATOR) {
-      cluster = Cluster.connect(
-          hostname,
-          ClusterOptions.clusterOptions(username, password).environment(env -> {
-            env.ioConfig(ioConfig -> {
-              ioConfig.numKvConnections(4);
-            }).securityConfig(securityConfig -> {
-              securityConfig.enableTls(sslMode)
-                  .enableHostnameVerification(false)
-                  .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
-            }).timeoutConfig(timeoutConfig -> {
-              timeoutConfig.kvTimeout(Duration.ofSeconds(2))
-                  .connectTimeout(Duration.ofSeconds(5))
-                  .queryTimeout(Duration.ofSeconds(75));
-            });
-          })
-      );
+    if (sslMode) {
+      couchbasePrefix = "couchbases://";
+    } else {
+      couchbasePrefix = "couchbase://";
     }
-    cluster.waitUntilReady(Duration.ofSeconds(5));
+
+    String connectString = couchbasePrefix + hostname;
+
+    synchronized (INIT_COORDINATOR) {
+      try {
+        cluster = Cluster.connect(connectString,
+            ClusterOptions.clusterOptions(username, password).environment(env -> {
+              env.ioConfig(ioConfig -> {
+                ioConfig.numKvConnections(4).networkResolution(NetworkResolution.AUTO)
+                    .enableMutationTokens(false);
+              }).securityConfig(securityConfig -> {
+                securityConfig.enableTls(sslMode)
+                    .enableHostnameVerification(false)
+                    .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
+              }).timeoutConfig(timeoutConfig -> {
+                timeoutConfig.kvTimeout(Duration.ofSeconds(2))
+                    .connectTimeout(Duration.ofSeconds(5))
+                    .queryTimeout(Duration.ofSeconds(75));
+              });
+            })
+        );
+      } catch(Exception e) {
+        logError(e, connectString);
+      }
+    }
+
+    try {
+      cluster.waitUntilReady(Duration.ofSeconds(5));
+    } catch(Exception e) {
+      logError(e, connectString);
+    }
     bucket = cluster.bucket(bucketName);
     collection = bucket.scope(scopeName).collection(collectionName);
 
     clientNumber = OPEN_CLIENTS.incrementAndGet();
+  }
+
+  private void logError(Exception error, String connectString) {
+    Writer buffer = new StringWriter();
+    PrintWriter pw = new PrintWriter(buffer);
+    error.printStackTrace(pw);
+    LOGGER.error(String.format("Connection string: %s", connectString));
+    LOGGER.error(pw.toString());
+    LOGGER.error(cluster.environment().toString());
+    LOGGER.error(cluster.diagnostics().endpoints().toString());
   }
 
   private DurabilityLevel setDurabilityLevel(final int value) {

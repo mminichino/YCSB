@@ -35,17 +35,12 @@ LICENSE file.
       <dependency>
           <groupId>com.couchbase.client</groupId>
           <artifactId>java-client</artifactId>
-          <version>3.4.11</version>
+          <version>3.5.0</version>
       </dependency>
       <dependency>
         <groupId>com.couchbase.client</groupId>
         <artifactId>dcp-client</artifactId>
         <version>0.47.0</version>
-      </dependency>
-      <dependency>
-        <groupId>com.couchbase.client</groupId>
-        <artifactId>couchbase-transactions</artifactId>
-        <version>1.2.4</version>
       </dependency>
       <dependency>
           <groupId>site.ycsb</groupId>
