@@ -11,6 +11,7 @@ import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.BucketExistsException;
 import com.couchbase.client.core.error.BucketNotFoundException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
+import com.couchbase.client.core.error.UnambiguousTimeoutException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.java.*;
@@ -24,10 +25,10 @@ import com.couchbase.client.java.manager.bucket.*;
 import com.couchbase.client.core.diagnostics.DiagnosticsResult;
 import com.couchbase.client.java.query.QueryOptions;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
-import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
-import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
-import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
-import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
+//import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
+//import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
+//import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
+//import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import com.google.gson.*;
@@ -41,6 +42,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 class CouchbaseConnectException extends Exception {
   public CouchbaseConnectException() {}
@@ -69,26 +71,29 @@ public final class CouchbaseConnect {
   private static final String DEFAULT_COLLECTION = "_default";
   private static final int DEFAULT_REPLICA_NUM = 1;
   private static final StorageBackend DEFAULT_STORAGE_BACKEND = StorageBackend.COUCHSTORE;
-  private final String hostname;
-  private final String username;
-  private final String password;
-  private final String project;
-  private final String database;
-  private String bucketName;
+  private static final Object INIT_COORDINATOR = new Object();
+  public final String hostname;
+  public final String username;
+  public final String password;
+  public final String project;
+  public final String database;
+  public boolean external;
+  public String bucketName;
   private String scopeName;
   private String collectionName;
   private long bucketQuota;
   private int replicaNum;
   private StorageBackend bucketType;
-  private final Boolean useSsl;
+  public final Boolean useSsl;
   private String httpPrefix;
   private String couchbasePrefix;
   private String srvPrefix;
-  private Integer adminPort;
+  public Integer adminPort;
   private Integer nodePort;
   private Integer eventingPort;
   private final BucketMode bucketMode;
-  private String rallyHost;
+  private JsonArray hostMap = new JsonArray();
+  public String rallyHost;
   private boolean scopeEnabled;
   private boolean collectionEnabled;
   private final List<String> rallyHostList = new ArrayList<>();
@@ -256,7 +261,6 @@ public final class CouchbaseConnect {
     this.bucketQuota = builder.bucketQuota;
     this.scopeEnabled = !Objects.equals(scopeName, "_default");
     this.collectionEnabled = !Objects.equals(collectionName, "_default");
-    setOptions();
     this.connect();
   }
 
@@ -325,19 +329,19 @@ public final class CouchbaseConnect {
 
     Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> {
       securityConfig.enableTls(useSsl)
-      .enableHostnameVerification(false)
-      .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
+          .enableHostnameVerification(false)
+          .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
     };
 
     Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> {
       ioConfig.numKvConnections(4)
-      .networkResolution(NetworkResolution.AUTO);
+          .networkResolution(NetworkResolution.AUTO);
     };
 
     Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> {
       timeoutConfig.kvTimeout(Duration.ofSeconds(2))
-      .connectTimeout(Duration.ofSeconds(5))
-      .queryTimeout(Duration.ofSeconds(75));
+          .connectTimeout(Duration.ofSeconds(5))
+          .queryTimeout(Duration.ofSeconds(75));
     };
 
     ClusterEnvironment environment = ClusterEnvironment
@@ -352,28 +356,112 @@ public final class CouchbaseConnect {
             ClusterOptions.clusterOptions(username, password)
                 .environment(environment));
 
-    cluster.waitUntilReady(Duration.ofSeconds(5));
+    try {
+      cluster.waitUntilReady(Duration.ofSeconds(10));
+    } catch (UnambiguousTimeoutException e) {
+      throw new RuntimeException(String.format("timeout waiting for cluster with node %s", hostname));
+    }
     bucket = cluster.bucket(bucketName);
+    try {
+      hostMap = getClusterInfo();
+      rallyHost = getRallyHost();
+      external = getExternalFlag();
+    } catch (CouchbaseConnectException e) {
+      throw new RuntimeException(e);
+    }
   }
 
-  private void buildHostList() {
-    cluster.waitUntilReady(Duration.ofSeconds(5));
+  private String buildHostList() {
     if (rallyHostList.isEmpty() || rallyHost == null) {
       DiagnosticsResult diagnosticsResult = cluster.diagnostics();
       for (Map.Entry<ServiceType, List<EndpointDiagnostics>> service : diagnosticsResult.endpoints().entrySet()) {
         if (service.getKey() == ServiceType.KV) {
           for (EndpointDiagnostics ed : service.getValue()) {
-            String[] endpoint = ed.remote().split(":", 2);
-            rallyHostList.add(endpoint[0]);
+            if (ed.remote() != null && !ed.remote().isEmpty()) {
+              String[] endpoint = ed.remote().split(":", 2);
+              rallyHostList.add(endpoint[0]);
+            }
           }
         }
       }
-      rallyHost = rallyHostList.get(0);
+      return rallyHostList.get(0);
     }
+    return null;
+  }
+
+  private JsonArray getClusterInfo() throws CouchbaseConnectException {
+    JsonObject clusterInfo;
+    String rallyHost = buildHostList();
+    JsonArray hostMap = new JsonArray();
+
+    if (rallyHost == null) {
+      throw new CouchbaseConnectException("can not determine rally host");
+    }
+
+    try {
+      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
+      clusterInfo = rest.getJSON("/pools/default");
+    } catch (RESTException e) {
+      throw new CouchbaseConnectException(e.getMessage());
+    }
+
+    for (JsonElement node : clusterInfo.getAsJsonArray("nodes").asList()) {
+      String hostEntry = node.getAsJsonObject().get("hostname").getAsString();
+      String[] endpoint = hostEntry.split(":", 2);
+      String hostname = endpoint[0];
+      String external;
+      boolean useExternal = false;
+
+      if (node.getAsJsonObject().has("alternateAddresses")) {
+        external = node.getAsJsonObject().get("alternateAddresses").getAsJsonObject().get("external")
+            .getAsJsonObject().get("hostname").getAsString();
+        Stream<String> stream = rallyHostList.parallelStream();
+        boolean result = stream.anyMatch(e -> e.equals(external));
+        if (result) {
+          useExternal = true;
+        }
+      } else {
+        external = null;
+      }
+
+      JsonArray services = node.getAsJsonObject().getAsJsonArray("services");
+
+      JsonObject entry = new JsonObject();
+      entry.addProperty("hostname", hostname);
+      entry.addProperty("external", external);
+      entry.addProperty("useExternal", useExternal);
+      entry.add("services", services);
+
+      hostMap.add(entry);
+    }
+    return hostMap;
+  }
+
+  public String getRallyHost() {
+    Stream<JsonElement> stream = hostMap.asList().parallelStream();
+    return stream.filter(e -> e.getAsJsonObject().get("services").getAsJsonArray()
+            .contains(JsonParser.parseString("kv")))
+        .map(e -> {
+          if (e.getAsJsonObject().get("useExternal").getAsBoolean()) {
+            return e.getAsJsonObject().get("external").getAsString();
+          } else {
+            return e.getAsJsonObject().get("hostname").getAsString();
+          }
+        })
+        .findFirst()
+        .orElse(null);
+  }
+
+  public boolean getExternalFlag() {
+    Stream<JsonElement> stream = hostMap.asList().parallelStream();
+    return stream.filter(e -> e.getAsJsonObject().get("services").getAsJsonArray()
+            .contains(JsonParser.parseString("kv")))
+        .map(e -> e.getAsJsonObject().get("useExternal").getAsBoolean())
+        .findFirst()
+        .orElse(false);
   }
 
   private long getMemQuota() {
-    buildHostList();
     RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
     JsonObject clusterInfo;
     try {
@@ -405,21 +493,21 @@ public final class CouchbaseConnect {
     connectKeyspace();
   }
 
-  public void bucketCreate(String bucket, int replicas) {
+  public void createBucket(String bucket, int replicas) {
     long quota = ramQuotaCalc();
-    bucketCreate(bucket, quota, replicas, StorageBackend.COUCHSTORE);
+    cbCreateBucket(bucket, quota, replicas, StorageBackend.COUCHSTORE);
   }
 
-  public void bucketCreate(String bucket, long quota, int replicas) {
-    bucketCreate(bucket, quota, replicas, StorageBackend.COUCHSTORE);
+  public void createBucket(String bucket, long quota, int replicas) {
+    cbCreateBucket(bucket, quota, replicas, StorageBackend.COUCHSTORE);
   }
 
-  public void bucketCreate(String bucket, int replicas, StorageBackend type) {
+  public void createBucket(String bucket, int replicas, StorageBackend type) {
     long quota = ramQuotaCalc();
-    bucketCreate(bucket, quota, replicas, type);
+    cbCreateBucket(bucket, quota, replicas, type);
   }
 
-  public void bucketCreate(String bucket, long quota, int replicas, StorageBackend type) {
+  public void cbCreateBucket(String bucket, long quota, int replicas, StorageBackend type) {
     if (project != null && database != null) {
       CouchbaseCapella capella = new CouchbaseCapella(project, database);
       capella.createBucket(bucket, quota, replicas, type);
@@ -608,123 +696,6 @@ public final class CouchbaseConnect {
           .forEach(data::add);
           return data;
       });
-  }
-
-  public void createXDCRReference(String hostname, String username, String password, Boolean external) {
-    Map<String, String> parameters = new HashMap<>();
-
-    if (getXDCRReference(hostname) != null) {
-      return;
-    }
-
-    parameters.put("name", hostname);
-    parameters.put("hostname", hostname);
-    parameters.put("username", username);
-    parameters.put("password", password);
-    if (external) {
-      parameters.put("network_type", "external");
-    }
-
-    try {
-      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
-      String endpoint = "/pools/default/remoteClusters";
-      rest.postParameters(endpoint, parameters);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  public String getXDCRReference(String hostname) {
-    try {
-      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
-      JsonArray remotes = rest.getJSONArray("/pools/default/remoteClusters");
-      for (JsonElement entry : remotes) {
-        if (entry.getAsJsonObject().get("name").getAsString().equals(hostname)) {
-          return entry.getAsJsonObject().get("uuid").getAsString();
-        }
-      }
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
-    }
-    return null;
-  }
-
-  public void deleteXDCRReference(String hostname) {
-    if (getXDCRReference(hostname) == null) {
-      return;
-    }
-
-    String endpoint = "/pools/default/remoteClusters/" + hostname;
-
-    try {
-      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
-      rest.deleteEndpoint(endpoint);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  public void createXDCRReplication(String remote, String source, String target) {
-    Map<String, String> parameters = new HashMap<>();
-
-    if (isXDCRReplicating(remote, source, target)) {
-      return;
-    }
-
-    parameters.put("replicationType", "continuous");
-    parameters.put("fromBucket", source);
-    parameters.put("toCluster", remote);
-    parameters.put("toBucket", target);
-
-    try {
-      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
-      String endpoint = "/controller/createReplication";
-      rest.postParameters(endpoint, parameters);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  public void deleteXDCRReplication(String remote, String source, String target) {
-    if (!isXDCRReplicating(remote, source, target)) {
-      return;
-    }
-
-    String uuid = getXDCRReference(remote);
-
-    if (uuid == null) {
-      return;
-    }
-
-    String endpoint = "/controller/cancelXDCR/" + uuid + "%2F" + source + "%2F" + target;
-
-    try {
-      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
-      rest.deleteEndpoint(endpoint);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  public Boolean isXDCRReplicating(String remote, String source, String target) {
-    String uuid = getXDCRReference(remote);
-
-    if (uuid == null) {
-      return false;
-    }
-
-    String endpoint = "/settings/replications/" + uuid + "%2F" + source + "%2F" + target;
-
-    try {
-      RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
-      rest.getJSON(endpoint);
-      return true;
-    } catch (RESTException e) {
-      if (ErrorCode.valueOf(e.getCode()) == ErrorCode.BADREQUEST) {
-        return false;
-      }
-      throw new RuntimeException(e);
-    }
   }
 
   public Boolean isEventingFunction(String name) throws CouchbaseConnectException {
