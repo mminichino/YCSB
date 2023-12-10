@@ -26,7 +26,7 @@ public final class ClusterInit {
   public static final String TARGET_DATABASE = "xdcr.database";
   public static final String TARGET_EVENTING = "xdcr.eventing";
 
-  private static void prepCluster(Properties properties, boolean onlySource) {
+  private static void prepCluster(Properties properties, boolean onlySource, boolean createIndex) {
     CouchbaseConnect.CouchbaseBuilder sourceBuilder = new CouchbaseConnect.CouchbaseBuilder();
     CouchbaseConnect.CouchbaseBuilder targetBuilder = new CouchbaseConnect.CouchbaseBuilder();
     CouchbaseXDCR.XDCRBuilder xdcrBuilder = new CouchbaseXDCR.XDCRBuilder();
@@ -65,6 +65,10 @@ public final class ClusterInit {
       }
       System.out.printf("Creating %s bucket [%s]\n", sourceBucket, sourceHost);
       sourceDb.createBucket(sourceBucket, 1);
+      if (createIndex) {
+        System.out.println("Creating primary index");
+        sourceDb.createPrimaryIndex();
+      }
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
@@ -107,6 +111,10 @@ public final class ClusterInit {
     remove.setRequired(false);
     options.addOption(remove);
 
+    Option index = new Option("I", "index", false, "Create primary index");
+    index.setRequired(false);
+    options.addOption(index);
+
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
 
@@ -128,7 +136,7 @@ public final class ClusterInit {
     }
 
     try {
-      prepCluster(properties, cmd.hasOption("source"));
+      prepCluster(properties, cmd.hasOption("source"), cmd.hasOption("index"));
     } catch (Exception e) {
       System.err.println("Error: " + e);
       e.printStackTrace(System.err);

@@ -11,7 +11,6 @@ import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.BucketExistsException;
 import com.couchbase.client.core.error.BucketNotFoundException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
-import com.couchbase.client.core.error.UnambiguousTimeoutException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.java.*;
@@ -23,6 +22,8 @@ import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustMan
 import com.couchbase.client.java.kv.*;
 import com.couchbase.client.java.manager.bucket.*;
 import com.couchbase.client.core.diagnostics.DiagnosticsResult;
+import com.couchbase.client.java.manager.query.CollectionQueryIndexManager;
+import com.couchbase.client.java.manager.query.CreatePrimaryQueryIndexOptions;
 import com.couchbase.client.java.query.QueryOptions;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 //import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
@@ -35,17 +36,12 @@ import com.google.gson.*;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 class CouchbaseConnectException extends Exception {
-  public CouchbaseConnectException() {}
 
   public CouchbaseConnectException(String message) {
     super(message);
@@ -58,8 +54,12 @@ class CouchbaseConnectException extends Exception {
 public final class CouchbaseConnect {
   private static final ch.qos.logback.classic.Logger LOGGER =
       (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("com.couchbase.CouchbaseConnect");
-  private static Cluster cluster;
-  private static Bucket bucket;
+  private static volatile Cluster cluster;
+  private static volatile Bucket bucket;
+  private static volatile Scope scope;
+  private static volatile Collection collection;
+  private static volatile ClusterEnvironment environment;
+  private static volatile BucketManager bucketMgr;
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";
@@ -71,29 +71,29 @@ public final class CouchbaseConnect {
   private static final String DEFAULT_COLLECTION = "_default";
   private static final int DEFAULT_REPLICA_NUM = 1;
   private static final StorageBackend DEFAULT_STORAGE_BACKEND = StorageBackend.COUCHSTORE;
-  private static final Object INIT_COORDINATOR = new Object();
-  public final String hostname;
-  public final String username;
-  public final String password;
-  public final String project;
-  public final String database;
-  public boolean external;
-  public String bucketName;
+  private static final Object STARTUP_COORDINATOR = new Object();
+  private final String hostname;
+  private final String username;
+  private final String password;
+  private final String project;
+  private final String database;
+  private boolean external;
+  private String bucketName;
   private String scopeName;
   private String collectionName;
   private long bucketQuota;
   private int replicaNum;
   private StorageBackend bucketType;
-  public final Boolean useSsl;
+  private final Boolean useSsl;
   private String httpPrefix;
   private String couchbasePrefix;
   private String srvPrefix;
   public Integer adminPort;
   private Integer nodePort;
-  private Integer eventingPort;
+  public Integer eventingPort;
   private final BucketMode bucketMode;
-  private JsonArray hostMap = new JsonArray();
-  public String rallyHost;
+  private static JsonArray hostMap = new JsonArray();
+  private static String rallyHost;
   private boolean scopeEnabled;
   private boolean collectionEnabled;
   private final List<String> rallyHostList = new ArrayList<>();
@@ -264,52 +264,6 @@ public final class CouchbaseConnect {
     this.connect();
   }
 
-  public CouchbaseConnect(String hostname) throws CouchbaseConnectException {
-    this.hostname = hostname;
-    this.username = DEFAULT_USER;
-    this.password = DEFAULT_PASSWORD;
-    this.useSsl = DEFAULT_SSL_MODE;
-    this.project = DEFAULT_PROJECT;
-    this.database = DEFAULT_DATABASE;
-    this.bucketMode = BucketMode.CREATE;
-    this.connect();
-  }
-
-  public CouchbaseConnect(String hostname, String username, String password) throws CouchbaseConnectException {
-    this.hostname = hostname;
-    this.username = username;
-    this.password = password;
-    this.useSsl = DEFAULT_SSL_MODE;
-    this.project = DEFAULT_PROJECT;
-    this.database = DEFAULT_DATABASE;
-    this.bucketMode = BucketMode.CREATE;
-    this.connect();
-  }
-
-  public CouchbaseConnect(String hostname, String username, String password, BucketMode mode)
-      throws CouchbaseConnectException {
-    this.hostname = hostname;
-    this.username = username;
-    this.password = password;
-    this.useSsl = DEFAULT_SSL_MODE;
-    this.project = DEFAULT_PROJECT;
-    this.database = DEFAULT_DATABASE;
-    this.bucketMode = mode;
-    this.connect();
-  }
-
-  public CouchbaseConnect(String hostname, String username, String password, String project, String database)
-      throws CouchbaseConnectException {
-    this.hostname = hostname;
-    this.username = username;
-    this.password = password;
-    this.useSsl = DEFAULT_SSL_MODE;
-    this.project = project;
-    this.database = database;
-    this.bucketMode = BucketMode.CREATE;
-    this.connect();
-  }
-
   public void connect() {
     if (useSsl) {
       httpPrefix = "https://";
@@ -327,48 +281,100 @@ public final class CouchbaseConnect {
       eventingPort = 8096;
     }
 
-    Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> {
-      securityConfig.enableTls(useSsl)
-          .enableHostnameVerification(false)
-          .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
-    };
+    String connectString = couchbasePrefix + hostname;
 
-    Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> {
-      ioConfig.numKvConnections(4)
-          .networkResolution(NetworkResolution.AUTO);
-    };
+    synchronized (STARTUP_COORDINATOR) {
+      try {
+        if (environment == null) {
+          Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> securityConfig
+              .enableTls(useSsl)
+              .enableHostnameVerification(false)
+              .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
 
-    Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> {
-      timeoutConfig.kvTimeout(Duration.ofSeconds(2))
-          .connectTimeout(Duration.ofSeconds(5))
-          .queryTimeout(Duration.ofSeconds(75));
-    };
+          Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
+              .numKvConnections(4)
+              .networkResolution(NetworkResolution.AUTO)
+              .enableMutationTokens(false);
 
-    ClusterEnvironment environment = ClusterEnvironment
-        .builder()
-        .timeoutConfig(timeOutConfiguration)
-        .ioConfig(ioConfiguration)
-        .securityConfig(secConfiguration)
-        .build();
+          Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
+              .kvTimeout(Duration.ofSeconds(2))
+              .connectTimeout(Duration.ofSeconds(5))
+              .queryTimeout(Duration.ofSeconds(75));
 
-    cluster = Cluster
-        .connect(hostname,
-            ClusterOptions.clusterOptions(username, password)
-                .environment(environment));
-
-    try {
-      cluster.waitUntilReady(Duration.ofSeconds(10));
-    } catch (UnambiguousTimeoutException e) {
-      throw new RuntimeException(String.format("timeout waiting for cluster with node %s", hostname));
+          environment = ClusterEnvironment
+              .builder()
+              .timeoutConfig(timeOutConfiguration)
+              .ioConfig(ioConfiguration)
+              .securityConfig(secConfiguration)
+              .build();
+          cluster = Cluster.connect(connectString,
+              ClusterOptions.clusterOptions(username, password).environment(environment));
+          cluster.waitUntilReady(Duration.ofSeconds(10));
+          bucket = cluster.bucket(bucketName);
+          bucketMgr = cluster.buckets();
+          hostMap = getClusterInfo();
+          rallyHost = getRallyHost();
+          external = getExternalFlag();
+        }
+      } catch(Exception e) {
+        e.printStackTrace();
+        logError(e, connectString);
+      }
     }
-    bucket = cluster.bucket(bucketName);
-    try {
-      hostMap = getClusterInfo();
-      rallyHost = getRallyHost();
-      external = getExternalFlag();
-    } catch (CouchbaseConnectException e) {
-      throw new RuntimeException(e);
-    }
+  }
+
+  public String rallyHostValue() {
+    return rallyHost;
+  }
+
+  public String hostValue() {
+    return hostname;
+  }
+
+  public String userValue() {
+    return username;
+  }
+
+  public String passwordValue() {
+    return password;
+  }
+
+  public boolean externalValue() {
+    return external;
+  }
+
+  public boolean sslValue() {
+    return useSsl;
+  }
+
+  public int getAdminPort() {
+    return adminPort;
+  }
+
+  public int getEventingPort() {
+    return eventingPort;
+  }
+
+  public String getBucketName() {
+    return bucketName;
+  }
+
+  public String getScopeName() {
+    return scopeName;
+  }
+
+  public String getCollectionName() {
+    return collectionName;
+  }
+
+  private void logError(Exception error, String connectString) {
+    Writer buffer = new StringWriter();
+    PrintWriter pw = new PrintWriter(buffer);
+    error.printStackTrace(pw);
+    LOGGER.error(String.format("Connection string: %s", connectString));
+    LOGGER.error(pw.toString());
+    LOGGER.error(cluster.environment().toString());
+    LOGGER.error(cluster.diagnostics().endpoints().toString());
   }
 
   private String buildHostList() {
@@ -495,19 +501,19 @@ public final class CouchbaseConnect {
 
   public void createBucket(String bucket, int replicas) {
     long quota = ramQuotaCalc();
-    cbCreateBucket(bucket, quota, replicas, StorageBackend.COUCHSTORE);
+    bucketCreate(bucket, quota, replicas, StorageBackend.COUCHSTORE);
   }
 
   public void createBucket(String bucket, long quota, int replicas) {
-    cbCreateBucket(bucket, quota, replicas, StorageBackend.COUCHSTORE);
+    bucketCreate(bucket, quota, replicas, StorageBackend.COUCHSTORE);
   }
 
   public void createBucket(String bucket, int replicas, StorageBackend type) {
     long quota = ramQuotaCalc();
-    cbCreateBucket(bucket, quota, replicas, type);
+    bucketCreate(bucket, quota, replicas, type);
   }
 
-  public void cbCreateBucket(String bucket, long quota, int replicas, StorageBackend type) {
+  public void bucketCreate(String bucket, long quota, int replicas, StorageBackend type) {
     if (project != null && database != null) {
       CouchbaseCapella capella = new CouchbaseCapella(project, database);
       capella.createBucket(bucket, quota, replicas, type);
@@ -522,7 +528,6 @@ public final class CouchbaseConnect {
             .storageBackend(type)
             .conflictResolutionType(ConflictResolutionType.SEQUENCE_NUMBER);
 
-        BucketManager bucketMgr = cluster.buckets();
         bucketMgr.createBucket(bucketSettings);
       } catch (BucketExistsException e) {
         //ignore
@@ -538,7 +543,6 @@ public final class CouchbaseConnect {
       capella.dropBucket(bucket);
     } else {
       try {
-        BucketManager bucketMgr = cluster.buckets();
         bucketMgr.dropBucket(bucket);
       } catch (BucketNotFoundException e) {
         //ignore
@@ -548,12 +552,21 @@ public final class CouchbaseConnect {
 
   public Boolean isBucket(String bucket) {
     try {
-      BucketManager bucketMgr = cluster.buckets();
       bucketMgr.getBucket(bucket);
       return true;
     } catch (BucketNotFoundException e) {
       return false;
     }
+  }
+
+  public void createPrimaryIndex() {
+    if (collection == null) {
+      connectKeyspace();
+    }
+    CollectionQueryIndexManager queryIndexMgr = collection.queryIndexes();
+    CreatePrimaryQueryIndexOptions options = CreatePrimaryQueryIndexOptions.createPrimaryQueryIndexOptions()
+        .ignoreIfExists(true);
+    queryIndexMgr.createPrimaryIndex(options);
   }
 
   public long ramQuotaCalc() {
@@ -586,10 +599,9 @@ public final class CouchbaseConnect {
 
   public void connectKeyspace() {
     bucket = cluster.bucket(bucketName);
-//    scope = bucket.scope(scopeName);
-//    collection = scope.collection(collectionName);
+    scope = bucket.scope(scopeName);
+    collection = scope.collection(collectionName);
     setOptions();
-//    return collection;
   }
 
   public Collection getCollection() {
@@ -696,113 +708,5 @@ public final class CouchbaseConnect {
           .forEach(data::add);
           return data;
       });
-  }
-
-  public Boolean isEventingFunction(String name) throws CouchbaseConnectException {
-    String eventingHost = eventingList.get(0);
-    RESTInterface eventing = new RESTInterface(eventingHost, username, password, useSsl, eventingPort);
-    String endpoint = "/api/v1/functions/" + name;
-
-    try {
-      eventing.getJSON(endpoint);
-      return true;
-    } catch (RESTException e) {
-      return false;
-    }
-  }
-
-  public Boolean isEventingFunctionDeployed(String name) throws CouchbaseConnectException {
-    String eventingHost = eventingList.get(0);
-    RESTInterface eventing = new RESTInterface(eventingHost, username, password, useSsl, eventingPort);
-    String endpoint = "/api/v1/functions/" + name;
-
-    try {
-      JsonObject result = eventing.getJSON(endpoint);
-      return result.get("settings").getAsJsonObject().get("deployment_status").getAsBoolean();
-    } catch (RESTException e) {
-      return false;
-    }
-  }
-
-  public void deployEventingFunction(String scriptFile, String metaBucket)
-      throws CouchbaseConnectException {
-    ClassLoader classloader = Thread.currentThread().getContextClassLoader();
-    URL inputFile = classloader.getResource(scriptFile);
-
-    String fileName = inputFile != null ? inputFile.getFile() : null;
-
-    if (fileName == null) {
-      throw new CouchbaseConnectException("Can not find script file");
-    }
-
-    File funcFile = new File(fileName);
-    String[] fileParts = funcFile.getName().split("\\.");
-    String name = fileParts[0];
-
-    byte[] encoded;
-    try {
-      encoded = Files.readAllBytes(Paths.get(funcFile.getAbsolutePath()));
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-    String fileContents = new String(encoded, StandardCharsets.UTF_8);
-
-    JsonObject parameters = new JsonObject();
-    parameters.addProperty("appcode", fileContents);
-    JsonObject depConfig = new JsonObject();
-    JsonObject bucketConfig = new JsonObject();
-    bucketConfig.addProperty("alias", "collection");
-    bucketConfig.addProperty("bucket_name", bucketName);
-    bucketConfig.addProperty("scope_name", scopeName);
-    bucketConfig.addProperty("collection_name", collectionName);
-    bucketConfig.addProperty("access", "rw");
-    JsonArray buckets = new JsonArray();
-    buckets.add(bucketConfig);
-    depConfig.add("buckets", buckets);
-    depConfig.addProperty("source_bucket", bucketName);
-    depConfig.addProperty("source_scope", scopeName);
-    depConfig.addProperty("source_collection", collectionName);
-    depConfig.addProperty("metadata_bucket", metaBucket);
-    depConfig.addProperty("metadata_scope", "_default");
-    depConfig.addProperty("metadata_collection", "_default");
-    parameters.add("depcfg", depConfig);
-    parameters.addProperty("enforce_schema", false);
-    parameters.addProperty("appname", name);
-    JsonObject settingsConfig = new JsonObject();
-    settingsConfig.addProperty("dcp_stream_boundary", "everything");
-    settingsConfig.addProperty("description", "Auto Added Function");
-    settingsConfig.addProperty("execution_timeout", 60);
-    settingsConfig.addProperty("language_compatibility", "6.6.2");
-    settingsConfig.addProperty("log_level", "INFO");
-    settingsConfig.addProperty("n1ql_consistency", "none");
-    settingsConfig.addProperty("processing_status", false);
-    settingsConfig.addProperty("timer_context_size", 1024);
-    settingsConfig.addProperty("worker_count", 16);
-    parameters.add("settings", settingsConfig);
-    JsonObject functionConfig = new JsonObject();
-    functionConfig.addProperty("bucket", "*");
-    functionConfig.addProperty("scope", "*");
-    parameters.add("function_scope", functionConfig);
-
-    String eventingHost = eventingList.get(0);
-    RESTInterface eventing = new RESTInterface(eventingHost, username, password, useSsl, eventingPort);
-
-    if (!isEventingFunction(name)) {
-      try {
-        String endpoint = "/api/v1/functions/" + name;
-        eventing.postJSON(endpoint, parameters);
-      } catch (RESTException e) {
-        throw new RuntimeException(e);
-      }
-    }
-
-    if (!isEventingFunctionDeployed(name)) {
-      try {
-        String endpoint = "/api/v1/functions/" + name + "/deploy";
-        eventing.postEndpoint(endpoint);
-      } catch (RESTException e) {
-        throw new RuntimeException(e);
-      }
-    }
   }
 }

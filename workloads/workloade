@@ -29,6 +29,7 @@
 recordcount=1000
 operationcount=1000
 workload=site.ycsb.workloads.CoreWorkload
+index.primary=true
 
 readallfields=true
 

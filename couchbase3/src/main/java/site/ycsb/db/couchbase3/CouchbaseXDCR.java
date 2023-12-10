@@ -41,13 +41,13 @@ public final class CouchbaseXDCR {
   }
 
   public void createReplication() {
-    createXDCRReference(target.hostname, target.username, target.password, target.external);
-    createXDCRReplication(target.hostname, source.bucketName, target.bucketName);
+    createXDCRReference(target.hostValue(), target.userValue(), target.passwordValue(), target.externalValue());
+    createXDCRReplication(target.hostValue(), source.getBucketName(), target.getBucketName());
   }
 
   public void removeReplication() {
-    deleteXDCRReplication(target.hostname, source.bucketName, target.bucketName);
-    deleteXDCRReference(target.hostname);
+    deleteXDCRReplication(target.hostValue(), source.getBucketName(), target.getBucketName());
+    deleteXDCRReference(target.hostValue());
   }
 
   public void createXDCRReference(String hostname, String username, String password, Boolean external) {
@@ -66,8 +66,8 @@ public final class CouchbaseXDCR {
     }
 
     try {
-      RESTInterface rest = new RESTInterface(source.rallyHost, source.username, source.password,
-          source.useSsl, source.adminPort);
+      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
+          source.sslValue(), source.getAdminPort());
       String endpoint = "/pools/default/remoteClusters";
       rest.postParameters(endpoint, parameters);
     } catch (RESTException e) {
@@ -77,8 +77,8 @@ public final class CouchbaseXDCR {
 
   public String getXDCRReference(String hostname) {
     try {
-      RESTInterface rest = new RESTInterface(source.rallyHost, source.username, source.password,
-          source.useSsl, source.adminPort);
+      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
+          source.sslValue(), source.getAdminPort());
       JsonArray remotes = rest.getJSONArray("/pools/default/remoteClusters");
       for (JsonElement entry : remotes) {
         if (entry.getAsJsonObject().get("name").getAsString().equals(hostname)) {
@@ -99,8 +99,8 @@ public final class CouchbaseXDCR {
     String endpoint = "/pools/default/remoteClusters/" + hostname;
 
     try {
-      RESTInterface rest = new RESTInterface(source.rallyHost, source.username, source.password,
-          source.useSsl, source.adminPort);
+      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
+          source.sslValue(), source.getAdminPort());
       rest.deleteEndpoint(endpoint);
     } catch (RESTException e) {
       throw new RuntimeException(e);
@@ -120,8 +120,8 @@ public final class CouchbaseXDCR {
     parameters.put("toBucket", targetBucket);
 
     try {
-      RESTInterface rest = new RESTInterface(source.rallyHost, source.username, source.password,
-          source.useSsl, source.adminPort);
+      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
+          source.sslValue(), source.getAdminPort());
       String endpoint = "/controller/createReplication";
       rest.postParameters(endpoint, parameters);
     } catch (RESTException e) {
@@ -143,8 +143,8 @@ public final class CouchbaseXDCR {
     String endpoint = "/controller/cancelXDCR/" + uuid + "%2F" + sourceBucket + "%2F" + targetBucket;
 
     try {
-      RESTInterface rest = new RESTInterface(source.rallyHost, source.username, source.password,
-          source.useSsl, source.adminPort);
+      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
+          source.sslValue(), source.getAdminPort());
       rest.deleteEndpoint(endpoint);
     } catch (RESTException e) {
       throw new RuntimeException(e);
@@ -161,8 +161,8 @@ public final class CouchbaseXDCR {
     String endpoint = "/settings/replications/" + uuid + "%2F" + sourceBucket + "%2F" + targetBucket;
 
     try {
-      RESTInterface rest = new RESTInterface(source.rallyHost, source.username, source.password,
-          source.useSsl, source.adminPort);
+      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
+          source.sslValue(), source.getAdminPort());
       rest.getJSON(endpoint);
       return true;
     } catch (RESTException e) {

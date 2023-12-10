@@ -17,7 +17,6 @@
 
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import static com.couchbase.client.java.kv.MutateInOptions.mutateInOptions;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
@@ -31,8 +30,6 @@ import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
-import com.couchbase.client.java.json.JacksonTransformers;
-import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
@@ -50,6 +47,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.google.gson.Gson;
 
 import org.slf4j.LoggerFactory;
@@ -106,18 +104,11 @@ public class Couchbase3Client extends DB {
   private boolean adhoc;
   private int maxParallelism;
   private static int ttlSeconds;
-  private TestType testMode;
+  private boolean arrayMode;
   private String arrayKey;
-  private boolean loading;
   private boolean collectStats;
-  private int clientNumber;
   protected long recordcount;
   private static volatile DurabilityLevel durability = DurabilityLevel.NONE;
-
-  /** Test Type. */
-  public enum TestType {
-    DEFAULT, ARRAY
-  }
 
   @Override
   public void init() throws DBException {
@@ -155,13 +146,12 @@ public class Couchbase3Client extends DB {
     durability =
         setDurabilityLevel(Integer.parseInt(properties.getProperty("couchbase.durability", "0")));
 
-    testMode = TestType.valueOf(properties.getProperty("couchbase.mode", "DEFAULT"));
+    arrayMode = properties.getProperty("couchbase.mode", "DEFAULT").equals("ARRAY");
     arrayKey = properties.getProperty("subdoc.arrayKey", "DataArray");
 
     adhoc = properties.getProperty("couchbase.adhoc", "false").equals("true");
     maxParallelism = Integer.parseInt(properties.getProperty("couchbase.maxParallelism", "0"));
 
-    loading = properties.getProperty("couchbase.loading", "false").equals("true");
     collectStats = properties.getProperty("statistics", "false").equals("true");
 
     ttlSeconds = Integer.parseInt(properties.getProperty("couchbase.ttlSeconds", "0"));
@@ -177,23 +167,20 @@ public class Couchbase3Client extends DB {
     synchronized (INIT_COORDINATOR) {
       try {
         if (environment == null) {
-          Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> {
-            securityConfig.enableTls(sslMode)
-                .enableHostnameVerification(false)
-                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
-          };
+          Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> securityConfig
+              .enableTls(sslMode)
+              .enableHostnameVerification(false)
+              .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
 
-          Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> {
-            ioConfig.numKvConnections(4)
-                .networkResolution(NetworkResolution.AUTO)
-                .enableMutationTokens(false);
-          };
+          Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
+              .numKvConnections(4)
+              .networkResolution(NetworkResolution.AUTO)
+              .enableMutationTokens(false);
 
-          Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> {
-            timeoutConfig.kvTimeout(Duration.ofSeconds(2))
-                .connectTimeout(Duration.ofSeconds(5))
-                .queryTimeout(Duration.ofSeconds(75));
-          };
+          Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
+              .kvTimeout(Duration.ofSeconds(2))
+              .connectTimeout(Duration.ofSeconds(5))
+              .queryTimeout(Duration.ofSeconds(75));
 
           environment = ClusterEnvironment
               .builder()
@@ -211,7 +198,7 @@ public class Couchbase3Client extends DB {
       }
     }
 
-    clientNumber = OPEN_CLIENTS.incrementAndGet();
+    OPEN_CLIENTS.incrementAndGet();
   }
 
   private void logError(Exception error, String connectString) {
@@ -307,17 +294,6 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  private static void extractFields(final JsonObject content, Set<String> fields,
-                                    final Map<String, ByteIterator> result) {
-    if (fields == null || fields.isEmpty()) {
-      fields = content.getNames();
-    }
-
-    for (String field : fields) {
-      result.put(field, new StringByteIterator(content.getString(field)));
-    }
-  }
-
   public void upsertArray(String id, String arrayKey, Object content) throws Exception {
     retryBlock(() -> {
       try {
@@ -359,7 +335,7 @@ public class Couchbase3Client extends DB {
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       return retryBlock(() -> {
-        if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
+        if (arrayMode) {
           upsertArray(formatId(table, key), arrayKey, encode(values));
         } else {
           collection.upsert(formatId(table, key), encode(values),
@@ -384,7 +360,7 @@ public class Couchbase3Client extends DB {
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       return retryBlock(() -> {
-        if (Objects.requireNonNull(testMode) == TestType.ARRAY) {
+        if (arrayMode) {
           insertArray(formatId(table, key), arrayKey, encode(values));
         } else {
           collection.upsert(formatId(table, key), encode(values),
@@ -448,21 +424,16 @@ public class Couchbase3Client extends DB {
         ReactiveCluster reactor = cluster.reactive();
         long offset = getKeyHashNum(startkey);
         final String query = String.format("select * from ycsb offset %d limit %d;", offset, recordcount);
-        final List<HashMap<String, ByteIterator>> data = new ArrayList<>();
+        Consumer<Object> noOp = nop -> {
+        };
         reactor.query(query, queryOptions().maxParallelism(maxParallelism).adhoc(adhoc))
-            .flatMapMany(res -> res.rowsAs(String.class))
+            .flatMapMany(ReactiveQueryResult::rowsAsObject)
             .doOnError(e -> {
               throw new RuntimeException(e.getMessage());
             })
             .onErrorStop()
-            .map(getResult -> {
-              HashMap<String, ByteIterator> tuple = new HashMap<>();
-              decodeStringSource(getResult, fields, tuple);
-              return tuple;
-            })
             .toStream()
-            .forEach(data::add);
-        result.addAll(data);
+            .forEach(noOp);
         return null;
       });
       return Status.OK;
@@ -470,33 +441,6 @@ public class Couchbase3Client extends DB {
       errors.add(t);
       LOGGER.error("scan failed with exception :" + t);
       return Status.ERROR;
-    }
-  }
-
-  /**
-   * Get string values from fields.
-   * @param source JSON source data.
-   * @param fields Fields to return.
-   * @param dest Map of Strings where each value is a requested field.
-   */
-  private void decodeStringSource(final String source, final Set<String> fields,
-                      final Map<String, ByteIterator> dest) {
-    try {
-      JsonNode json = JacksonTransformers.MAPPER.readTree(source);
-      boolean checkFields = fields != null && !fields.isEmpty();
-      for (Iterator<Map.Entry<String, JsonNode>> jsonFields = json.fields(); jsonFields.hasNext();) {
-        Map.Entry<String, JsonNode> jsonField = jsonFields.next();
-        String name = jsonField.getKey();
-        if (checkFields && !fields.contains(name)) {
-          continue;
-        }
-        JsonNode jsonValue = jsonField.getValue();
-        if (jsonValue != null && !jsonValue.isNull()) {
-          dest.put(name, new StringByteIterator(jsonValue.asText()));
-        }
-      }
-    } catch (Exception e) {
-      LOGGER.error("Could not decode JSON response from scanSpecificFields");
     }
   }
 

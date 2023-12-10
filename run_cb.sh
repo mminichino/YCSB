@@ -144,7 +144,7 @@ sleep 1
 }
 
 function create_index {
-local QUERY_TEXT="CREATE INDEX record_id_${BUCKET} ON \`${BUCKET}\`.${SCOPE}.${COLLECTION}(\`record_id\`) WITH {\"num_replica\": 1};"
+local QUERY_TEXT="CREATE PRIMARY INDEX ON \`${BUCKET}\`.${SCOPE}.${COLLECTION} WITH {\"num_replica\": 1};"
 local retry_count=1
 
 while [ "$retry_count" -le 3 ]; do
@@ -174,7 +174,7 @@ sleep 1
 }
 
 function drop_index {
-local QUERY_TEXT="DROP INDEX record_id_${BUCKET} ON \`${BUCKET}\`.${SCOPE}.${COLLECTION} USING GSI;"
+local QUERY_TEXT="DROP PRIMARY INDEX ON \`${BUCKET}\`.${SCOPE}.${COLLECTION} ;"
 local retry_count=1
 
 while [ "$retry_count" -le 3 ]; do
