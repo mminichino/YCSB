@@ -23,10 +23,14 @@ import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.NetworkResolution;
+import com.couchbase.client.core.env.SecurityConfig;
+import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.java.json.JacksonTransformers;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
@@ -44,6 +48,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import com.google.gson.Gson;
 
@@ -96,6 +101,7 @@ public class Couchbase3Client extends DB {
   private static final Object INIT_COORDINATOR = new Object();
   private static volatile Cluster cluster;
   private static volatile Collection collection;
+  private static volatile ClusterEnvironment environment;
   private final ArrayList<Throwable> errors = new ArrayList<>();
   private boolean adhoc;
   private int maxParallelism;
@@ -170,34 +176,40 @@ public class Couchbase3Client extends DB {
 
     synchronized (INIT_COORDINATOR) {
       try {
-        cluster = Cluster.connect(connectString,
-            ClusterOptions.clusterOptions(username, password).environment(env -> {
-              env.ioConfig(ioConfig -> {
-                ioConfig.numKvConnections(4).networkResolution(NetworkResolution.AUTO)
-                    .enableMutationTokens(false);
-              }).securityConfig(securityConfig -> {
-                securityConfig.enableTls(sslMode)
-                    .enableHostnameVerification(false)
-                    .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
-              }).timeoutConfig(timeoutConfig -> {
-                timeoutConfig.kvTimeout(Duration.ofSeconds(2))
-                    .connectTimeout(Duration.ofSeconds(5))
-                    .queryTimeout(Duration.ofSeconds(75));
-              });
-            })
-        );
+        if (environment == null) {
+          Consumer<SecurityConfig.Builder> secConfiguration = securityConfig -> {
+            securityConfig.enableTls(sslMode)
+                .enableHostnameVerification(false)
+                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
+          };
+
+          Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> {
+            ioConfig.numKvConnections(4)
+                .networkResolution(NetworkResolution.AUTO)
+                .enableMutationTokens(false);
+          };
+
+          Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> {
+            timeoutConfig.kvTimeout(Duration.ofSeconds(2))
+                .connectTimeout(Duration.ofSeconds(5))
+                .queryTimeout(Duration.ofSeconds(75));
+          };
+
+          environment = ClusterEnvironment
+              .builder()
+              .timeoutConfig(timeOutConfiguration)
+              .ioConfig(ioConfiguration)
+              .securityConfig(secConfiguration)
+              .build();
+          cluster = Cluster.connect(connectString,
+              ClusterOptions.clusterOptions(username, password).environment(environment));
+          bucket = cluster.bucket(bucketName);
+          collection = bucket.scope(scopeName).collection(collectionName);
+        }
       } catch(Exception e) {
         logError(e, connectString);
       }
     }
-
-    try {
-      cluster.waitUntilReady(Duration.ofSeconds(5));
-    } catch(Exception e) {
-      logError(e, connectString);
-    }
-    bucket = cluster.bucket(bucketName);
-    collection = bucket.scope(scopeName).collection(collectionName);
 
     clientNumber = OPEN_CLIENTS.incrementAndGet();
   }
