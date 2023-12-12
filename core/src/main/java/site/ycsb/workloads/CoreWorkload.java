@@ -315,6 +315,16 @@ public class CoreWorkload extends Workload {
   public static final String INSERT_ORDER_PROPERTY_DEFAULT = "hashed";
 
   /**
+   * Generate keys with only numeric characters.
+   */
+  public static final String NUMERIC_KEY_PROPERTY = "numerickey";
+
+  /**
+   * Default numeric key setting.
+   */
+  public static final String NUMERIC_KEY_PROPERTY_DEFAULT = "false";
+
+  /**
    * Percentage data items that constitute the hot set.
    */
   public static final String HOTSPOT_DATA_FRACTION = "hotspotdatafraction";
@@ -363,6 +373,7 @@ public class CoreWorkload extends Workload {
   protected AcknowledgedCounterGenerator transactioninsertkeysequence;
   protected NumberGenerator scanlength;
   protected boolean orderedinserts;
+  protected boolean numerickey;
   protected long fieldcount;
   protected long recordcount;
   protected int zeropadding;
@@ -371,13 +382,18 @@ public class CoreWorkload extends Workload {
 
   private Measurements measurements = Measurements.getMeasurements();
 
-  public static String buildKeyName(long keynum, int zeropadding, boolean orderedinserts) {
+  public static String buildKeyName(long keynum, int zeropadding, boolean orderedinserts, boolean numerickey) {
+    String prekey;
     if (!orderedinserts) {
       keynum = Utils.hash(keynum);
     }
     String value = Long.toString(keynum);
     int fill = zeropadding - value.length();
-    String prekey = "user";
+    if (!numerickey) {
+      prekey = "user";
+    } else {
+      prekey = "";
+    }
     for (int i = 0; i < fill; i++) {
       prekey += '0';
     }
@@ -484,6 +500,8 @@ public class CoreWorkload extends Workload {
     } else {
       orderedinserts = true;
     }
+
+    numerickey = p.getProperty(NUMERIC_KEY_PROPERTY, NUMERIC_KEY_PROPERTY_DEFAULT).equals("true");
 
     keysequence = new CounterGenerator(insertstart);
     operationchooser = createOperationGenerator(p);
@@ -612,7 +630,7 @@ public class CoreWorkload extends Workload {
   @Override
   public boolean doInsert(DB db, Object threadstate) {
     int keynum = keysequence.nextValue().intValue();
-    String dbkey = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+    String dbkey = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts, numerickey);
     HashMap<String, ByteIterator> values = buildValues(dbkey);
 
     Status status;
@@ -723,7 +741,7 @@ public class CoreWorkload extends Workload {
     // choose a random key
     long keynum = nextKeynum();
 
-    String keyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+    String keyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts, numerickey);
 
     HashSet<String> fields = null;
 
@@ -750,7 +768,7 @@ public class CoreWorkload extends Workload {
     // choose a random key
     long keynum = nextKeynum();
 
-    String keyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+    String keyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts, numerickey);
 
     HashSet<String> fields = null;
 
@@ -797,7 +815,7 @@ public class CoreWorkload extends Workload {
     // choose a random key
     long keynum = nextKeynum();
 
-    String startkeyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+    String startkeyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts, numerickey);
 
     // choose a random scan length
     int len = scanlength.nextValue().intValue();
@@ -819,7 +837,7 @@ public class CoreWorkload extends Workload {
     // choose a random key
     long keynum = nextKeynum();
 
-    String keyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+    String keyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts, numerickey);
 
     HashMap<String, ByteIterator> values;
 
@@ -839,7 +857,7 @@ public class CoreWorkload extends Workload {
     long keynum = transactioninsertkeysequence.nextValue();
 
     try {
-      String dbkey = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
+      String dbkey = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts, numerickey);
 
       HashMap<String, ByteIterator> values = buildValues(dbkey);
       db.insert(table, dbkey, values);

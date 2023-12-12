@@ -24,6 +24,7 @@ import com.couchbase.client.java.manager.bucket.*;
 import com.couchbase.client.core.diagnostics.DiagnosticsResult;
 import com.couchbase.client.java.manager.query.CollectionQueryIndexManager;
 import com.couchbase.client.java.manager.query.CreatePrimaryQueryIndexOptions;
+import com.couchbase.client.java.manager.query.CreateQueryIndexOptions;
 import com.couchbase.client.java.query.QueryOptions;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 //import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
@@ -467,6 +468,13 @@ public final class CouchbaseConnect {
         .orElse(false);
   }
 
+  public long getIndexNodeCount() {
+    Stream<JsonElement> stream = hostMap.asList().parallelStream();
+    return stream.filter(e -> e.getAsJsonObject().get("services").getAsJsonArray()
+            .contains(JsonParser.parseString("index")))
+        .count();
+  }
+
   private long getMemQuota() {
     RESTInterface rest = new RESTInterface(rallyHost, username, password, useSsl, adminPort);
     JsonObject clusterInfo;
@@ -565,8 +573,23 @@ public final class CouchbaseConnect {
     }
     CollectionQueryIndexManager queryIndexMgr = collection.queryIndexes();
     CreatePrimaryQueryIndexOptions options = CreatePrimaryQueryIndexOptions.createPrimaryQueryIndexOptions()
+        .numReplicas(replicaNum)
         .ignoreIfExists(true);
     queryIndexMgr.createPrimaryIndex(options);
+  }
+
+  public void createFieldIndex(String field) {
+    int indexNodes = (int) getIndexNodeCount();
+    if (collection == null) {
+      connectKeyspace();
+    }
+    CollectionQueryIndexManager queryIndexMgr = collection.queryIndexes();
+    CreateQueryIndexOptions options = CreateQueryIndexOptions.createQueryIndexOptions()
+        .numReplicas(indexNodes - 1)
+        .ignoreIfExists(true);
+
+    String indexName = "idx_" + field.replaceAll("\\(\\).", "");
+    queryIndexMgr.createIndex(indexName, Collections.singletonList(field), options);
   }
 
   public long ramQuotaCalc() {

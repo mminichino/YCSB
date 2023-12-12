@@ -27,6 +27,7 @@ import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
+import com.couchbase.client.core.retry.FailFastRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
@@ -47,10 +48,15 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.google.gson.Gson;
 
+import org.jetbrains.annotations.NotNull;
+import org.reactivestreams.Subscription;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.BaseSubscriber;
+import reactor.core.publisher.Mono;
 import site.ycsb.*;
 import site.ycsb.measurements.RemoteStatistics;
 import site.ycsb.measurements.StatisticsFactory;
@@ -94,12 +100,13 @@ public class Couchbase3Client extends DB {
   public static final String COUCHBASE_BUCKET = "couchbase.bucket";
   public static final String COUCHBASE_SCOPE = "couchbase.scope";
   public static final String COUCHBASE_COLLECTION = "couchbase.collection";
-  private static final String KEY_SEPARATOR = "::";
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
   private static final Object INIT_COORDINATOR = new Object();
   private static volatile Cluster cluster;
+  private static volatile Bucket bucket;
   private static volatile Collection collection;
   private static volatile ClusterEnvironment environment;
+  private static String bucketName;
   private final ArrayList<Throwable> errors = new ArrayList<>();
   private boolean adhoc;
   private int maxParallelism;
@@ -107,7 +114,7 @@ public class Couchbase3Client extends DB {
   private boolean arrayMode;
   private String arrayKey;
   private boolean collectStats;
-  protected long recordcount;
+  protected static long recordcount;
   private static volatile DurabilityLevel durability = DurabilityLevel.NONE;
 
   @Override
@@ -115,7 +122,6 @@ public class Couchbase3Client extends DB {
     ClassLoader classloader = Thread.currentThread().getContextClassLoader();
     URL propFile;
     Properties properties = new Properties();
-    Bucket bucket;
     String couchbasePrefix;
 
     if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
@@ -138,7 +144,7 @@ public class Couchbase3Client extends DB {
     String hostname = properties.getProperty(COUCHBASE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
     String username = properties.getProperty(COUCHBASE_USER, CouchbaseConnect.DEFAULT_USER);
     String password = properties.getProperty(COUCHBASE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
-    String bucketName = properties.getProperty(COUCHBASE_BUCKET, "ycsb");
+    bucketName = properties.getProperty(COUCHBASE_BUCKET, "ycsb");
     String scopeName = properties.getProperty(COUCHBASE_SCOPE, "_default");
     String collectionName = properties.getProperty(COUCHBASE_COLLECTION, "_default");
     boolean sslMode = properties.getProperty("couchbase.sslMode", "false").equals("true");
@@ -281,7 +287,7 @@ public class Couchbase3Client extends DB {
     try {
       return retryBlock(() -> {
         try {
-          collection.get(formatId(table, key), getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+          collection.get(key, getOptions().transcoder(RawJsonTranscoder.INSTANCE));
           return Status.OK;
         } catch (DocumentNotFoundException e) {
           return Status.NOT_FOUND;
@@ -336,9 +342,9 @@ public class Couchbase3Client extends DB {
     try {
       return retryBlock(() -> {
         if (arrayMode) {
-          upsertArray(formatId(table, key), arrayKey, encode(values));
+          upsertArray(key, arrayKey, encode(values));
         } else {
-          collection.upsert(formatId(table, key), encode(values),
+          collection.upsert(key, encode(values),
               upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
         }
         return Status.OK;
@@ -361,9 +367,9 @@ public class Couchbase3Client extends DB {
     try {
       return retryBlock(() -> {
         if (arrayMode) {
-          insertArray(formatId(table, key), arrayKey, encode(values));
+          insertArray(key, arrayKey, encode(values));
         } else {
-          collection.upsert(formatId(table, key), encode(values),
+          collection.upsert(key, encode(values),
               upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
         }
         return Status.OK;
@@ -398,7 +404,7 @@ public class Couchbase3Client extends DB {
   public Status delete(final String table, final String key) {
     try {
       return retryBlock(() -> {
-        collection.remove(formatId(table, key));
+        collection.remove(key);
         return Status.OK;
       });
     } catch (Throwable t) {
@@ -420,42 +426,37 @@ public class Couchbase3Client extends DB {
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
     try {
-      retryBlock(() -> {
-        ReactiveCluster reactor = cluster.reactive();
-        long offset = getKeyHashNum(startkey);
-        final String query = String.format("select * from ycsb offset %d limit %d;", offset, recordcount);
-        Consumer<Object> noOp = nop -> {
-        };
-        reactor.query(query, queryOptions().maxParallelism(maxParallelism).adhoc(adhoc))
-            .flatMapMany(ReactiveQueryResult::rowsAsObject)
-            .doOnError(e -> {
-              throw new RuntimeException(e.getMessage());
-            })
-            .onErrorStop()
-            .toStream()
-            .forEach(noOp);
-        return null;
+      return retryBlock(() -> {
+        final String query = "select raw meta().id from " + bucketName + " where meta().id >= \"$1\" limit $2;";
+
+        Mono<ReactiveQueryResult> queryResult = cluster.reactive().query(query,
+            queryOptions()
+                .adhoc(adhoc)
+                .maxParallelism(maxParallelism)
+                .parameters(JsonArray.from(startkey, recordcount))
+                .retryStrategy(FailFastRetryStrategy.INSTANCE));
+
+        queryResult.flatMapMany((res -> res.rowsAs(String.class))).subscribe(new BaseSubscriber<String>() {
+          final AtomicInteger oustanding = new AtomicInteger(0);
+          @Override
+          protected void hookOnSubscribe(@NotNull Subscription subscription) {
+            request(10);
+            oustanding.set(10);
+          }
+          @Override
+          protected void hookOnNext(@NotNull String key) {
+            collection.get(key, getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+            if (oustanding.decrementAndGet() == 0) {
+              request(10);
+            }
+          }
+        });
+        return Status.OK;
       });
-      return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
       LOGGER.error("scan failed with exception :" + t);
       return Status.ERROR;
     }
-  }
-
-  /**
-   * Helper method to turn the prefix and key into a proper document ID.
-   *
-   * @param prefix the prefix (table).
-   * @param key the key itself.
-   * @return a document ID that can be used with Couchbase.
-   */
-  private static String formatId(final String prefix, final String key) {
-    return prefix + KEY_SEPARATOR + key;
-  }
-
-  private long getKeyHashNum(String key) {
-    return Math.abs(key.hashCode()) % recordcount;
   }
 }

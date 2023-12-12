@@ -29,7 +29,9 @@
 recordcount=1000
 operationcount=1000
 workload=site.ycsb.workloads.CoreWorkload
-index.primary=true
+index.create=true
+# numerickey=true
+# insertorder=ordered
 
 readallfields=true
 
@@ -43,5 +45,3 @@ requestdistribution=zipfian
 maxscanlength=100
 
 scanlengthdistribution=uniform
-
-

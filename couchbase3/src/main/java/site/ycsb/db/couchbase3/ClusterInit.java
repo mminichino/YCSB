@@ -66,8 +66,8 @@ public final class ClusterInit {
       System.out.printf("Creating %s bucket [%s]\n", sourceBucket, sourceHost);
       sourceDb.createBucket(sourceBucket, 1);
       if (createIndex) {
-        System.out.println("Creating primary index");
-        sourceDb.createPrimaryIndex();
+        System.out.println("Creating index");
+        sourceDb.createFieldIndex("meta().id");
       }
     } catch (Exception e) {
       throw new RuntimeException(e);
