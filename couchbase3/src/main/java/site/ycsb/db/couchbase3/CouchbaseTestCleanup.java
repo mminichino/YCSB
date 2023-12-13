@@ -24,8 +24,6 @@ public class CouchbaseTestCleanup extends TestCleanup {
   public static final String XDCR_PROJECT = "xdcr.project";
   public static final String XDCR_DATABASE = "xdcr.database";
   public static final String XDCR_EVENTING = "xdcr.eventing";
-  public static final String INDEX_CREATE = "index.create";
-  public static final String INDEX_FIELD = "index.field";
 
   @Override
   public void testClean(Properties properties) {
@@ -47,24 +45,21 @@ public class CouchbaseTestCleanup extends TestCleanup {
     String xdcrDatabase = properties.getProperty(XDCR_DATABASE, null);
     String xdcrEventing = properties.getProperty(XDCR_EVENTING, null);
 
-    boolean indexCreate = properties.getProperty(INDEX_CREATE, "false").equals("true");
-    String indexField = properties.getProperty(INDEX_FIELD, "meta().id");
-
-    System.out.println("Starting test cleanup");
+    System.err.println("Starting test cleanup");
 
     if (xdcrHost != null) {
       replicationClean(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
           xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket);
       clusterClean(xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket,
-          xdcrProject, xdcrDatabase, indexCreate, indexField, xdcrEventing);
+          xdcrProject, xdcrDatabase, xdcrEventing);
     }
 
     clusterClean(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
-        clusterProject, clusterDatabase, indexCreate, indexField, clusterEventing);
+        clusterProject, clusterDatabase, clusterEventing);
   }
 
   private static void clusterClean(String host, String user, String password, boolean ssl, String bucket,
-                                   String project, String database, boolean index, String field, String eventing) {
+                                   String project, String database, String eventing) {
     CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
     CouchbaseConnect db;
 
@@ -77,10 +72,10 @@ public class CouchbaseTestCleanup extends TestCleanup {
       }
       db = dbBuilder.build();
       if (eventing != null) {
-        System.out.printf("Removing eventing bucket on cluster:[%s]\n", host);
+        System.err.printf("Removing eventing bucket on cluster:[%s]\n", host);
         db.dropBucket("eventing");
       }
-      System.out.printf("Removing bucket %s on cluster:[%s]\n", bucket, host);
+      System.err.printf("Removing bucket %s on cluster:[%s]\n", bucket, host);
       db.dropBucket(bucket);
       db.disconnect();
     } catch (Exception e) {
@@ -108,7 +103,7 @@ public class CouchbaseTestCleanup extends TestCleanup {
           .bucket(targetBucket);
       targetDb = targetBuilder.build();
 
-      System.out.printf("Removing replicating %s:%s -> %s:%s\n", sourceHost, sourceBucket, targetHost, targetBucket);
+      System.err.printf("Removing replicating %s:%s -> %s:%s\n", sourceHost, sourceBucket, targetHost, targetBucket);
       CouchbaseXDCR xdcr = xdcrBuilder.source(sourceDb).target(targetDb).build();
       xdcr.removeReplication();
 

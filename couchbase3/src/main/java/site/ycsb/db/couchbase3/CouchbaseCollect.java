@@ -100,6 +100,7 @@ public class CouchbaseCollect extends RemoteStatistics {
       addMetric("sys_cpu_host_utilization_rate", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
       addMetric("sys_mem_total", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
       addMetric("sys_mem_free", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
+      addMetric("n1ql_requests", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
       addMetric("n1ql_active_requests", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
       addMetric("n1ql_load", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
       addMetric("n1ql_request_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
@@ -125,33 +126,37 @@ public class CouchbaseCollect extends RemoteStatistics {
         double cpuUtil = getMetricAvgDouble(data.getAsJsonArray().get(0).getAsJsonObject());
         long memTotal = getMetricMaxLong(data.getAsJsonArray().get(1).getAsJsonObject());
         long memFree = getMetricMaxLong(data.getAsJsonArray().get(2).getAsJsonObject());
-        long sqlReq  = getMetricMaxLong(data.getAsJsonArray().get(3).getAsJsonObject());
-        long sqlLoad  = getMetricMaxLong(data.getAsJsonArray().get(4).getAsJsonObject());
-        long sqlReqTime  = getMetricMaxLong(data.getAsJsonArray().get(5).getAsJsonObject());
-        long sqlSvcTime  = getMetricMaxLong(data.getAsJsonArray().get(6).getAsJsonObject());
+        long sqlReq = getMetricDiffSum(data.getAsJsonArray().get(3).getAsJsonObject());
+        long sqlActiveReq  = getMetricMaxLong(data.getAsJsonArray().get(4).getAsJsonObject());
+        long sqlLoad  = getMetricMaxLong(data.getAsJsonArray().get(5).getAsJsonObject());
+        long sqlReqTime  = getMetricDiffSum(data.getAsJsonArray().get(6).getAsJsonObject());
+        long sqlSvcTime  = getMetricDiffSum(data.getAsJsonArray().get(7).getAsJsonObject());
 
-        double nonResident = getMetricAvgDouble(data.getAsJsonArray().get(7).getAsJsonObject());
-        double queueSize = getMetricAvgDouble(data.getAsJsonArray().get(8).getAsJsonObject());
-        double flushTodo = getMetricAvgDouble(data.getAsJsonArray().get(9).getAsJsonObject());
+        double nonResident = getMetricAvgDouble(data.getAsJsonArray().get(8).getAsJsonObject());
+        double queueSize = getMetricAvgDouble(data.getAsJsonArray().get(9).getAsJsonObject());
+        double flushTodo = getMetricAvgDouble(data.getAsJsonArray().get(10).getAsJsonObject());
 
-        double bytesRead = getMetricDiffDouble(data.getAsJsonArray().get(10).getAsJsonObject());
-        double bytesWrite = getMetricDiffDouble(data.getAsJsonArray().get(11).getAsJsonObject());
-        long curItems = getMetricMaxLong(data.getAsJsonArray().get(12).getAsJsonObject());
+        double bytesRead = getMetricDiffDouble(data.getAsJsonArray().get(11).getAsJsonObject());
+        double bytesWrite = getMetricDiffDouble(data.getAsJsonArray().get(12).getAsJsonObject());
+        long curItems = getMetricMaxLong(data.getAsJsonArray().get(13).getAsJsonObject());
 
-        double xdcrMax = getMetricAvgDouble(data.getAsJsonArray().get(13).getAsJsonObject());
-        double xdcrAvg = getMetricAvgDouble(data.getAsJsonArray().get(14).getAsJsonObject());
-        double wtavgMax = getMetricAvgDouble(data.getAsJsonArray().get(15).getAsJsonObject());
-        double xdcrBytes = getMetricDiffDouble(data.getAsJsonArray().get(16).getAsJsonObject());
+        double xdcrMax = getMetricAvgDouble(data.getAsJsonArray().get(14).getAsJsonObject());
+        double xdcrAvg = getMetricAvgDouble(data.getAsJsonArray().get(15).getAsJsonObject());
+        double wtavgMax = getMetricAvgDouble(data.getAsJsonArray().get(16).getAsJsonObject());
+        double xdcrBytes = getMetricDiffDouble(data.getAsJsonArray().get(17).getAsJsonObject());
 
         long queueTotal = (long) queueSize + (long) flushTodo;
+        double sqlReqAvgTime = ((double) sqlReqTime / 1000000) / sqlReq;
+        double sqlSvcAvgTime = ((double) sqlSvcTime / 1000000) / sqlReq;
 
         output.append(String.format("CPU: %.1f ", cpuUtil));
         output.append(String.format("Mem: %s ", formatDataSize(memTotal)));
         output.append(String.format("Free: %s ", formatDataSize(memFree)));
         output.append(String.format("sqlReq: %d ", sqlReq));
+        output.append(String.format("sqlActReq: %d ", sqlActiveReq));
         output.append(String.format("sqlLoad: %d ", sqlLoad));
-        output.append(String.format("sqlReqTime: %d ", sqlReqTime));
-        output.append(String.format("sqlSvcTime: %d ", sqlSvcTime));
+        output.append(String.format("sqlReqTime: %.2f ", Double.isNaN(sqlReqAvgTime) ? 0.0 : sqlReqAvgTime));
+        output.append(String.format("sqlSvcTime: %.2f ", Double.isNaN(sqlSvcAvgTime) ? 0.0 : sqlSvcAvgTime));
 
         output.append(String.format("Resident: %d %% ", 100L - (long) nonResident));
 
@@ -165,17 +170,16 @@ public class CouchbaseCollect extends RemoteStatistics {
         output.append(String.format("wtavgMax: %.1f ", wtavgMax * 1000));
         output.append(String.format("Bandwidth: %s ", formatDataSize(xdcrBytes)));
 
-      } catch (RESTException e) {
-        if (ErrorCode.valueOf(e.getCode()) != ErrorCode.FORBIDDEN) {
-          throw new RuntimeException(e);
-        }
+      } catch (Exception e) {
+        LOGGER.error(e.getMessage(), e);
+        output.append(String.format("Error: %s", e.getMessage()));
       }
 
       STATISTICS.info(String.format("%s\n", output));
       output.delete(0, output.length());
     };
     System.err.println("Starting remote statistics thread...");
-    apiHandle = scheduler.scheduleWithFixedDelay(callApi, 0, 30, SECONDS);
+    apiHandle = scheduler.scheduleWithFixedDelay(callApi, 10, 10, SECONDS);
   }
 
   private static void addMetric(String name, MetricFunction func, JsonArray metrics, MetricMode mode, String bucket) {
@@ -266,20 +270,40 @@ public class CouchbaseCollect extends RemoteStatistics {
 
   private double getMetricDiffDouble(JsonObject block) {
     double metric = 0.0;
+    int counter = 0;
     if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
       JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
       for (int i = 0; i < values.size() - 1; i++) {
         double a = Double.parseDouble(values.getAsJsonArray().get(i).getAsJsonArray().get(1).getAsString());
         double b = Double.parseDouble(values.getAsJsonArray().get(i+1).getAsJsonArray().get(1).getAsString());
-        metric += ((b - a) / 15);
+        if (b > a) {
+          metric += ((b - a) / 15);
+          counter += 1;
+        }
       }
-      return metric / (values.size() - 1);
+      return metric / counter;
     }
     return metric;
   }
 
+  private long getMetricDiffSum(JsonObject block) {
+    double metric = 0.0;
+    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
+      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
+      for (int i = 0; i < values.size() - 1; i++) {
+        double a = Double.parseDouble(values.getAsJsonArray().get(i).getAsJsonArray().get(1).getAsString());
+        double b = Double.parseDouble(values.getAsJsonArray().get(i+1).getAsJsonArray().get(1).getAsString());
+        if (b > a) {
+          metric += (b - a);
+        }
+      }
+      return Double.isNaN(metric) ? 0 : Math.round(metric);
+    }
+    return 0;
+  }
+
   private static String formatDataSize(double bytes) {
-    long size = Double.valueOf(bytes).longValue();
+    long size = Double.isNaN(bytes) ? 0 : Double.isInfinite(bytes) ? Long.MAX_VALUE : Math.round(bytes);
     String output;
 
     double k = size/1024.0;
@@ -304,55 +328,6 @@ public class CouchbaseCollect extends RemoteStatistics {
     return output;
   }
 
-  private double wildCardToDouble(Object value) {
-    if (value instanceof Integer) {
-      return Double.parseDouble(value.toString());
-    } else if (value instanceof Double) {
-      return (double) value;
-    } else if (value instanceof Long) {
-      return ((Long) value).doubleValue();
-    } else if (value instanceof Float) {
-      return (double) value;
-    } else {
-      return 0.0D;
-    }
-  }
-
-  private double averageArray(ArrayList<?> list) {
-    double total = 0;
-    int count = 0;
-    for (Object value : list) {
-      total += wildCardToDouble(value);
-      count++;
-    }
-    return total / count;
-  }
-
-  private static Map<String, String> createBucketStatMap() {
-    Map<String, String> newMap = new HashMap<>();
-    newMap.put("HitRatio", "hit_ratio");
-    newMap.put("CacheMiss", "ep_cache_miss_rate");
-    newMap.put("ResidentItems", "ep_resident_items_rate");
-    newMap.put("QueueAge", "vb_avg_total_queue_age");
-    newMap.put("CommitTime", "avg_disk_commit_time");
-    newMap.put("DiskCommit", "disk_commit_total");
-    newMap.put("DiskUpdate", "disk_update_total");
-    newMap.put("DiskQueue", "ep_diskqueue_items");
-    newMap.put("WaitTime", "avg_bg_wait_time");
-    newMap.put("BytesRead", "bytes_read");
-    newMap.put("BytesWriten", "bytes_written");
-    newMap.put("BadCAS", "cas_badval");
-    newMap.put("Get", "cmd_get");
-    newMap.put("Lookup", "cmd_lookup");
-    newMap.put("Set", "cmd_set");
-    newMap.put("Con", "curr_connections");
-    newMap.put("Items", "curr_items_tot");
-    newMap.put("WriteQueue", "disk_write_queue");
-    newMap.put("DCPReplica", "ep_dcp_replica_total_bytes");
-    newMap.put("DCPOther", "ep_dcp_other_total_bytes");
-    return newMap;
-  }
-
   @Override
   public void stopCollectionThread() {
     System.err.println("Stopping remote statistics thread...");
@@ -362,6 +337,5 @@ public class CouchbaseCollect extends RemoteStatistics {
 
   @Override
   public void getResults() {
-
   }
 }

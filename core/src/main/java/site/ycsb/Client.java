@@ -26,12 +26,10 @@ import org.apache.htrace.core.HTraceConfiguration;
 import org.apache.htrace.core.TraceScope;
 import org.apache.htrace.core.Tracer;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.Map.Entry;
@@ -180,6 +178,17 @@ public final class Client {
   public static String testCleanup;
 
   /**
+   * Do not run setup and cleanup automation.
+   */
+  public static final String MANUAL_MODE = "false";
+  public static boolean manualMode;
+
+  /**
+   * Name of the workload property file.
+   */
+  public static final String WORKLOAD_NAME_PROPERTY = "workloadname";
+
+  /**
    * An optional thread used to track progress and measure JVM stats.
    */
   private static StatusThread statusthread = null;
@@ -214,6 +223,7 @@ public final class Client {
     System.out.println("          values in the propertyfile");
     System.out.println("  -s:  show status during run (default: no status)");
     System.out.println("  -l label:  use label for status (e.g. to label one experiment out of a whole batch)");
+    System.out.println("  -manual: skip test setup and cleanup automation");
     System.out.println("");
     System.out.println("Required properties:");
     System.out.println("  " + WORKLOAD_PROPERTY + ": the name of the workload class to use (e.g. " +
@@ -234,7 +244,6 @@ public final class Client {
     return true;
   }
 
-
   /**
    * Exports the measurements to either sysout or a file using the exporter
    * loaded from conf.
@@ -244,14 +253,24 @@ public final class Client {
   private static void exportMeasurements(Properties props, int opcount, long runtime)
       throws IOException {
     MeasurementsExporter exporter = null;
+    String workloadFileName = props.getProperty(WORKLOAD_NAME_PROPERTY, null);
+    boolean loadMode = props.getProperty(DO_TRANSACTIONS_PROPERTY, "true").equals("false");
+
     try {
       // if no destination file is provided the results will be written to stdout
       OutputStream out;
       String exportFile = props.getProperty(EXPORT_FILE_PROPERTY);
-      if (exportFile == null) {
-        out = System.out;
+      if (exportFile != null) {
+        System.err.printf("Writing output to: %s\n", exportFile);
+        out = Files.newOutputStream(Paths.get(exportFile));
+      } else if (workloadFileName != null) {
+        String suffix = loadMode ? "-load.dat" : "-run.dat";
+        Path path = Paths.get("output", workloadFileName + suffix);
+        Files.createDirectories(path.getParent());
+        System.err.printf("Writing output to: %s\n", path);
+        out = Files.newOutputStream(path);
       } else {
-        out = new FileOutputStream(exportFile);
+        out = System.out;
       }
 
       // if no exporter is provided the default text one will be used
@@ -306,6 +325,8 @@ public final class Client {
   @SuppressWarnings("unchecked")
   public static void main(String[] args) {
     Properties props = parseArguments(args);
+    PrintStream sysStdOut = System.out;
+    PrintStream sysStdErr = System.err;
 
     boolean status = Boolean.valueOf(props.getProperty(STATUS_PROPERTY, String.valueOf(false)));
     String label = props.getProperty(LABEL_PROPERTY, "");
@@ -323,6 +344,7 @@ public final class Client {
     testSetup = props.getProperty(TEST_SETUP_PROPERTY, null);
     testCleanup = props.getProperty(TEST_CLEANUP_PROPERTY, null);
     boolean loadMode = props.getProperty(DO_TRANSACTIONS_PROPERTY, "true").equals("false");
+    manualMode = props.getProperty(MANUAL_MODE, "false").equals("true");
 
     //compute the target throughput
     double targetperthreadperms = -1;
@@ -331,7 +353,7 @@ public final class Client {
       targetperthreadperms = targetperthread / 1000.0;
     }
 
-    if (testSetup != null && loadMode) {
+    if (testSetup != null && loadMode && !manualMode) {
       try {
         runTestSetup(testSetup, props);
       } catch (Exception e) {
@@ -352,7 +374,7 @@ public final class Client {
 
     initWorkload(props, warningthread, workload, tracer);
 
-    System.err.println("Starting test.");
+    System.err.printf("Starting test with %d threads\n", threadcount);
     final CountDownLatch completeLatch = new CountDownLatch(threadcount);
 
     final List<ClientThread> clients = initDb(dbname, props, threadcount, targetperthreadperms,
@@ -452,7 +474,7 @@ public final class Client {
       System.exit(-1);
     }
 
-    if (testCleanup != null && !loadMode) {
+    if (testCleanup != null && !loadMode && !manualMode) {
       try {
         runTestClean(testCleanup, props);
       } catch (Exception e) {
@@ -632,6 +654,17 @@ public final class Client {
     return null;
   }
 
+  private static String getWorkloadName(String path) {
+    String[] parts = path.split("[/\\\\]", 2);
+    List<String> elements = Arrays.asList(parts);
+    String name = elements.get(elements.size() - 1);
+    if (name.contains("workload")) {
+      return name;
+    } else {
+      return null;
+    }
+  }
+
   private static Properties parseArguments(String[] args) {
     Properties props = new Properties();
     System.err.print("Command line:");
@@ -679,6 +712,9 @@ public final class Client {
       } else if (args[argindex].compareTo("-s") == 0) {
         props.setProperty(STATUS_PROPERTY, String.valueOf(true));
         argindex++;
+      } else if (args[argindex].compareTo("-manual") == 0) {
+        props.setProperty(MANUAL_MODE, String.valueOf(true));
+        argindex++;
       } else if (args[argindex].compareTo("-db") == 0) {
         argindex++;
         if (argindex >= args.length) {
@@ -706,6 +742,11 @@ public final class Client {
         }
         String propfile = args[argindex];
         argindex++;
+
+        String workloadFileName = getWorkloadName(propfile);
+        if (workloadFileName != null) {
+          props.setProperty(WORKLOAD_NAME_PROPERTY, workloadFileName);
+        }
 
         Properties myfileprops = new Properties();
         try {
@@ -765,10 +806,14 @@ public final class Client {
     }
 
     //overwrite file properties with properties from the command line
+    //except for thread count
 
     //Issue #5 - remove call to stringPropertyNames to make compilable under Java 1.5
     for (Enumeration e = props.propertyNames(); e.hasMoreElements();) {
       String prop = (String) e.nextElement();
+      if (Objects.equals(prop, "threadcount")) {
+        continue;
+      }
 
       fileprops.setProperty(prop, props.getProperty(prop));
     }

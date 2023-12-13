@@ -27,7 +27,6 @@ import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
-//import com.couchbase.client.core.retry.FailFastRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
@@ -49,16 +48,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import com.couchbase.client.java.json.JsonArray;
-//import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.google.gson.Gson;
 
-//import org.jetbrains.annotations.NotNull;
-//import org.reactivestreams.Subscription;
 import org.slf4j.LoggerFactory;
-//import reactor.core.publisher.BaseSubscriber;
-//import reactor.core.publisher.Mono;
-//import reactor.util.retry.Retry;
-//import reactor.core.scheduler.Schedulers;
 import site.ycsb.*;
 import site.ycsb.measurements.RemoteStatistics;
 import site.ycsb.measurements.StatisticsFactory;
@@ -204,13 +196,10 @@ public class Couchbase3Client extends DB {
   }
 
   private void logError(Exception error, String connectString) {
-    Writer buffer = new StringWriter();
-    PrintWriter pw = new PrintWriter(buffer);
-    error.printStackTrace(pw);
     LOGGER.error(String.format("Connection string: %s", connectString));
-    LOGGER.error(pw.toString());
     LOGGER.error(cluster.environment().toString());
     LOGGER.error(cluster.diagnostics().endpoints().toString());
+    LOGGER.error(error.getMessage(), error);
   }
 
   private DurabilityLevel setDurabilityLevel(final int value) {

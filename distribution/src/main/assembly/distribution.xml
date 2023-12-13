@@ -55,7 +55,7 @@ LICENSE file.
       <outputDirectory>bin</outputDirectory>
       <fileMode>0755</fileMode>
       <includes>
-        <include>ycsb*</include>
+        <include>run*</include>
       </includes>
     </fileSet>
     <fileSet>

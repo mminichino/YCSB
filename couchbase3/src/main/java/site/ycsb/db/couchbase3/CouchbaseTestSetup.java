@@ -50,7 +50,7 @@ public class CouchbaseTestSetup extends TestSetup {
     boolean indexCreate = properties.getProperty(INDEX_CREATE, "false").equals("true");
     String indexField = properties.getProperty(INDEX_FIELD, "meta().id");
 
-    System.out.println("Starting test init");
+    System.err.println("Starting test setup");
 
     clusterSetup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
         clusterProject, clusterDatabase, indexCreate, indexField, clusterEventing);
@@ -77,13 +77,13 @@ public class CouchbaseTestSetup extends TestSetup {
       }
       db = dbBuilder.build();
       if (eventing != null) {
-        System.out.printf("Creating eventing bucket on cluster:[%s]\n", host);
-        db.createBucket("eventing", 128, 1);
+        System.err.printf("Creating eventing bucket on cluster:[%s]\n", host);
+        db.createBucket("eventing", 128L, 1);
       }
-      System.out.printf("Creating bucket %s on cluster:[%s]\n", bucket, host);
+      System.err.printf("Creating bucket %s on cluster:[%s]\n", bucket, host);
       db.createBucket(bucket, 1);
       if (index) {
-        System.out.printf("Creating index on field %s\n", field);
+        System.err.printf("Creating index on field %s\n", field);
         db.createFieldIndex(field);
       }
       db.disconnect();
@@ -112,7 +112,7 @@ public class CouchbaseTestSetup extends TestSetup {
           .bucket(targetBucket);
       targetDb = targetBuilder.build();
 
-      System.out.printf("Replicating %s:%s -> %s:%s\n", sourceHost, sourceBucket, targetHost, targetBucket);
+      System.err.printf("Replicating %s:%s -> %s:%s\n", sourceHost, sourceBucket, targetHost, targetBucket);
       CouchbaseXDCR xdcr = xdcrBuilder.source(sourceDb).target(targetDb).build();
       xdcr.createReplication();
 

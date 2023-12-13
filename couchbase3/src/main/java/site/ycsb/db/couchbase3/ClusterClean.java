@@ -11,87 +11,106 @@ import java.util.Properties;
  * Clean Cluster after Testing.
  */
 public final class ClusterClean {
-  public static final String SOURCE_HOST = "couchbase.hostname";
-  public static final String SOURCE_USER = "couchbase.username";
-  public static final String SOURCE_PASSWORD = "couchbase.password";
-  public static final String SOURCE_BUCKET = "couchbase.bucket";
-  public static final String SOURCE_PROJECT = "couchbase.project";
-  public static final String SOURCE_DATABASE = "couchbase.database";
-  public static final String SOURCE_EVENTING = "couchbase.eventing";
-  public static final String TARGET_HOST = "xdcr.hostname";
-  public static final String TARGET_USER = "xdcr.username";
-  public static final String TARGET_PASSWORD = "xdcr.password";
-  public static final String TARGET_BUCKET = "xdcr.bucket";
-  public static final String TARGET_PROJECT = "xdcr.project";
-  public static final String TARGET_DATABASE = "xdcr.database";
-  public static final String TARGET_EVENTING = "xdcr.eventing";
+  public static final String CLUSTER_HOST = "couchbase.hostname";
+  public static final String CLUSTER_USER = "couchbase.username";
+  public static final String CLUSTER_PASSWORD = "couchbase.password";
+  public static final String CLUSTER_SSL = "couchbase.sslMode";
+  public static final String CLUSTER_BUCKET = "couchbase.bucket";
+  public static final String CLUSTER_PROJECT = "couchbase.project";
+  public static final String CLUSTER_DATABASE = "couchbase.database";
+  public static final String CLUSTER_EVENTING = "couchbase.eventing";
+  public static final String XDCR_HOST = "xdcr.hostname";
+  public static final String XDCR_USER = "xdcr.username";
+  public static final String XDCR_PASSWORD = "xdcr.password";
+  public static final String XDCR_SSL = "xdcr.sslMode";
+  public static final String XDCR_BUCKET = "xdcr.bucket";
+  public static final String XDCR_PROJECT = "xdcr.project";
+  public static final String XDCR_DATABASE = "xdcr.database";
+  public static final String XDCR_EVENTING = "xdcr.eventing";
 
   private static void cleanCluster(Properties properties) {
+    String clusterHost = properties.getProperty(CLUSTER_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
+    String clusterUser = properties.getProperty(CLUSTER_USER, CouchbaseConnect.DEFAULT_USER);
+    String clusterPassword = properties.getProperty(CLUSTER_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
+    boolean clusterSsl = properties.getProperty(CLUSTER_SSL, CouchbaseConnect.DEFAULT_SSL_SETTING).equals("true");
+    String clusterBucket = properties.getProperty(CLUSTER_BUCKET, "ycsb");
+    String clusterProject = properties.getProperty(CLUSTER_PROJECT, null);
+    String clusterDatabase = properties.getProperty(CLUSTER_DATABASE, null);
+    String clusterEventing = properties.getProperty(CLUSTER_EVENTING, null);
+
+    String xdcrHost = properties.getProperty(XDCR_HOST, null);
+    String xdcrUser = properties.getProperty(XDCR_USER, CouchbaseConnect.DEFAULT_USER);
+    String xdcrPassword = properties.getProperty(XDCR_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
+    boolean xdcrSsl = properties.getProperty(XDCR_SSL, CouchbaseConnect.DEFAULT_SSL_SETTING).equals("true");
+    String xdcrBucket = properties.getProperty(XDCR_BUCKET, "ycsb");
+    String xdcrProject = properties.getProperty(XDCR_PROJECT, null);
+    String xdcrDatabase = properties.getProperty(XDCR_DATABASE, null);
+    String xdcrEventing = properties.getProperty(XDCR_EVENTING, null);
+
+    System.out.println("Starting test cleanup");
+
+    if (xdcrHost != null) {
+      replicationClean(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
+          xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket);
+      clusterClean(xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket,
+          xdcrProject, xdcrDatabase, xdcrEventing);
+    }
+
+    clusterClean(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
+        clusterProject, clusterDatabase, clusterEventing);
+  }
+
+  private static void clusterClean(String host, String user, String password, boolean ssl, String bucket,
+                                   String project, String database, String eventing) {
+    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
+    CouchbaseConnect db;
+
+    try {
+      dbBuilder.connect(host, user, password)
+          .ssl(ssl)
+          .bucket(bucket);
+      if (project != null && database != null) {
+        dbBuilder.capella(project, database);
+      }
+      db = dbBuilder.build();
+      if (eventing != null) {
+        System.out.printf("Removing eventing bucket on cluster:[%s]\n", host);
+        db.dropBucket("eventing");
+      }
+      System.out.printf("Removing bucket %s on cluster:[%s]\n", bucket, host);
+      db.dropBucket(bucket);
+      db.disconnect();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static void replicationClean(String sourceHost, String sourceUser, String sourcePassword,
+                                       boolean sourceSsl, String sourceBucket,
+                                       String targetHost, String targetUser, String targetPassword,
+                                       boolean targetSsl, String targetBucket) {
+    CouchbaseXDCR.XDCRBuilder xdcrBuilder = new CouchbaseXDCR.XDCRBuilder();
     CouchbaseConnect.CouchbaseBuilder sourceBuilder = new CouchbaseConnect.CouchbaseBuilder();
     CouchbaseConnect.CouchbaseBuilder targetBuilder = new CouchbaseConnect.CouchbaseBuilder();
-    CouchbaseXDCR.XDCRBuilder xdcrBuilder = new CouchbaseXDCR.XDCRBuilder();
     CouchbaseConnect sourceDb;
     CouchbaseConnect targetDb;
 
-    String sourceHost = properties.getProperty(SOURCE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
-    String sourceUser = properties.getProperty(SOURCE_USER, CouchbaseConnect.DEFAULT_USER);
-    String sourcePassword = properties.getProperty(SOURCE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
-    String sourceBucket = properties.getProperty(SOURCE_BUCKET, "ycsb");
-    String sourceProject = properties.getProperty(SOURCE_PROJECT, null);
-    String sourceDatabase = properties.getProperty(SOURCE_DATABASE, null);
-    String sourceEventing = properties.getProperty(SOURCE_EVENTING, null);
-
-    String targetHost = properties.getProperty(TARGET_HOST, null);
-    String targetUser = properties.getProperty(TARGET_USER, CouchbaseConnect.DEFAULT_USER);
-    String targetPassword = properties.getProperty(TARGET_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
-    String targetBucket = properties.getProperty(TARGET_BUCKET, "ycsb");
-    String targetProject = properties.getProperty(TARGET_PROJECT, null);
-    String targetDatabase = properties.getProperty(TARGET_DATABASE, null);
-    String targetEventing = properties.getProperty(TARGET_EVENTING, null);
-
-    System.out.println("Starting cluster clean");
-    System.out.printf("Cluster: %s\n", sourceHost);
-
-    if (targetHost != null) {
-      System.out.printf("Remote : %s\n", targetHost);
-      try {
-        sourceBuilder.connect(sourceHost, sourceUser, sourcePassword)
-            .bucket(sourceBucket);
-        targetBuilder.connect(targetHost, targetUser, targetPassword)
-            .bucket(targetBucket);
-        if (targetProject != null && targetDatabase != null) {
-          sourceBuilder.capella(targetProject, targetDatabase);
-        }
-        sourceDb = sourceBuilder.build();
-        targetDb = targetBuilder.build();
-        if (targetEventing != null) {
-          System.out.printf("Removing target eventing bucket [%s]\n", targetHost);
-          targetDb.dropBucket("eventing");
-        }
-        System.out.printf("Removing replication %s -> %s\n", sourceBucket, targetBucket);
-        CouchbaseXDCR xdcr = xdcrBuilder.source(sourceDb).target(targetDb).build();
-        xdcr.removeReplication();
-
-        System.out.printf("Removing target %s bucket [%s]\n", targetBucket, targetHost);
-        targetDb.dropBucket(targetBucket);
-      } catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }
-
     try {
       sourceBuilder.connect(sourceHost, sourceUser, sourcePassword)
+          .ssl(sourceSsl)
           .bucket(sourceBucket);
-      if (sourceProject != null && sourceDatabase != null) {
-        sourceBuilder.capella(sourceProject, sourceDatabase);
-      }
       sourceDb = sourceBuilder.build();
-      if (sourceEventing != null) {
-        System.out.printf("Removing eventing bucket [%s]\n", sourceHost);
-        sourceDb.dropBucket("eventing");
-      }
-      System.out.printf("Removing %s bucket [%s]\n", sourceBucket, sourceHost);
-      sourceDb.dropBucket(sourceBucket);
+      targetBuilder.connect(targetHost, targetUser, targetPassword)
+          .ssl(targetSsl)
+          .bucket(targetBucket);
+      targetDb = targetBuilder.build();
+
+      System.out.printf("Removing replicating %s:%s -> %s:%s\n", sourceHost, sourceBucket, targetHost, targetBucket);
+      CouchbaseXDCR xdcr = xdcrBuilder.source(sourceDb).target(targetDb).build();
+      xdcr.removeReplication();
+
+      sourceDb.disconnect();
+      targetDb.disconnect();
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
