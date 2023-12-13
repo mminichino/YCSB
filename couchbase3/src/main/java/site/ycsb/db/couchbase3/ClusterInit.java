@@ -69,6 +69,7 @@ public final class ClusterInit {
         System.out.println("Creating index");
         sourceDb.createFieldIndex("meta().id");
       }
+      sourceDb.disconnect();
     } catch (Exception e) {
       throw new RuntimeException(e);
     }

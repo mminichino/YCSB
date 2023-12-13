@@ -235,6 +235,7 @@ ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 }
 
 function run_workload {
+[ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && THREADCOUNT_RUN=32
 ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_RUN \

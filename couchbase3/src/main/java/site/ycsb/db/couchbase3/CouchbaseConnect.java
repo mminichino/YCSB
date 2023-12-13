@@ -64,7 +64,8 @@ public final class CouchbaseConnect {
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";
-  private static final Boolean DEFAULT_SSL_MODE = true;
+  public static final Boolean DEFAULT_SSL_MODE = true;
+  public static final String DEFAULT_SSL_SETTING = "true";
   private static final String DEFAULT_PROJECT = null;
   private static final String DEFAULT_DATABASE = null;
   private static final BucketMode DEFAULT_BUCKET_MODE = BucketMode.PASSIVE;
@@ -324,6 +325,15 @@ public final class CouchbaseConnect {
     }
   }
 
+  public void disconnect() {
+    collection = null;
+    bucketMgr = null;
+    bucket = null;
+    cluster.disconnect();
+    environment.shutdown();
+    environment = null;
+  }
+
   public String rallyHostValue() {
     return rallyHost;
   }
@@ -539,6 +549,7 @@ public final class CouchbaseConnect {
         bucketMgr.createBucket(bucketSettings);
       } catch (BucketExistsException e) {
         //ignore
+        LOGGER.info(String.format("Bucket %s already exists in cluster %s.", bucket, hostname));
       }
     }
     Bucket check = cluster.bucket(bucket);
@@ -585,11 +596,13 @@ public final class CouchbaseConnect {
     }
     CollectionQueryIndexManager queryIndexMgr = collection.queryIndexes();
     CreateQueryIndexOptions options = CreateQueryIndexOptions.createQueryIndexOptions()
+        .deferred(false)
         .numReplicas(indexNodes - 1)
         .ignoreIfExists(true);
 
     String indexName = "idx_" + field.replaceAll("\\(\\).", "");
     queryIndexMgr.createIndex(indexName, Collections.singletonList(field), options);
+    queryIndexMgr.watchIndexes(Collections.singletonList(indexName), Duration.ofSeconds(10));
   }
 
   public long ramQuotaCalc() {

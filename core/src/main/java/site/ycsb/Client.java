@@ -18,6 +18,8 @@
 package site.ycsb;
 
 import site.ycsb.measurements.Measurements;
+import site.ycsb.measurements.RemoteStatistics;
+import site.ycsb.measurements.StatisticsFactory;
 import site.ycsb.measurements.exporter.MeasurementsExporter;
 import site.ycsb.measurements.exporter.TextMeasurementsExporter;
 import org.apache.htrace.core.HTraceConfiguration;
@@ -28,6 +30,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
@@ -149,6 +154,24 @@ public final class Client {
    * Use label for status (e.g. to label one experiment out of a whole batch).
    */
   public static final String LABEL_PROPERTY = "label";
+
+  /**
+   * Statistics class to collect database specific metrics.
+   */
+  public static final String STATISTICS_CLASS_PROPERTY = "statistics.class";
+  public static String statisticsClass;
+
+  /**
+   * Enable statistics collection.
+   */
+  public static final String STATISTICS_ENABLE_PROPERTY = "statistics.enable";
+  public static boolean enableStatistics;
+
+  /**
+   * Test setup automation class.
+   */
+  public static final String TEST_SETUP_PROPERTY = "test.setup";
+  public static String testSetup;
 
   /**
    * An optional thread used to track progress and measure JVM stats.
@@ -288,11 +311,20 @@ public final class Client {
     String dbname = props.getProperty(DB_PROPERTY, "site.ycsb.BasicDB");
     int target = Integer.parseInt(props.getProperty(TARGET_PROPERTY, "0"));
 
+    statisticsClass = props.getProperty(STATISTICS_CLASS_PROPERTY, null);
+    enableStatistics = props.getProperty(STATISTICS_ENABLE_PROPERTY, "false").equals("true");
+
+    testSetup = props.getProperty(TEST_SETUP_PROPERTY, null);
+
     //compute the target throughput
     double targetperthreadperms = -1;
     if (target > 0) {
       double targetperthread = ((double) target) / ((double) threadcount);
       targetperthreadperms = targetperthread / 1000.0;
+    }
+
+    if (testSetup != null) {
+      runTestSetup(testSetup, props);
     }
 
     Thread warningthread = setupWarningThread();
@@ -323,6 +355,10 @@ public final class Client {
       statusthread = new StatusThread(completeLatch, clients, label, standardstatus, statusIntervalSeconds,
           trackJVMStats);
       statusthread.start();
+    }
+
+    if (enableStatistics && statisticsClass != null) {
+      initStatisticsThread(statisticsClass, props);
     }
 
     Thread terminator = null;
@@ -367,6 +403,10 @@ public final class Client {
 
         if (terminator != null && !terminator.isInterrupted()) {
           terminator.interrupt();
+        }
+
+        if (enableStatistics && statisticsClass != null) {
+          stopStatisticsThread();
         }
 
         if (status) {
@@ -478,6 +518,29 @@ public final class Client {
       e.printStackTrace();
       e.printStackTrace(System.out);
       System.exit(0);
+    }
+  }
+
+  private static void initStatisticsThread(String statsClass, Properties properties) {
+    RemoteStatistics remoteStatistics = StatisticsFactory.newInstance(statsClass);
+    remoteStatistics.init(properties);
+    remoteStatistics.startCollectionThread();
+  }
+
+  private static void stopStatisticsThread() {
+    RemoteStatistics remoteStatistics = StatisticsFactory.getInstance();
+    if (remoteStatistics != null) {
+      remoteStatistics.stopCollectionThread();
+    }
+  }
+
+  private static void runTestSetup(String testSetupClass, Properties properties) {
+    TestSetup testSetupUtil = TestSetupFactory.newInstance(testSetupClass);
+    try {
+      testSetupUtil.testSetup(properties);
+    } catch (Exception e) {
+      System.err.println("Error: test setup failure: " + e.getMessage());
+      System.exit(1);
     }
   }
 
@@ -676,6 +739,21 @@ public final class Client {
     }
 
     props = fileprops;
+
+    //Merge in properties from driver config file if present
+    ClassLoader classloader = Thread.currentThread().getContextClassLoader();
+    URL propFile;
+    if ((propFile = classloader.getResource("db.properties")) != null
+        || (propFile = classloader.getResource("test.properties")) != null) {
+      try {
+        Properties properties = new Properties();
+        properties.load(Files.newInputStream(Paths.get(propFile.getFile())));
+        props.putAll(properties);
+      } catch (IOException e) {
+        System.out.println("Can not open DB properties file " + e.getMessage());
+        System.exit(1);
+      }
+    }
 
     if (!checkRequiredProperties(props)) {
       System.out.println("Failed check required properties.");

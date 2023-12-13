@@ -6,6 +6,10 @@ import com.google.gson.JsonObject;
 import org.slf4j.LoggerFactory;
 import site.ycsb.measurements.RemoteStatistics;
 
+import java.io.IOException;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -21,13 +25,26 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class CouchbaseCollect extends RemoteStatistics {
 
   protected static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("com.couchbase.CouchbaseClient");
+      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("com.couchbase.CouchbaseCollect");
   protected static final ch.qos.logback.classic.Logger STATISTICS =
       (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
+  private static final String PROPERTY_FILE = "db.properties";
+  private static final String PROPERTY_TEST = "test.properties";
+  public static final String COUCHBASE_HOST = "couchbase.hostname";
+  public static final String COUCHBASE_USER = "couchbase.username";
+  public static final String COUCHBASE_PASSWORD = "couchbase.password";
+  public static final String COUCHBASE_BUCKET = "couchbase.bucket";
+  public static final String COUCHBASE_SSL_MODE = "couchbase.sslMode";
   private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
   private ScheduledFuture<?> apiHandle = null;
   private final String dateFormat = "yy-MM-dd'T'HH:mm:ss";
   private final SimpleDateFormat timeStampFormat = new SimpleDateFormat(dateFormat);
+  private static String hostname;
+  private static String username;
+  private static String password;
+  private static String bucketName;
+  private static boolean sslMode;
+
   /**
    * Metric Type.
    */
@@ -36,22 +53,41 @@ public class CouchbaseCollect extends RemoteStatistics {
   }
 
   @Override
-  public void init() {
-    super.init();
+  public void init(Properties props) {
+    ClassLoader classloader = Thread.currentThread().getContextClassLoader();
+    URL propFile;
+    Properties properties = new Properties();
+
+    if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
+        || (propFile = classloader.getResource(PROPERTY_TEST)) != null) {
+      try {
+        properties.load(Files.newInputStream(Paths.get(propFile.getFile())));
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    properties.putAll(props);
+
+    hostname = properties.getProperty(COUCHBASE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
+    username = properties.getProperty(COUCHBASE_USER, CouchbaseConnect.DEFAULT_USER);
+    password = properties.getProperty(COUCHBASE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
+    bucketName = properties.getProperty(COUCHBASE_BUCKET, "ycsb");
+    sslMode = properties.getProperty(COUCHBASE_SSL_MODE, "false").equals("true");
   }
 
   @Override
-  public void startCollectionThread(String hostName, String userName, String password, String bucket, Boolean tls) {
+  public void startCollectionThread() {
     int port;
     DecimalFormat formatter = new DecimalFormat("#,###");
 
-    if (tls) {
+    if (sslMode) {
       port = 18091;
     } else {
       port = 8091;
     }
 
-    RESTInterface rest = new RESTInterface(hostName, userName, password, tls, port);
+    RESTInterface rest = new RESTInterface(hostname, username, password, sslMode, port);
 
     STATISTICS.info(String.format("==== Begin Cluster Collection %s ====\n", timeStampFormat.format(new Date())));
 
@@ -61,26 +97,26 @@ public class CouchbaseCollect extends RemoteStatistics {
       output.append(String.format("%s ", timeStamp));
 
       JsonArray metrics = new JsonArray();
-      addMetric("sys_cpu_host_utilization_rate", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
-      addMetric("sys_mem_total", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
-      addMetric("sys_mem_free", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
-      addMetric("n1ql_active_requests", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
-      addMetric("n1ql_load", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
-      addMetric("n1ql_request_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
-      addMetric("n1ql_service_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucket);
+      addMetric("sys_cpu_host_utilization_rate", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
+      addMetric("sys_mem_total", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
+      addMetric("sys_mem_free", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
+      addMetric("n1ql_active_requests", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
+      addMetric("n1ql_load", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
+      addMetric("n1ql_request_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
+      addMetric("n1ql_service_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
 
-      addMetric("kv_ep_num_non_resident", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucket);
-      addMetric("kv_ep_queue_size", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucket);
-      addMetric("kv_ep_flusher_todo", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucket);
+      addMetric("kv_ep_num_non_resident", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucketName);
+      addMetric("kv_ep_queue_size", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucketName);
+      addMetric("kv_ep_flusher_todo", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucketName);
 
-      addMetric("kv_ep_io_total_read_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucket);
-      addMetric("kv_ep_io_total_write_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucket);
-      addMetric("kv_curr_items", MetricFunction.MAX, metrics, MetricMode.DISK, bucket);
+      addMetric("kv_ep_io_total_read_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucketName);
+      addMetric("kv_ep_io_total_write_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucketName);
+      addMetric("kv_curr_items", MetricFunction.MAX, metrics, MetricMode.DISK, bucketName);
 
-      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucket);
-      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.AVG, metrics, MetricMode.XDCR, bucket);
-      addMetric("xdcr_wtavg_docs_latency_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucket);
-      addMetric("xdcr_data_replicated_bytes", MetricFunction.MAX, metrics, MetricMode.XDCR, bucket);
+      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucketName);
+      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.AVG, metrics, MetricMode.XDCR, bucketName);
+      addMetric("xdcr_wtavg_docs_latency_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucketName);
+      addMetric("xdcr_data_replicated_bytes", MetricFunction.MAX, metrics, MetricMode.XDCR, bucketName);
 
       try {
         String endpoint = "/pools/default/stats/range";

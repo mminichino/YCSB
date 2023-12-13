@@ -27,7 +27,7 @@ import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
-import com.couchbase.client.core.retry.FailFastRetryStrategy;
+//import com.couchbase.client.core.retry.FailFastRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
@@ -49,14 +49,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import com.couchbase.client.java.json.JsonArray;
-import com.couchbase.client.java.query.ReactiveQueryResult;
+//import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.google.gson.Gson;
 
-import org.jetbrains.annotations.NotNull;
-import org.reactivestreams.Subscription;
+//import org.jetbrains.annotations.NotNull;
+//import org.reactivestreams.Subscription;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.BaseSubscriber;
-import reactor.core.publisher.Mono;
+//import reactor.core.publisher.BaseSubscriber;
+//import reactor.core.publisher.Mono;
+//import reactor.util.retry.Retry;
+//import reactor.core.scheduler.Schedulers;
 import site.ycsb.*;
 import site.ycsb.measurements.RemoteStatistics;
 import site.ycsb.measurements.StatisticsFactory;
@@ -97,6 +99,7 @@ public class Couchbase3Client extends DB {
   public static final String COUCHBASE_HOST = "couchbase.hostname";
   public static final String COUCHBASE_USER = "couchbase.username";
   public static final String COUCHBASE_PASSWORD = "couchbase.password";
+  public static final String COUCHBASE_SSL_MODE = "couchbase.sslMode";
   public static final String COUCHBASE_BUCKET = "couchbase.bucket";
   public static final String COUCHBASE_SCOPE = "couchbase.scope";
   public static final String COUCHBASE_COLLECTION = "couchbase.collection";
@@ -114,7 +117,6 @@ public class Couchbase3Client extends DB {
   private boolean arrayMode;
   private String arrayKey;
   private boolean collectStats;
-  protected static long recordcount;
   private static volatile DurabilityLevel durability = DurabilityLevel.NONE;
 
   @Override
@@ -135,19 +137,13 @@ public class Couchbase3Client extends DB {
 
     properties.putAll(getProperties());
 
-    recordcount =
-        Long.parseLong(properties.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
-    if (recordcount == 0) {
-      recordcount = Integer.MAX_VALUE;
-    }
-
     String hostname = properties.getProperty(COUCHBASE_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
     String username = properties.getProperty(COUCHBASE_USER, CouchbaseConnect.DEFAULT_USER);
     String password = properties.getProperty(COUCHBASE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
     bucketName = properties.getProperty(COUCHBASE_BUCKET, "ycsb");
     String scopeName = properties.getProperty(COUCHBASE_SCOPE, "_default");
     String collectionName = properties.getProperty(COUCHBASE_COLLECTION, "_default");
-    boolean sslMode = properties.getProperty("couchbase.sslMode", "false").equals("true");
+    boolean sslMode = properties.getProperty(COUCHBASE_SSL_MODE, "false").equals("true");
 
     durability =
         setDurabilityLevel(Integer.parseInt(properties.getProperty("couchbase.durability", "0")));
@@ -427,30 +423,22 @@ public class Couchbase3Client extends DB {
                      final Vector<HashMap<String, ByteIterator>> result) {
     try {
       return retryBlock(() -> {
-        final String query = "select raw meta().id from " + bucketName + " where meta().id >= \"$1\" limit $2;";
-
-        Mono<ReactiveQueryResult> queryResult = cluster.reactive().query(query,
-            queryOptions()
+        final String query = "select * from " + bucketName + " where meta().id >= \"$1\" limit $2;";
+        cluster.reactive().query(query, queryOptions()
+                .pipelineBatch(128)
+                .pipelineCap(1024)
+                .scanCap(1024)
+                .readonly(true)
                 .adhoc(adhoc)
                 .maxParallelism(maxParallelism)
-                .parameters(JsonArray.from(startkey, recordcount))
-                .retryStrategy(FailFastRetryStrategy.INSTANCE));
-
-        queryResult.flatMapMany((res -> res.rowsAs(String.class))).subscribe(new BaseSubscriber<String>() {
-          final AtomicInteger oustanding = new AtomicInteger(0);
-          @Override
-          protected void hookOnSubscribe(@NotNull Subscription subscription) {
-            request(10);
-            oustanding.set(10);
-          }
-          @Override
-          protected void hookOnNext(@NotNull String key) {
-            collection.get(key, getOptions().transcoder(RawJsonTranscoder.INSTANCE));
-            if (oustanding.decrementAndGet() == 0) {
-              request(10);
-            }
-          }
-        });
+                .parameters(JsonArray.from(startkey, recordcount)))
+            .flatMapMany(res -> res.rowsAsObject().parallel())
+            .doOnError(e -> {
+              throw new RuntimeException(e.getMessage());
+            })
+            .onErrorStop()
+            .parallel()
+            .subscribe();
         return Status.OK;
       });
     } catch (Throwable t) {

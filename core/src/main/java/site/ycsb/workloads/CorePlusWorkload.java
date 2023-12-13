@@ -605,14 +605,6 @@ public class CorePlusWorkload extends Workload {
     apiClass = p.getProperty(API_CLASS, null);
     collectStats = p.getProperty("statistics", "false").equals("true");
     collectKeyStats = p.getProperty("keyStatistics", "false").equals("true");
-
-    if (apiHostName != null && apiUserName != null && apiPassword != null
-        && apiInstance != null && apiClass != null && collectStats) {
-      RemoteStatistics remoteStatistics = StatisticsFactory.newInstance(apiClass);
-      if (remoteStatistics != null) {
-        remoteStatistics.startCollectionThread(apiHostName, apiUserName, apiPassword, apiInstance, apiTls);
-      }
-    }
   }
 
   /**
