@@ -1,6 +1,9 @@
 package site.ycsb;
 
-public class TestSetupFactory {
+/**
+ * Return Setup Class.
+ */
+public final class TestSetupFactory {
   private static TestSetup singleton = null;
 
   public static synchronized TestSetup newInstance(String className) {

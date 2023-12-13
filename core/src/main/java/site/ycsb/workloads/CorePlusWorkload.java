@@ -20,9 +20,7 @@ package site.ycsb.workloads;
 import site.ycsb.*;
 import site.ycsb.generator.*;
 import site.ycsb.measurements.Measurements;
-import site.ycsb.measurements.RemoteStatistics;
 import site.ycsb.measurements.Statistics;
-import site.ycsb.measurements.StatisticsFactory;
 
 import java.io.IOException;
 import java.util.*;

@@ -329,8 +329,13 @@ public final class CouchbaseConnect {
     collection = null;
     bucketMgr = null;
     bucket = null;
-    cluster.disconnect();
-    environment.shutdown();
+    if (cluster != null) {
+      cluster.disconnect(Duration.ofSeconds(10));
+    }
+    if (environment != null) {
+      environment.shutdown();
+    }
+    cluster = null;
     environment = null;
   }
 

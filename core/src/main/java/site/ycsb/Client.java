@@ -174,6 +174,12 @@ public final class Client {
   public static String testSetup;
 
   /**
+   * Test cleanup automation class.
+   */
+  public static final String TEST_CLEANUP_PROPERTY = "test.clean";
+  public static String testCleanup;
+
+  /**
    * An optional thread used to track progress and measure JVM stats.
    */
   private static StatusThread statusthread = null;
@@ -315,6 +321,8 @@ public final class Client {
     enableStatistics = props.getProperty(STATISTICS_ENABLE_PROPERTY, "false").equals("true");
 
     testSetup = props.getProperty(TEST_SETUP_PROPERTY, null);
+    testCleanup = props.getProperty(TEST_CLEANUP_PROPERTY, null);
+    boolean loadMode = props.getProperty(DO_TRANSACTIONS_PROPERTY, "true").equals("false");
 
     //compute the target throughput
     double targetperthreadperms = -1;
@@ -323,8 +331,14 @@ public final class Client {
       targetperthreadperms = targetperthread / 1000.0;
     }
 
-    if (testSetup != null) {
-      runTestSetup(testSetup, props);
+    if (testSetup != null && loadMode) {
+      try {
+        runTestSetup(testSetup, props);
+      } catch (Exception e) {
+        System.err.println(e.getMessage());
+        e.printStackTrace(System.err);
+        System.exit(1);
+      }
     }
 
     Thread warningthread = setupWarningThread();
@@ -438,6 +452,15 @@ public final class Client {
       System.exit(-1);
     }
 
+    if (testCleanup != null && !loadMode) {
+      try {
+        runTestClean(testCleanup, props);
+      } catch (Exception e) {
+        System.err.println(e.getMessage());
+        e.printStackTrace(System.err);
+      }
+    }
+
     System.exit(0);
   }
 
@@ -540,6 +563,18 @@ public final class Client {
       testSetupUtil.testSetup(properties);
     } catch (Exception e) {
       System.err.println("Error: test setup failure: " + e.getMessage());
+      e.printStackTrace(System.err);
+      System.exit(1);
+    }
+  }
+
+  private static void runTestClean(String testCleanClass, Properties properties) {
+    TestCleanup testCleanUtil = TestCleanupFactory.newInstance(testCleanClass);
+    try {
+      testCleanUtil.testClean(properties);
+    } catch (Exception e) {
+      System.err.println("Error: test clean failure: " + e.getMessage());
+      e.printStackTrace(System.err);
       System.exit(1);
     }
   }

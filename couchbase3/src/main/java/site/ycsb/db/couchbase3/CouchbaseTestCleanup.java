@@ -1,13 +1,13 @@
 package site.ycsb.db.couchbase3;
 
-import site.ycsb.TestSetup;
+import site.ycsb.TestCleanup;
 
 import java.util.Properties;
 
 /**
- * Prepare Cluster for Testing.
+ * Clean Cluster after Testing.
  */
-public class CouchbaseTestSetup extends TestSetup {
+public class CouchbaseTestCleanup extends TestCleanup {
   public static final String CLUSTER_HOST = "couchbase.hostname";
   public static final String CLUSTER_USER = "couchbase.username";
   public static final String CLUSTER_PASSWORD = "couchbase.password";
@@ -28,7 +28,7 @@ public class CouchbaseTestSetup extends TestSetup {
   public static final String INDEX_FIELD = "index.field";
 
   @Override
-  public void testSetup(Properties properties) {
+  public void testClean(Properties properties) {
     String clusterHost = properties.getProperty(CLUSTER_HOST, CouchbaseConnect.DEFAULT_HOSTNAME);
     String clusterUser = properties.getProperty(CLUSTER_USER, CouchbaseConnect.DEFAULT_USER);
     String clusterPassword = properties.getProperty(CLUSTER_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
@@ -50,20 +50,20 @@ public class CouchbaseTestSetup extends TestSetup {
     boolean indexCreate = properties.getProperty(INDEX_CREATE, "false").equals("true");
     String indexField = properties.getProperty(INDEX_FIELD, "meta().id");
 
-    System.out.println("Starting test init");
-
-    clusterSetup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
-        clusterProject, clusterDatabase, indexCreate, indexField, clusterEventing);
+    System.out.println("Starting test cleanup");
 
     if (xdcrHost != null) {
-      clusterSetup(xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket,
-          xdcrProject, xdcrDatabase, indexCreate, indexField, xdcrEventing);
-      replicationSetup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
+      replicationClean(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
           xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket);
+      clusterClean(xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket,
+          xdcrProject, xdcrDatabase, indexCreate, indexField, xdcrEventing);
     }
+
+    clusterClean(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
+        clusterProject, clusterDatabase, indexCreate, indexField, clusterEventing);
   }
 
-  private static void clusterSetup(String host, String user, String password, boolean ssl, String bucket,
+  private static void clusterClean(String host, String user, String password, boolean ssl, String bucket,
                                    String project, String database, boolean index, String field, String eventing) {
     CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
     CouchbaseConnect db;
@@ -77,22 +77,18 @@ public class CouchbaseTestSetup extends TestSetup {
       }
       db = dbBuilder.build();
       if (eventing != null) {
-        System.out.printf("Creating eventing bucket on cluster:[%s]\n", host);
-        db.createBucket("eventing", 128, 1);
+        System.out.printf("Removing eventing bucket on cluster:[%s]\n", host);
+        db.dropBucket("eventing");
       }
-      System.out.printf("Creating bucket %s on cluster:[%s]\n", bucket, host);
-      db.createBucket(bucket, 1);
-      if (index) {
-        System.out.printf("Creating index on field %s\n", field);
-        db.createFieldIndex(field);
-      }
+      System.out.printf("Removing bucket %s on cluster:[%s]\n", bucket, host);
+      db.dropBucket(bucket);
       db.disconnect();
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
   }
 
-  private static void replicationSetup(String sourceHost, String sourceUser, String sourcePassword,
+  private static void replicationClean(String sourceHost, String sourceUser, String sourcePassword,
                                        boolean sourceSsl, String sourceBucket,
                                        String targetHost, String targetUser, String targetPassword,
                                        boolean targetSsl, String targetBucket) {
@@ -112,9 +108,9 @@ public class CouchbaseTestSetup extends TestSetup {
           .bucket(targetBucket);
       targetDb = targetBuilder.build();
 
-      System.out.printf("Replicating %s:%s -> %s:%s\n", sourceHost, sourceBucket, targetHost, targetBucket);
+      System.out.printf("Removing replicating %s:%s -> %s:%s\n", sourceHost, sourceBucket, targetHost, targetBucket);
       CouchbaseXDCR xdcr = xdcrBuilder.source(sourceDb).target(targetDb).build();
-      xdcr.createReplication();
+      xdcr.removeReplication();
 
       sourceDb.disconnect();
       targetDb.disconnect();
