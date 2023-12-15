@@ -151,6 +151,7 @@ public final class ClusterInit {
       properties.load(Files.newInputStream(Paths.get(propFile)));
     } catch (IOException e) {
       System.out.println("can not open properties file: " + e.getMessage());
+      e.printStackTrace();
       System.exit(1);
     }
 

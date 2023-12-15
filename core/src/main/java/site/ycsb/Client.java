@@ -122,6 +122,11 @@ public final class Client {
   public static final String THREAD_COUNT_PROPERTY = "threadcount";
 
   /**
+   * Optional maximum number of YCSB client threads to run; overrides thread count.
+   */
+  public static final String THREAD_COUNT_MAX_PROPERTY = "threadcountmax";
+
+  /**
    * Indicates how many inserts to do if less than recordcount.
    * Useful for partitioning the load among multiple servers if the client is the bottleneck.
    * Additionally workloads should support the "insertstart" property which tells them which record to start at.
@@ -325,8 +330,6 @@ public final class Client {
   @SuppressWarnings("unchecked")
   public static void main(String[] args) {
     Properties props = parseArguments(args);
-    PrintStream sysStdOut = System.out;
-    PrintStream sysStdErr = System.err;
 
     boolean status = Boolean.valueOf(props.getProperty(STATUS_PROPERTY, String.valueOf(false)));
     String label = props.getProperty(LABEL_PROPERTY, "");
@@ -345,6 +348,12 @@ public final class Client {
     testCleanup = props.getProperty(TEST_CLEANUP_PROPERTY, null);
     boolean loadMode = props.getProperty(DO_TRANSACTIONS_PROPERTY, "true").equals("false");
     manualMode = props.getProperty(MANUAL_MODE, "false").equals("true");
+
+    int threadCountMax = Integer.parseInt(props.getProperty(THREAD_COUNT_MAX_PROPERTY, "2147483647"));
+    if (threadCountMax < threadcount) {
+      System.err.printf("Overriding thread count - requested %d, max %d\n", threadcount, threadCountMax);
+      threadcount = threadCountMax;
+    }
 
     //compute the target throughput
     double targetperthreadperms = -1;
@@ -806,14 +815,10 @@ public final class Client {
     }
 
     //overwrite file properties with properties from the command line
-    //except for thread count
 
     //Issue #5 - remove call to stringPropertyNames to make compilable under Java 1.5
     for (Enumeration e = props.propertyNames(); e.hasMoreElements();) {
       String prop = (String) e.nextElement();
-      if (Objects.equals(prop, "threadcount")) {
-        continue;
-      }
 
       fileprops.setProperty(prop, props.getProperty(prop));
     }
