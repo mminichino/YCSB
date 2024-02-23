@@ -16,6 +16,8 @@ public class CouchbaseTestSetup extends TestSetup {
   public static final String CLUSTER_PROJECT = "couchbase.project";
   public static final String CLUSTER_DATABASE = "couchbase.database";
   public static final String CLUSTER_EVENTING = "couchbase.eventing";
+  public static final String CLUSTER_BUCKET_TYPE = "couchbase.bucketType";
+  public static final String CLUSTER_REPLICA_NUM = "couchbase.replicaNum";
   public static final String XDCR_HOST = "xdcr.hostname";
   public static final String XDCR_USER = "xdcr.username";
   public static final String XDCR_PASSWORD = "xdcr.password";
@@ -24,6 +26,8 @@ public class CouchbaseTestSetup extends TestSetup {
   public static final String XDCR_PROJECT = "xdcr.project";
   public static final String XDCR_DATABASE = "xdcr.database";
   public static final String XDCR_EVENTING = "xdcr.eventing";
+  public static final String XDCR_BUCKET_TYPE = "xdcr.bucketType";
+  public static final String XDCR_REPLICA_NUM = "xdcr.replicaNum";
   public static final String INDEX_CREATE = "index.create";
   public static final String INDEX_FIELD = "index.field";
 
@@ -37,6 +41,8 @@ public class CouchbaseTestSetup extends TestSetup {
     String clusterProject = properties.getProperty(CLUSTER_PROJECT, null);
     String clusterDatabase = properties.getProperty(CLUSTER_DATABASE, null);
     String clusterEventing = properties.getProperty(CLUSTER_EVENTING, null);
+    int clusterBucketType = Integer.parseInt(properties.getProperty(CLUSTER_BUCKET_TYPE, "0"));
+    int clusterReplicaNum = Integer.parseInt(properties.getProperty(CLUSTER_REPLICA_NUM, "1"));
 
     String xdcrHost = properties.getProperty(XDCR_HOST, null);
     String xdcrUser = properties.getProperty(XDCR_USER, CouchbaseConnect.DEFAULT_USER);
@@ -46,27 +52,35 @@ public class CouchbaseTestSetup extends TestSetup {
     String xdcrProject = properties.getProperty(XDCR_PROJECT, null);
     String xdcrDatabase = properties.getProperty(XDCR_DATABASE, null);
     String xdcrEventing = properties.getProperty(XDCR_EVENTING, null);
+    int xdcrBucketType = Integer.parseInt(properties.getProperty(XDCR_BUCKET_TYPE, "0"));
+    int xdcrReplicaNum = Integer.parseInt(properties.getProperty(XDCR_REPLICA_NUM, "1"));
 
     boolean indexCreate = properties.getProperty(INDEX_CREATE, "false").equals("true");
     String indexField = properties.getProperty(INDEX_FIELD, "meta().id");
 
     System.err.println("Starting test setup");
 
-    clusterSetup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
-        clusterProject, clusterDatabase, indexCreate, indexField, clusterEventing);
+    clusterSetup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket, clusterBucketType,
+            clusterReplicaNum, clusterProject, clusterDatabase, indexCreate, indexField, clusterEventing);
+
+    if (clusterEventing != null) {
+      eventingSetup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket, clusterEventing);
+    }
 
     if (xdcrHost != null) {
-      clusterSetup(xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket,
+      clusterSetup(xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket, xdcrBucketType, xdcrReplicaNum,
           xdcrProject, xdcrDatabase, indexCreate, indexField, xdcrEventing);
       replicationSetup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
           xdcrHost, xdcrUser, xdcrPassword, xdcrSsl, xdcrBucket);
     }
   }
 
-  private static void clusterSetup(String host, String user, String password, boolean ssl, String bucket,
-                                   String project, String database, boolean index, String field, String eventing) {
+  private static void clusterSetup(String host, String user, String password, boolean ssl, String bucket, int type,
+                                   int replicas, String project, String database, boolean index, String field,
+                                   String eventing) {
     CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
     CouchbaseConnect db;
+    String typeText = type == 1 ? "Magma" : "Couchstore";
 
     try {
       dbBuilder.connect(host, user, password)
@@ -78,10 +92,10 @@ public class CouchbaseTestSetup extends TestSetup {
       db = dbBuilder.build();
       if (eventing != null) {
         System.err.printf("Creating eventing bucket on cluster:[%s]\n", host);
-        db.createBucket("eventing", 128L, 1);
+        db.createBucket("eventing", 128L, replicas);
       }
-      System.err.printf("Creating bucket %s on cluster:[%s]\n", bucket, host);
-      db.createBucket(bucket, 1);
+      System.err.printf("Creating bucket %s (%s) on cluster:[%s]\n", bucket, typeText, host);
+      db.createBucket(bucket, replicas, type);
       if (index) {
         System.err.printf("Creating index on field %s\n", field);
         db.createFieldIndex(field);
@@ -118,6 +132,25 @@ public class CouchbaseTestSetup extends TestSetup {
 
       sourceDb.disconnect();
       targetDb.disconnect();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static void eventingSetup(String host, String user, String password, boolean ssl, String bucket,
+                                    String resource) {
+    CouchbaseEventing.EventingBuilder eventingBuilder = new CouchbaseEventing.EventingBuilder();
+    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
+    CouchbaseConnect db;
+
+    try {
+      dbBuilder.connect(host, user, password)
+              .ssl(ssl)
+              .bucket(bucket);
+      db = dbBuilder.build();
+      CouchbaseEventing eventing = eventingBuilder.database(db).build();
+      System.err.printf("Deploying eventing function %s on cluster:[%s]\n", resource, host);
+      eventing.deployEventingFunction(resource, "eventing");
     } catch (Exception e) {
       throw new RuntimeException(e);
     }

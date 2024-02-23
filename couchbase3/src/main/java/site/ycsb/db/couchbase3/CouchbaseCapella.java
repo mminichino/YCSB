@@ -6,31 +6,51 @@ import com.google.gson.JsonObject;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Objects;
 import java.util.Scanner;
+import java.util.stream.Stream;
+import java.util.Properties;
 
 /**
  * Couchbase Capella Utility.
  */
 public class CouchbaseCapella {
+  private static final String PROPERTY_FILE = "db.properties";
+  private static final String PROPERTY_TEST = "test.properties";
+  private static final String API_ENDPOINT_PROPERTY = "capella.api.endpoint";
+  private static final String AUTH_FILE_PROPERTY = "capella.api.authfile";
+  private static final String AUTH_FILE_NAME = "default-api-key-token.txt";
   private static final String CAPELLA_API_ENDPOINT = "cloudapi.cloud.couchbase.com";
-  private RESTInterface capella;
-  private String project;
-  private String database;
+  private final RESTInterface capella;
   private String apiKey;
-  private String organizationId;
-  private String projectId;
-  private String databaseId;
+  private final String organizationId;
+  private final String projectId;
+  private final String databaseId;
 
   public CouchbaseCapella(String project, String database) {
-    this.project = project;
-    this.database = database;
-
+    ClassLoader classloader = Thread.currentThread().getContextClassLoader();
+    URL propFile;
     Path homePath = Paths.get(System.getProperty("user.home"));
-    Path tokenFilePath = Paths.get(homePath.toString(), ".capella", "default-api-key-token.txt");
+    Properties properties = new Properties();
+
+    if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
+        || (propFile = classloader.getResource(PROPERTY_TEST)) != null) {
+      try {
+        properties.load(propFile.openStream());
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    String authFileName = properties.getProperty(AUTH_FILE_PROPERTY, AUTH_FILE_NAME);
+    String apiEndpoint = properties.getProperty(API_ENDPOINT_PROPERTY, CAPELLA_API_ENDPOINT);
+
+    Path tokenFilePath = Paths.get(homePath.toString(), ".capella", authFileName);
 
     File inputFile = new File(tokenFilePath.toString());
     Scanner input;
@@ -49,11 +69,14 @@ public class CouchbaseCapella {
       }
     }
 
-    capella = new RESTInterface(CAPELLA_API_ENDPOINT, apiKey, true);
+    capella = new RESTInterface(apiEndpoint, apiKey, true);
 
     organizationId = getOrganizationId();
+    if (organizationId == null) throw new RuntimeException("Can not get Organization ID");
     projectId = getProjectId(project);
+    if (projectId == null) throw new RuntimeException("Can not get Project ID for project " + project);
     databaseId = getDatabaseId(database);
+    if (databaseId == null) throw new RuntimeException("Can not get Database ID for cluster " + database);
   }
 
   public String getOrganizationId() {
@@ -63,18 +86,20 @@ public class CouchbaseCapella {
     return result.get(0).getAsJsonObject().get("id").getAsString();
   }
 
+  public String extractId(String name, List<JsonElement> list) {
+    Stream<JsonElement> stream = list.parallelStream();
+    return stream.filter(e -> e.getAsJsonObject().get("name").getAsString().equals(name))
+            .findFirst()
+            .map(e -> e.getAsJsonObject().get("id").getAsString())
+            .orElse(null);
+  }
+
   public String getProjectId(String project) {
     String endpoint = "/v4/organizations/" +
         organizationId +
         "/projects";
 
-    List<JsonElement> result = capella.getCapella(endpoint);
-    for (JsonElement entry : result) {
-      if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), project)) {
-        return entry.getAsJsonObject().get("id").getAsString();
-      }
-    }
-    return null;
+    return extractId(project, capella.getCapellaList(endpoint));
   }
 
   public String getDatabaseId(String database) {
@@ -84,13 +109,7 @@ public class CouchbaseCapella {
         projectId +
         "/clusters";
 
-    List<JsonElement> result = capella.getCapella(endpoint);
-    for (JsonElement entry : result) {
-      if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), database)) {
-        return entry.getAsJsonObject().get("id").getAsString();
-      }
-    }
-    return null;
+    return extractId(database, capella.getCapellaList(endpoint));
   }
 
   public String getBucketId(String bucket) {
@@ -102,31 +121,11 @@ public class CouchbaseCapella {
         databaseId +
         "/buckets";
 
-    List<JsonElement> result = capella.getCapella(endpoint);
-    for (JsonElement entry : result) {
-      if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), bucket)) {
-        return entry.getAsJsonObject().get("id").getAsString();
-      }
-    }
-    return null;
+    return extractId(bucket, capella.getCapella(endpoint));
   }
 
   public Boolean isBucket(String bucket) {
-    String endpoint = "/v4/organizations/" +
-        organizationId +
-        "/projects/" +
-        projectId +
-        "/clusters/" +
-        databaseId +
-        "/buckets";
-
-    List<JsonElement> result = capella.getCapella(endpoint);
-    for (JsonElement entry : result) {
-      if (Objects.equals(entry.getAsJsonObject().get("name").getAsString(), bucket)) {
-        return true;
-      }
-    }
-    return false;
+    return getBucketId(bucket) != null;
   }
 
   public void createBucket(String bucket, long quota, int replicas, StorageBackend type) {
@@ -153,10 +152,10 @@ public class CouchbaseCapella {
     parameters.addProperty("flush", false);
     parameters.addProperty("timeToLiveInSeconds", 0);
 
-    try {
-      capella.postJSON(endpoint, parameters);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
+    int result = capella.jsonBody(parameters).post(endpoint).code();
+
+    if (result != 201) {
+      throw new RuntimeException("Bucket create failed with code " + result);
     }
   }
 
@@ -176,10 +175,10 @@ public class CouchbaseCapella {
         "/buckets/" +
         bucketId;
 
-    try {
-      capella.deleteEndpoint(endpoint);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
+    int result = capella.delete(endpoint).code();
+
+    if (result != 204) {
+      throw new RuntimeException("Bucket drop failed with code " + result);
     }
   }
 }

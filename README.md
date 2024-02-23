@@ -1,4 +1,4 @@
-# Couchbase Driver for YCSB 2.0.0b7
+# Couchbase Driver for YCSB 2.0.0
 This driver is a binding for the YCSB facilities to operate against a Couchbase Server cluster. It uses the official
 Couchbase Java SDK (version 3.x) and provides a rich set of configuration options.
 

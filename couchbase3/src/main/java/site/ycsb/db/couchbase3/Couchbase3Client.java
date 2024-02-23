@@ -27,6 +27,7 @@ import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
+import com.couchbase.client.core.retry.FailFastRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
@@ -35,12 +36,7 @@ import com.couchbase.client.java.codec.RawJsonTranscoder;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.io.Writer;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Callable;
@@ -52,40 +48,13 @@ import com.google.gson.Gson;
 
 import org.slf4j.LoggerFactory;
 import site.ycsb.*;
-import site.ycsb.measurements.RemoteStatistics;
-import site.ycsb.measurements.StatisticsFactory;
 
 /**
- * A class that wraps the 3.x Couchbase SDK to be used with YCSB.
- *
- * <p> The following options can be passed when using this database client to override the defaults.
- *
- * <ul>
- * <li><b>couchbase.host=127.0.0.1</b> The hostname from one server.</li>
- * <li><b>couchbase.bucket=ycsb</b> The bucket name to use.</li>
- * <li><b>couchbase.scope=_default</b> The scope to use.</li>
- * <li><b>couchbase.collection=_default</b> The collection to use.</li>
- * <li><b>couchbase.password=</b> The password of the bucket.</li>
- * <li><b>couchbase.durability=</b> Durability level to use.</li>
- * <li><b>couchbase.persistTo=0</b> Persistence durability requirement.</li>
- * <li><b>couchbase.replicateTo=0</b> Replication durability requirement.</li>
- * <li><b>couchbase.upsert=false</b> Use upsert instead of insert or replace.</li>
- * <li><b>couchbase.adhoc=false</b> If set to true, prepared statements are not used.</li>
- * <li><b>couchbase.maxParallelism=1</b> The server parallelism for all n1ql queries.</li>
- * <li><b>couchbase.kvEndpoints=1</b> The number of KV sockets to open per server.</li>
- * <li><b>couchbase.sslMode=false</b> Set to true to use SSL to connect to the cluster.</li>
- * <li><b>couchbase.sslNoVerify=true</b> Set to false to check the SSL server certificate.</li>
- * <li><b>couchbase.certificateFile=</b> Path to file containing certificates to trust.</li>
- * <li><b>couchbase.kvTimeout=2000</b> KV operation timeout (milliseconds).</li>
- * <li><b>couchbase.queryTimeout=14000</b> Query timeout (milliseconds).</li>
- * <li><b>couchbase.mode=DEFAULT</b> Test operating mode (DEFAULT or ARRAY).</li>
- * <li><b>couchbase.ttlSeconds=0</b> Set document expiration (TTL) in seconds.</li>
- * </ul>
+ * A class that implements the Couchbase Java SDK to be used with YCSB.
  */
-
 public class Couchbase3Client extends DB {
   protected static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.CouchbaseClient");
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.couchbase3.Couchbase3Client");
   private static final String PROPERTY_FILE = "db.properties";
   private static final String PROPERTY_TEST = "test.properties";
   public static final String COUCHBASE_HOST = "couchbase.hostname";
@@ -102,13 +71,11 @@ public class Couchbase3Client extends DB {
   private static volatile Collection collection;
   private static volatile ClusterEnvironment environment;
   private static String bucketName;
-  private final ArrayList<Throwable> errors = new ArrayList<>();
   private boolean adhoc;
   private int maxParallelism;
   private static int ttlSeconds;
   private boolean arrayMode;
   private String arrayKey;
-  private boolean collectStats;
   private static volatile DurabilityLevel durability = DurabilityLevel.NONE;
 
   @Override
@@ -121,7 +88,7 @@ public class Couchbase3Client extends DB {
     if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
         || (propFile = classloader.getResource(PROPERTY_TEST)) != null) {
       try {
-        properties.load(Files.newInputStream(Paths.get(propFile.getFile())));
+        properties.load(propFile.openStream());
       } catch (IOException e) {
         throw new DBException(e);
       }
@@ -140,13 +107,16 @@ public class Couchbase3Client extends DB {
     durability =
         setDurabilityLevel(Integer.parseInt(properties.getProperty("couchbase.durability", "0")));
 
-    arrayMode = properties.getProperty("couchbase.mode", "DEFAULT").equals("ARRAY");
+    arrayMode = properties.getProperty("couchbase.mode", "default").equals("array");
     arrayKey = properties.getProperty("subdoc.arrayKey", "DataArray");
 
     adhoc = properties.getProperty("couchbase.adhoc", "false").equals("true");
     maxParallelism = Integer.parseInt(properties.getProperty("couchbase.maxParallelism", "0"));
+    int kvEndpoints = Integer.parseInt(properties.getProperty("couchbase.kvEndpoints", "4"));
 
-    collectStats = properties.getProperty("statistics", "false").equals("true");
+    long kvTimeout = Long.parseLong(properties.getProperty("couchbase.kvTimeout", "5"));
+    long connectTimeout = Long.parseLong(properties.getProperty("couchbase.connectTimeout", "5"));
+    long queryTimeout = Long.parseLong(properties.getProperty("couchbase.queryTimeout", "75"));
 
     ttlSeconds = Integer.parseInt(properties.getProperty("couchbase.ttlSeconds", "0"));
 
@@ -167,14 +137,14 @@ public class Couchbase3Client extends DB {
               .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE);
 
           Consumer<IoConfig.Builder> ioConfiguration = ioConfig -> ioConfig
-              .numKvConnections(4)
+              .numKvConnections(kvEndpoints)
               .networkResolution(NetworkResolution.AUTO)
               .enableMutationTokens(false);
 
           Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
-              .kvTimeout(Duration.ofSeconds(2))
-              .connectTimeout(Duration.ofSeconds(5))
-              .queryTimeout(Duration.ofSeconds(75));
+              .kvTimeout(Duration.ofSeconds(kvTimeout))
+              .connectTimeout(Duration.ofSeconds(connectTimeout))
+              .queryTimeout(Duration.ofSeconds(queryTimeout));
 
           environment = ClusterEnvironment
               .builder()
@@ -217,18 +187,6 @@ public class Couchbase3Client extends DB {
 
   @Override
   public synchronized void cleanup() {
-    int runningClients = OPEN_CLIENTS.decrementAndGet();
-
-    if (collectStats && runningClients == 0) {
-      RemoteStatistics remoteStatistics = StatisticsFactory.getInstance();
-      if (remoteStatistics != null) {
-        remoteStatistics.stopCollectionThread();
-      }
-    }
-
-    for (Throwable t : errors) {
-      LOGGER.error(t.getMessage(), t);
-    }
   }
 
   private static <T>T retryBlock(Callable<T> block) throws Exception {
@@ -238,15 +196,11 @@ public class Couchbase3Client extends DB {
       try {
         return block.call();
       } catch (Exception e) {
-        LOGGER.error(String.format("Retry count %d: %s: error: %s", retryCount, e.getClass(), e.getMessage()));
-        Writer buffer = new StringWriter();
-        PrintWriter pw = new PrintWriter(buffer);
-        e.printStackTrace(pw);
-        LOGGER.error(String.format("%s", buffer));
+        LOGGER.debug("Retry count: " + retryCount + " error: " + e.getMessage(), e);
         if (retryNumber == retryCount) {
           throw e;
         } else {
-          double factor = waitFactor * Math.pow(2, retryNumber);
+          double factor = waitFactor * retryNumber;
           long wait = (long) factor;
           try {
             Thread.sleep(wait);
@@ -279,8 +233,7 @@ public class Couchbase3Client extends DB {
         }
       });
     } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("read failed with exception : " + t);
+      LOGGER.error("read transaction exception: " + t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -335,8 +288,7 @@ public class Couchbase3Client extends DB {
         return Status.OK;
       });
     } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("update failed with exception :" + t);
+      LOGGER.error("update transaction exception: " + t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -360,8 +312,7 @@ public class Couchbase3Client extends DB {
         return Status.OK;
       });
     } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("update failed with exception :" + t);
+      LOGGER.error("update transaction exception: " + t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -393,8 +344,7 @@ public class Couchbase3Client extends DB {
         return Status.OK;
       });
     } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("delete failed with exception :" + t);
+      LOGGER.error("delete transaction exception: " + t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -420,19 +370,21 @@ public class Couchbase3Client extends DB {
                 .readonly(true)
                 .adhoc(adhoc)
                 .maxParallelism(maxParallelism)
+                .retryStrategy(FailFastRetryStrategy.INSTANCE)
                 .parameters(JsonArray.from(startkey, recordcount)))
             .flatMapMany(res -> res.rowsAsObject().parallel())
-            .doOnError(e -> {
-              throw new RuntimeException(e.getMessage());
-            })
-            .onErrorStop()
             .parallel()
-            .subscribe();
+            .subscribe(
+                    next -> {},
+                    error ->
+                    {
+                      throw new RuntimeException(error);
+                    }
+            );
         return Status.OK;
       });
     } catch (Throwable t) {
-      errors.add(t);
-      LOGGER.error("scan failed with exception :" + t);
+      LOGGER.error("scan transaction exception: " + t.getMessage(), t);
       return Status.ERROR;
     }
   }

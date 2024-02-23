@@ -1,21 +1,24 @@
 package site.ycsb.db.couchbase3;
 
+import com.couchbase.client.java.http.*;
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.micrometer.core.instrument.util.IOUtils;
 import org.slf4j.LoggerFactory;
 import site.ycsb.measurements.RemoteStatistics;
 
 import java.io.IOException;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.stream.IntStream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -25,11 +28,12 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class CouchbaseCollect extends RemoteStatistics {
 
   protected static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("com.couchbase.CouchbaseCollect");
+      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("site.ycsb.db.couchbase3.CouchbaseCollect");
   protected static final ch.qos.logback.classic.Logger STATISTICS =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("com.couchbase.statistics");
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.couchbase3.statistics");
   private static final String PROPERTY_FILE = "db.properties";
   private static final String PROPERTY_TEST = "test.properties";
+  private static final String STATISTICS_CONFIG_FILE = "statistics.json";
   public static final String COUCHBASE_HOST = "couchbase.hostname";
   public static final String COUCHBASE_USER = "couchbase.username";
   public static final String COUCHBASE_PASSWORD = "couchbase.password";
@@ -44,9 +48,12 @@ public class CouchbaseCollect extends RemoteStatistics {
   private static String password;
   private static String bucketName;
   private static boolean sslMode;
+  private static JsonArray metricList;
+  private static final DecimalFormat metricFormat = new DecimalFormat("0.##");
+  private static final Map<String, MetricValue> resultMatrix = new LinkedHashMap<>();
 
   /**
-   * Metric Type.
+   * Metric Mode.
    */
   public enum MetricMode {
     SYSTEM, BUCKET, XDCR, DISK
@@ -61,7 +68,7 @@ public class CouchbaseCollect extends RemoteStatistics {
     if ((propFile = classloader.getResource(PROPERTY_FILE)) != null
         || (propFile = classloader.getResource(PROPERTY_TEST)) != null) {
       try {
-        properties.load(Files.newInputStream(Paths.get(propFile.getFile())));
+        properties.load(propFile.openStream());
       } catch (IOException e) {
         throw new RuntimeException(e);
       }
@@ -74,255 +81,226 @@ public class CouchbaseCollect extends RemoteStatistics {
     password = properties.getProperty(COUCHBASE_PASSWORD, CouchbaseConnect.DEFAULT_PASSWORD);
     bucketName = properties.getProperty(COUCHBASE_BUCKET, "ycsb");
     sslMode = properties.getProperty(COUCHBASE_SSL_MODE, "false").equals("true");
+
+    URL configFile = classloader.getResource(STATISTICS_CONFIG_FILE);
+    try {
+      if (configFile != null) {
+        String configJson = IOUtils.toString(configFile.openStream(), StandardCharsets.UTF_8);
+        Gson gson = new Gson();
+        metricList = gson.fromJson(configJson, JsonArray.class);
+        for (JsonElement metric : metricList) {
+          String name = metric.getAsJsonObject().get("metric").getAsString();
+          boolean rate = metric.getAsJsonObject().get("rate").getAsBoolean();
+          MetricType type = MetricType.valueOf(metric.getAsJsonObject().get("type").getAsString());
+          resultMatrix.put(name, new MetricValue(type, rate));
+        }
+      } else {
+        throw new RuntimeException("Can not access statistics config file");
+      }
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public void startCollectionThread() {
-    int port;
-    DecimalFormat formatter = new DecimalFormat("#,###");
+    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
+    CouchbaseHttpClient client = dbBuilder.connect(hostname, username, password).ssl(sslMode).build().getHttpClient();
+    JsonArray metricSet = new JsonArray();
 
-    if (sslMode) {
-      port = 18091;
-    } else {
-      port = 8091;
+    for (JsonElement metric : metricList) {
+      String name = metric.getAsJsonObject().get("metric").getAsString();
+      MetricMode mode = MetricMode.valueOf(metric.getAsJsonObject().get("mode").getAsString());
+      MetricType type = MetricType.valueOf(metric.getAsJsonObject().get("type").getAsString());
+      metricSet.add(addMetric(name, mode, type));
     }
 
-    RESTInterface rest = new RESTInterface(hostname, username, password, sslMode, port);
+    String metricRequestBody = metricSet.toString();
 
     STATISTICS.info(String.format("==== Begin Cluster Collection %s ====\n", timeStampFormat.format(new Date())));
 
     Runnable callApi = () -> {
-      StringBuilder output = new StringBuilder();
+      StringBuilder line = new StringBuilder();
+      IntStream metricStream = IntStream.range(0, metricList.size());
       String timeStamp = timeStampFormat.format(new Date());
-      output.append(String.format("%s ", timeStamp));
-
-      JsonArray metrics = new JsonArray();
-      addMetric("sys_cpu_host_utilization_rate", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-      addMetric("sys_mem_total", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-      addMetric("sys_mem_free", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-      addMetric("n1ql_requests", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-      addMetric("n1ql_active_requests", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-      addMetric("n1ql_load", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-      addMetric("n1ql_request_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-      addMetric("n1ql_service_time", MetricFunction.MAX, metrics, MetricMode.SYSTEM, bucketName);
-
-      addMetric("kv_ep_num_non_resident", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucketName);
-      addMetric("kv_ep_queue_size", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucketName);
-      addMetric("kv_ep_flusher_todo", MetricFunction.MAX, metrics, MetricMode.BUCKET, bucketName);
-
-      addMetric("kv_ep_io_total_read_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucketName);
-      addMetric("kv_ep_io_total_write_bytes_bytes", MetricFunction.MAX, metrics, MetricMode.DISK, bucketName);
-      addMetric("kv_curr_items", MetricFunction.MAX, metrics, MetricMode.DISK, bucketName);
-
-      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucketName);
-      addMetric("xdcr_resp_wait_time_seconds", MetricFunction.AVG, metrics, MetricMode.XDCR, bucketName);
-      addMetric("xdcr_wtavg_docs_latency_seconds", MetricFunction.MAX, metrics, MetricMode.XDCR, bucketName);
-      addMetric("xdcr_data_replicated_bytes", MetricFunction.MAX, metrics, MetricMode.XDCR, bucketName);
+      line.append(String.format("%s ", timeStamp));
 
       try {
         String endpoint = "/pools/default/stats/range";
-        JsonArray data = rest.postJSONArray(endpoint, metrics);
+        HttpResponse response = client.post(
+                HttpTarget.manager(),
+                HttpPath.of(endpoint),
+                HttpPostOptions.httpPostOptions()
+                        .body(HttpBody.json(metricRequestBody)));
+        Gson gson = new Gson();
+        JsonArray data = gson.fromJson(response.contentAsString(), JsonArray.class);
 
-        double cpuUtil = getMetricAvgDouble(data.getAsJsonArray().get(0).getAsJsonObject());
-        long memTotal = getMetricMaxLong(data.getAsJsonArray().get(1).getAsJsonObject());
-        long memFree = getMetricMaxLong(data.getAsJsonArray().get(2).getAsJsonObject());
-        long sqlReq = getMetricDiffSum(data.getAsJsonArray().get(3).getAsJsonObject());
-        long sqlActiveReq  = getMetricMaxLong(data.getAsJsonArray().get(4).getAsJsonObject());
-        long sqlLoad  = getMetricMaxLong(data.getAsJsonArray().get(5).getAsJsonObject());
-        long sqlReqTime  = getMetricDiffSum(data.getAsJsonArray().get(6).getAsJsonObject());
-        long sqlSvcTime  = getMetricDiffSum(data.getAsJsonArray().get(7).getAsJsonObject());
+        metricStream.parallel().forEach(i -> {
+          JsonElement metric = metricList.get(i);
+          JsonObject result = data.getAsJsonArray().get(i).getAsJsonObject();
+          String name = metric.getAsJsonObject().get("metric").getAsString();
+          resultMatrix.get(name).setValue(result);
+        });
 
-        double nonResident = getMetricAvgDouble(data.getAsJsonArray().get(8).getAsJsonObject());
-        double queueSize = getMetricAvgDouble(data.getAsJsonArray().get(9).getAsJsonObject());
-        double flushTodo = getMetricAvgDouble(data.getAsJsonArray().get(10).getAsJsonObject());
-
-        double bytesRead = getMetricDiffDouble(data.getAsJsonArray().get(11).getAsJsonObject());
-        double bytesWrite = getMetricDiffDouble(data.getAsJsonArray().get(12).getAsJsonObject());
-        long curItems = getMetricMaxLong(data.getAsJsonArray().get(13).getAsJsonObject());
-
-        double xdcrMax = getMetricAvgDouble(data.getAsJsonArray().get(14).getAsJsonObject());
-        double xdcrAvg = getMetricAvgDouble(data.getAsJsonArray().get(15).getAsJsonObject());
-        double wtavgMax = getMetricAvgDouble(data.getAsJsonArray().get(16).getAsJsonObject());
-        double xdcrBytes = getMetricDiffDouble(data.getAsJsonArray().get(17).getAsJsonObject());
-
-        long queueTotal = (long) queueSize + (long) flushTodo;
-        double sqlReqAvgTime = ((double) sqlReqTime / 1000000) / sqlReq;
-        double sqlSvcAvgTime = ((double) sqlSvcTime / 1000000) / sqlReq;
-
-        output.append(String.format("CPU: %.1f ", cpuUtil));
-        output.append(String.format("Mem: %s ", formatDataSize(memTotal)));
-        output.append(String.format("Free: %s ", formatDataSize(memFree)));
-        output.append(String.format("sqlReq: %d ", sqlReq));
-        output.append(String.format("sqlActReq: %d ", sqlActiveReq));
-        output.append(String.format("sqlLoad: %d ", sqlLoad));
-        output.append(String.format("sqlReqTime: %.2f ", Double.isNaN(sqlReqAvgTime) ? 0.0 : sqlReqAvgTime));
-        output.append(String.format("sqlSvcTime: %.2f ", Double.isNaN(sqlSvcAvgTime) ? 0.0 : sqlSvcAvgTime));
-
-        output.append(String.format("Resident: %d %% ", 100L - (long) nonResident));
-
-        output.append(String.format("Queue: %s ", formatter.format(queueTotal)));
-        output.append(String.format("Read: %s ", formatDataSize(bytesRead)));
-        output.append(String.format("Write: %s ", formatDataSize(bytesWrite)));
-        output.append(String.format("Items: %s ", formatter.format(curItems)));
-
-        output.append(String.format("XDCRMax: %.1f ", xdcrMax * 1000));
-        output.append(String.format("XDCRAvg: %.1f ", xdcrAvg * 1000));
-        output.append(String.format("wtavgMax: %.1f ", wtavgMax * 1000));
-        output.append(String.format("Bandwidth: %s ", formatDataSize(xdcrBytes)));
-
+        for (int i = 0; i < metricList.size(); i++) {
+          JsonElement metric = metricList.get(i);
+          String name = metric.getAsJsonObject().get("metric").getAsString();
+          String divisor = metric.getAsJsonObject().get("divisor").isJsonNull() ? null
+              : metric.getAsJsonObject().get("divisor").getAsString();
+          String transform = metric.getAsJsonObject().get("transform").getAsString();
+          String label = metric.getAsJsonObject().get("label").getAsString();
+          line.append(generate(name, divisor, transform, label));
+        }
       } catch (Exception e) {
         LOGGER.error(e.getMessage(), e);
-        output.append(String.format("Error: %s", e.getMessage()));
+        line.append(String.format("Error: %s", e.getMessage()));
       }
 
-      STATISTICS.info(String.format("%s\n", output));
-      output.delete(0, output.length());
+      STATISTICS.info(String.format("%s\n", line));
+      line.delete(0, line.length());
     };
+
     System.err.println("Starting remote statistics thread...");
-    apiHandle = scheduler.scheduleWithFixedDelay(callApi, 10, 10, SECONDS);
+    apiHandle = scheduler.scheduleWithFixedDelay(callApi, 1, 10, SECONDS);
   }
 
-  private static void addMetric(String name, MetricFunction func, JsonArray metrics, MetricMode mode, String bucket) {
+  private static JsonObject addMetric(String name, MetricMode mode, MetricType type) {
     JsonObject block = new JsonObject();
+    JsonArray metric = getMetricStruct(name, bucketName, mode);
+
+    JsonArray applyFunctions = new JsonArray();
+    if (type == MetricType.COUNTER) {
+      applyFunctions.add("max");
+    } else {
+      applyFunctions.add("avg");
+    }
+
+    block.add("metric", metric);
+    block.add("applyFunctions", applyFunctions);
+
+    if (type == MetricType.COUNTER || type == MetricType.TOTAL) {
+      block.addProperty("nodesAggregation", "sum");
+    } else {
+      block.addProperty("nodesAggregation", "avg");
+    }
+
+    block.addProperty("step", 1);
+    block.addProperty("start", -1);
+
+    return block;
+  }
+
+  private static JsonArray getMetricStruct(String name, String bucketName, MetricMode mode) {
     JsonArray metric = new JsonArray();
+
     JsonObject definition = new JsonObject();
     definition.addProperty("label", "name");
     definition.addProperty("value", name);
     metric.add(definition);
-    if (mode == MetricMode.BUCKET || mode == MetricMode.DISK) {
+
+    if (mode == MetricMode.BUCKET) {
       JsonObject bucketDefinition = new JsonObject();
       bucketDefinition.addProperty("label", "bucket");
-      bucketDefinition.addProperty("value", bucket);
+      bucketDefinition.addProperty("value", bucketName);
       metric.add(bucketDefinition);
     } else if (mode == MetricMode.XDCR) {
       JsonObject source = new JsonObject();
       source.addProperty("label", "sourceBucketName");
-      source.addProperty("value", bucket);
+      source.addProperty("value", bucketName);
       metric.add(source);
       JsonObject pipeLine = new JsonObject();
       pipeLine.addProperty("label", "pipelineType");
       pipeLine.addProperty("value", "Main");
       metric.add(pipeLine);
     }
-    JsonArray applyFunctions = new JsonArray();
-    applyFunctions.add(func.getValue());
-    block.add("metric", metric);
-    block.add("applyFunctions", applyFunctions);
-    if (mode == MetricMode.DISK) {
-      block.addProperty("nodesAggregation", "sum");
-    } else {
-      block.addProperty("nodesAggregation", "avg");
-    }
-    block.addProperty("alignTimestamps", true);
-    block.addProperty("step", 15);
-    block.addProperty("start", -60);
-    metrics.add(block);
-  }
-
-  private double getMetricAvgDouble(JsonObject block) {
-    double metric = 0.0;
-    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
-      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
-      for (JsonElement entry : values) {
-        metric += Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
-      }
-      return metric / values.size();
-    }
-    return 0.0;
-  }
-
-  private long getMetricAvgLong(JsonObject block) {
-    long metric = 0;
-    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
-      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
-      for (JsonElement entry : values) {
-        metric += Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
-      }
-      return metric / values.size();
-    }
-    return 0;
-  }
-
-  private long getMetricMaxLong(JsonObject block) {
-    long metric = 0;
-    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
-      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
-      for (JsonElement entry : values) {
-        long thisMetric = (long) Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
-        if (thisMetric > metric) {
-          metric = thisMetric;
-        }
-      }
-    }
     return metric;
   }
 
-  private long getMetricSumLong(JsonObject block) {
-    long metric = 0;
-    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
-      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
-      for (JsonElement entry : values) {
-        metric += (long) Double.parseDouble(entry.getAsJsonArray().get(1).getAsString());
+  public String generate(String metric, String divisor, String transform, String label) {
+    double finalValue = resultMatrix.get(metric).getValue();
+    String valueString;
+
+    if (divisor != null) {
+      if (resultMatrix.containsKey(divisor)) {
+        double value = resultMatrix.get(divisor).getValue();
+        finalValue = value > 0 ? finalValue / value : finalValue;
+      } else {
+        LOGGER.warn("Divisor metric " + divisor + " not found");
       }
     }
-    return metric;
-  }
 
-  private double getMetricDiffDouble(JsonObject block) {
-    double metric = 0.0;
-    int counter = 0;
-    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
-      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
-      for (int i = 0; i < values.size() - 1; i++) {
-        double a = Double.parseDouble(values.getAsJsonArray().get(i).getAsJsonArray().get(1).getAsString());
-        double b = Double.parseDouble(values.getAsJsonArray().get(i+1).getAsJsonArray().get(1).getAsString());
-        if (b > a) {
-          metric += ((b - a) / 15);
-          counter += 1;
-        }
-      }
-      return metric / counter;
+    switch (transform) {
+      case "to_gib":
+        valueString = formatDataSize(finalValue);
+        break;
+      case "from_ns":
+        valueString = fromNanoSeconds(finalValue);
+        break;
+      case "inverse":
+        valueString = percentInv(finalValue);
+        break;
+      case "comma_delim":
+        valueString = commaDelimit(finalValue);
+        break;
+      case "to_ms":
+        valueString = toMilliSeconds(finalValue);
+        break;
+      case "percent":
+        valueString = percentage(finalValue);
+        break;
+      default:
+        valueString = defaultFormat(finalValue);
     }
-    return metric;
+
+    return label + ": " + valueString + " ";
   }
 
-  private long getMetricDiffSum(JsonObject block) {
-    double metric = 0.0;
-    if (!block.get("data").getAsJsonArray().asList().isEmpty()) {
-      JsonArray values = block.get("data").getAsJsonArray().get(0).getAsJsonObject().get("values").getAsJsonArray();
-      for (int i = 0; i < values.size() - 1; i++) {
-        double a = Double.parseDouble(values.getAsJsonArray().get(i).getAsJsonArray().get(1).getAsString());
-        double b = Double.parseDouble(values.getAsJsonArray().get(i+1).getAsJsonArray().get(1).getAsString());
-        if (b > a) {
-          metric += (b - a);
-        }
-      }
-      return Double.isNaN(metric) ? 0 : Math.round(metric);
-    }
-    return 0;
+  private String defaultFormat(double value) {
+    return metricFormat.format(value);
   }
 
-  private static String formatDataSize(double bytes) {
-    long size = Double.isNaN(bytes) ? 0 : Double.isInfinite(bytes) ? Long.MAX_VALUE : Math.round(bytes);
+  private String toMilliSeconds(double seconds) {
+    double value = seconds * 1000;
+    return metricFormat.format(value) + " ms";
+  }
+
+  private String commaDelimit(double value) {
+    DecimalFormat formatter = new DecimalFormat("#,###.##");
+    return formatter.format(value);
+  }
+
+  private String percentInv(double percentage) {
+    double value = 100 - percentage;
+    return metricFormat.format(value) + " %";
+  }
+
+  private String percentage(double percentage) {
+    return metricFormat.format(percentage) + " %";
+  }
+
+  private String fromNanoSeconds(double nano) {
+    double value = nano / 1000000;
+    return metricFormat.format(value) + " ms";
+  }
+
+  private String formatDataSize(double bytes) {
     String output;
 
-    double k = size/1024.0;
-    double m = ((size/1024.0)/1024.0);
-    double g = (((size/1024.0)/1024.0)/1024.0);
-    double t = ((((size/1024.0)/1024.0)/1024.0)/1024.0);
+    double k = bytes / 1024.0;
+    double m = ((bytes / 1024.0) / 1024.0);
+    double g = (((bytes / 1024.0) / 1024.0) / 1024.0);
+    double t = ((((bytes / 1024.0) / 1024.0) / 1024.0) / 1024.0);
 
-    DecimalFormat dec = new DecimalFormat("0.00");
-
-    if (t>1) {
-      output = dec.format(t).concat(" TB");
-    } else if (g>1) {
-      output = dec.format(g).concat(" GB");
-    } else if (m>1) {
-      output = dec.format(m).concat(" MB");
-    } else if (k>1) {
-      output = dec.format(k).concat(" KB");
+    if (t > 1) {
+      output = Math.round(t) + " TB";
+    } else if (g > 1) {
+      output = Math.round(g) + " GB";
+    } else if (m > 1) {
+      output = Math.round(m) + " MB";
+    } else if (k > 1) {
+      output = Math.round(k) + " KB";
     } else {
-      output = dec.format((double) size).concat(" B");
+      output = Math.round(bytes) + " B";
     }
 
     return output;

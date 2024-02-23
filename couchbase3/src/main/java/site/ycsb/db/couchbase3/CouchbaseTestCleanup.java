@@ -54,6 +54,10 @@ public class CouchbaseTestCleanup extends TestCleanup {
           xdcrProject, xdcrDatabase, xdcrEventing);
     }
 
+    if (clusterEventing != null) {
+      eventingCleanup(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket, clusterEventing);
+    }
+
     clusterClean(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket,
         clusterProject, clusterDatabase, clusterEventing);
   }
@@ -109,6 +113,25 @@ public class CouchbaseTestCleanup extends TestCleanup {
 
       sourceDb.disconnect();
       targetDb.disconnect();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static void eventingCleanup(String host, String user, String password, boolean ssl, String bucket,
+                                      String resource) {
+    CouchbaseEventing.EventingBuilder eventingBuilder = new CouchbaseEventing.EventingBuilder();
+    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
+    CouchbaseConnect db;
+
+    try {
+      dbBuilder.connect(host, user, password)
+              .ssl(ssl)
+              .bucket(bucket);
+      db = dbBuilder.build();
+      CouchbaseEventing eventing = eventingBuilder.database(db).build();
+      System.err.printf("Removing eventing function %s on cluster:[%s]\n", resource, host);
+      eventing.undeployEventingFunction(resource);
     } catch (Exception e) {
       throw new RuntimeException(e);
     }

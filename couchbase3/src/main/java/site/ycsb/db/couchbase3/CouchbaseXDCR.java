@@ -1,5 +1,7 @@
 package site.ycsb.db.couchbase3;
 
+import com.couchbase.client.java.http.*;
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 
@@ -12,6 +14,7 @@ import java.util.Map;
 public final class CouchbaseXDCR {
   private final CouchbaseConnect source;
   private final CouchbaseConnect target;
+  private final CouchbaseHttpClient client;
 
   /**
    * Class Builder.
@@ -38,20 +41,25 @@ public final class CouchbaseXDCR {
   private CouchbaseXDCR(CouchbaseXDCR.XDCRBuilder builder) {
     this.source = builder.sourceDb;
     this.target = builder.targetDb;
+    this.client = this.source.getHttpClient();
   }
 
   public void createReplication() {
-    createXDCRReference(target.hostValue(), target.userValue(), target.passwordValue(), target.externalValue());
-    createXDCRReplication(target.hostValue(), source.getBucketName(), target.getBucketName());
+    createXDCRReference();
+    createXDCRReplication();
   }
 
   public void removeReplication() {
-    deleteXDCRReplication(target.hostValue(), source.getBucketName(), target.getBucketName());
-    deleteXDCRReference(target.hostValue());
+    deleteXDCRReplication();
+    deleteXDCRReference();
   }
 
-  public void createXDCRReference(String hostname, String username, String password, Boolean external) {
+  public void createXDCRReference() {
     Map<String, String> parameters = new HashMap<>();
+    String hostname = target.hostValue();
+    String username = target.userValue();
+    String password = target.passwordValue();
+    boolean external = target.externalValue();
 
     if (getXDCRReference(hostname) != null) {
       return;
@@ -65,50 +73,64 @@ public final class CouchbaseXDCR {
       parameters.put("network_type", "external");
     }
 
-    try {
-      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
-          source.sslValue(), source.getAdminPort());
-      String endpoint = "/pools/default/remoteClusters";
-      rest.postParameters(endpoint, parameters);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
+    HttpResponse response = client.post(
+            HttpTarget.manager(),
+            HttpPath.of("/pools/default/remoteClusters"),
+            HttpPostOptions.httpPostOptions()
+                    .body(HttpBody.form(parameters)));
+
+    if (!response.success()) {
+      throw new RuntimeException("Can not create XDCR reference: "
+              + response.statusCode() + ": " + response.contentAsString());
     }
   }
 
   public String getXDCRReference(String hostname) {
-    try {
-      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
-          source.sslValue(), source.getAdminPort());
-      JsonArray remotes = rest.getJSONArray("/pools/default/remoteClusters");
-      for (JsonElement entry : remotes) {
-        if (entry.getAsJsonObject().get("name").getAsString().equals(hostname)) {
-          return entry.getAsJsonObject().get("uuid").getAsString();
-        }
+    HttpResponse response = client.get(
+            HttpTarget.manager(),
+            HttpPath.of("/pools/default/remoteClusters"));
+
+    Gson gson = new Gson();
+    JsonArray remotes = gson.fromJson(response.contentAsString(), JsonArray.class);
+
+    for (JsonElement entry : remotes) {
+      if (entry.getAsJsonObject().get("name").getAsString().equals(hostname)) {
+        return entry.getAsJsonObject().get("uuid").getAsString();
       }
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
     }
+
+    if (!response.success()) {
+      throw new RuntimeException("Can not get XDCR references: "
+              + response.statusCode() + ": " + response.contentAsString());
+    }
+
     return null;
   }
 
-  public void deleteXDCRReference(String hostname) {
+  public void deleteXDCRReference() {
+    String hostname = target.hostValue();
+
     if (getXDCRReference(hostname) == null) {
       return;
     }
 
     String endpoint = "/pools/default/remoteClusters/" + hostname;
 
-    try {
-      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
-          source.sslValue(), source.getAdminPort());
-      rest.deleteEndpoint(endpoint);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
+    HttpResponse response = client.delete(
+            HttpTarget.manager(),
+            HttpPath.of(endpoint));
+
+    if (!response.success()) {
+      throw new RuntimeException("Can not delete XDCR references: "
+              + response.statusCode() + ": " + response.contentAsString());
     }
   }
 
-  public void createXDCRReplication(String remote, String sourceBucket, String targetBucket) {
+  public void createXDCRReplication() {
     Map<String, String> parameters = new HashMap<>();
+    String remote = target.hostValue();
+    String sourceBucket = source.getBucketName();
+    String targetBucket = target.getBucketName();
 
     if (isXDCRReplicating(remote, sourceBucket, targetBucket)) {
       return;
@@ -119,17 +141,23 @@ public final class CouchbaseXDCR {
     parameters.put("toCluster", remote);
     parameters.put("toBucket", targetBucket);
 
-    try {
-      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
-          source.sslValue(), source.getAdminPort());
-      String endpoint = "/controller/createReplication";
-      rest.postParameters(endpoint, parameters);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
+    HttpResponse response = client.post(
+            HttpTarget.manager(),
+            HttpPath.of("/controller/createReplication"),
+            HttpPostOptions.httpPostOptions()
+                    .body(HttpBody.form(parameters)));
+
+    if (!response.success()) {
+      throw new RuntimeException("Can not create XDCR replication: "
+              + response.statusCode() + ": " + response.contentAsString());
     }
   }
 
-  public void deleteXDCRReplication(String remote, String sourceBucket, String targetBucket) {
+  public void deleteXDCRReplication() {
+    String remote = target.hostValue();
+    String sourceBucket = source.getBucketName();
+    String targetBucket = target.getBucketName();
+
     if (!isXDCRReplicating(remote, sourceBucket, targetBucket)) {
       return;
     }
@@ -142,12 +170,13 @@ public final class CouchbaseXDCR {
 
     String endpoint = "/controller/cancelXDCR/" + uuid + "%2F" + sourceBucket + "%2F" + targetBucket;
 
-    try {
-      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
-          source.sslValue(), source.getAdminPort());
-      rest.deleteEndpoint(endpoint);
-    } catch (RESTException e) {
-      throw new RuntimeException(e);
+    HttpResponse response = client.delete(
+            HttpTarget.manager(),
+            HttpPath.of(endpoint));
+
+    if (!response.success()) {
+      throw new RuntimeException("Can not delete XDCR replication: "
+              + response.statusCode() + ": " + response.contentAsString());
     }
   }
 
@@ -160,16 +189,17 @@ public final class CouchbaseXDCR {
 
     String endpoint = "/settings/replications/" + uuid + "%2F" + sourceBucket + "%2F" + targetBucket;
 
-    try {
-      RESTInterface rest = new RESTInterface(source.hostValue(), source.userValue(), source.passwordValue(),
-          source.sslValue(), source.getAdminPort());
-      rest.getJSON(endpoint);
+    HttpResponse response = client.get(
+            HttpTarget.manager(),
+            HttpPath.of(endpoint));
+
+    if (response.statusCode() == 400) {
+      return false;
+    } else if (!response.success()) {
+      throw new RuntimeException("Can not check XDCR replication: "
+              + response.statusCode() + ": " + response.contentAsString());
+    } else {
       return true;
-    } catch (RESTException e) {
-      if (ErrorCode.valueOf(e.getCode()) == ErrorCode.BADREQUEST) {
-        return false;
-      }
-      throw new RuntimeException(e);
     }
   }
 }

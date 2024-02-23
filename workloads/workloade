@@ -29,8 +29,6 @@
 recordcount=1000
 operationcount=1000
 workload=site.ycsb.workloads.CoreWorkload
-index.create=true
-threadcountmax=32
 
 readallfields=true
 

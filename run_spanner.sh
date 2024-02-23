@@ -1,6 +1,15 @@
 #!/bin/bash
+#
+SCRIPT_PATH=$(dirname "$0")
+SCRIPT_ROOT=$(cd "$SCRIPT_PATH/.." && pwd)
 INSTANCE="perf-test-1"
 DATABASE="testdb"
+CLASSPATH="${SCRIPT_ROOT}/conf:${SCRIPT_ROOT}/lib/*:${SCRIPT_ROOT}/cloudspanner-binding/lib/*"
+THREADCOUNT_LOAD=32
+THREADCOUNT_RUN=256
+RECORDCOUNT=1000000
+OPCOUNT=10000000
+RUNTIME=180
 PRINT_USAGE="Usage: $0 [ -i instance -d database ]"
 
 function print_usage {
@@ -9,7 +18,7 @@ if [ -n "$PRINT_USAGE" ]; then
 fi
 }
 
-while getopts "i:d:" opt
+while getopts "i:d:R:O:T:" opt
 do
   case $opt in
     i)
@@ -17,6 +26,15 @@ do
       ;;
     d)
       DATABASE=$OPTARG
+      ;;
+    R)
+      RECORDCOUNT=$OPTARG
+      ;;
+    O)
+      OPCOUNT=$OPTARG
+      ;;
+    T)
+      RUNTIME=$OPTARG
       ;;
     \?)
       print_usage
@@ -28,8 +46,12 @@ shift $((OPTIND -1))
 
 for run_workload in {a..f}
 do
+  workload="workloads/workload${run_workload}"
+  LOAD_OPTS="-db site.ycsb.db.cloudspanner.CloudSpannerClient -P conf/cloudspanner.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -p cloudspanner.batchinserts=1000 -s -load"
+  RUN_OPTS="-db site.ycsb.db.cloudspanner.CloudSpannerClient -P conf/cloudspanner.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
+
   gcloud spanner databases ddl update "$DATABASE" --instance="$INSTANCE" --ddl-file=conf/create.sql
-  ./bin/ycsb load cloudspanner -P conf/cloudspanner.properties -P "workloads/workload${run_workload}" -p recordcount=1000000 -p cloudspanner.batchinserts=1000 -threads 32 -s > "${run_workload}-load.dat"
-  ./bin/ycsb run cloudspanner -P conf/cloudspanner.properties -P "workloads/workload${run_workload}" -p recordcount=1000000 -p operationcount=10000000 -threads 256 -p maxexecutiontime=180 -s > "${run_workload}-run.dat"
+  java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
+  java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
   gcloud spanner databases ddl update "$DATABASE" --instance="$INSTANCE" --ddl-file=conf/drop.sql
 done
