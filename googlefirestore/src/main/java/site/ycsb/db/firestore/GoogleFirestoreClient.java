@@ -16,7 +16,7 @@
  */
 package site.ycsb.db.firestore;
 
-import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
@@ -33,6 +33,8 @@ import site.ycsb.StringByteIterator;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -49,8 +51,8 @@ public class GoogleFirestoreClient extends DB {
 
     /** The Cloud Firestore project ID to use when running the YCSB benchmark. */
     static final String PROJECT = "googlefirestore.projectId";
-
     static final String PRIVKEYFILE = "googlefirestore.serviceAccountKey";
+    static final String DATABASE = "googlefirestore.databaseId";
   }
 
   private static final Logger LOGGER = Logger.getLogger(GoogleFirestoreClient.class);
@@ -59,21 +61,33 @@ public class GoogleFirestoreClient extends DB {
 
   @Override
   public void init() throws DBException {
+    Path homePath = Paths.get(System.getProperty("user.home"));
+
     if (fsDb != null) {
       return;
     }
+
     Properties properties = getProperties();
+
     String projectId = properties.getProperty(GoogleFirestoreProperties.PROJECT);
-    if (projectId == null) {
-      throw new DBException("Must provide project ID.");
-    }
     String privateKeyFile = properties.getProperty(GoogleFirestoreProperties.PRIVKEYFILE);
+    String databaseId = properties.getProperty(GoogleFirestoreProperties.DATABASE);
+
     if (privateKeyFile == null) {
       throw new DBException("Must provide full path to private key file.");
     }
+
+    Path keyFilePath = Paths.get(homePath.toString(), privateKeyFile);
     try {
-      GoogleCredentials gCreds = GoogleCredentials.fromStream(new FileInputStream(privateKeyFile));
-      FirestoreOptions fsOptions = FirestoreOptions.newBuilder().setCredentials(gCreds).build();
+      ServiceAccountCredentials credentials =
+          ServiceAccountCredentials.fromStream(new FileInputStream(keyFilePath.toString()));
+      if (projectId == null) {
+        projectId = credentials.getProjectId();
+      }
+      FirestoreOptions fsOptions = FirestoreOptions.newBuilder()
+          .setCredentials(credentials)
+          .setDatabaseId(databaseId)
+          .build();
       fsDb = fsOptions.getService();
     } catch (FileNotFoundException e) {
       throw new DBException("Can't find key.", e);

@@ -240,7 +240,7 @@ LICENSE file.
       </build>
     </profile>
     <profile>
-      <id>google</id>
+      <id>firestore</id>
       <activation>
         <activeByDefault>false</activeByDefault>
       </activation>

@@ -50,7 +50,7 @@ LICENSE file.
       </properties>
     </profile>
     <profile>
-      <id>google</id>
+      <id>firestore</id>
       <build>
         <plugins>
           <plugin>
@@ -59,9 +59,9 @@ LICENSE file.
             <version>${maven.assembly.version}</version>
             <configuration>
               <descriptors>
-                <descriptor>src/main/assembly/google.xml</descriptor>
+                <descriptor>src/main/assembly/firestore.xml</descriptor>
               </descriptors>
-              <finalName>ycsb-google</finalName>
+              <finalName>ycsb-firestore</finalName>
               <appendAssemblyId>false</appendAssemblyId>
               <tarLongFileMode>posix</tarLongFileMode>
             </configuration>

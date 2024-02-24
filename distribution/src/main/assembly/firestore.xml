@@ -21,7 +21,7 @@ LICENSE file.
   <formats>
     <format>zip</format>
   </formats>
-  <baseDirectory>ycsb-google</baseDirectory>
+  <baseDirectory>ycsb-firestore</baseDirectory>
   <files>
     <file>
       <source>../googlefirestore/conf/googlefirestore.properties</source>
@@ -50,19 +50,12 @@ LICENSE file.
       </includes>
     </fileSet>
     <fileSet>
-      <directory>../bin</directory>
+      <directory>..</directory>
       <outputDirectory>bin</outputDirectory>
       <fileMode>0755</fileMode>
       <includes>
-        <include>ycsb*</include>
-      </includes>
-    </fileSet>
-    <fileSet>
-      <directory>../bin</directory>
-      <outputDirectory>bin</outputDirectory>
-      <fileMode>0644</fileMode>
-      <includes>
-        <include>bindings.properties</include>
+        <include>prep_firestore.sh</include>
+        <include>run_firestore.sh</include>
       </includes>
     </fileSet>
     <fileSet>
