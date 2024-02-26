@@ -42,15 +42,6 @@ LICENSE file.
     </fileSet>
     <fileSet>
       <directory>..</directory>
-      <outputDirectory>.</outputDirectory>
-      <fileMode>0755</fileMode>
-      <includes>
-        <include>run_firestore.sh</include>
-        <include>setup.sh</include>
-      </includes>
-    </fileSet>
-    <fileSet>
-      <directory>..</directory>
       <outputDirectory>bin</outputDirectory>
       <fileMode>0755</fileMode>
       <includes>

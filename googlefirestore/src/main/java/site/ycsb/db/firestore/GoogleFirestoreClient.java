@@ -16,6 +16,7 @@
  */
 package site.ycsb.db.firestore;
 
+import com.google.api.gax.retrying.RetrySettings;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
@@ -35,6 +36,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import org.threeten.bp.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -84,9 +86,17 @@ public class GoogleFirestoreClient extends DB {
       if (projectId == null) {
         projectId = credentials.getProjectId();
       }
+      RetrySettings retrySettings = RetrySettings
+          .newBuilder()
+          .setMaxAttempts(10)
+          .setInitialRetryDelay(Duration.ofMillis(10))
+          .setRetryDelayMultiplier(2)
+          .setMaxRetryDelay(Duration.ofSeconds(5))
+          .build();
       FirestoreOptions fsOptions = FirestoreOptions.newBuilder()
           .setCredentials(credentials)
           .setDatabaseId(databaseId)
+          .setRetrySettings(retrySettings)
           .build();
       fsDb = fsOptions.getService();
     } catch (FileNotFoundException e) {

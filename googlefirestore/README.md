@@ -28,6 +28,12 @@ Google Cloud Firestore API.
     YCSB_HOME - YCSB home directory
     FIRESTORE_HOME - Google Cloud Firestore YCSB client package files
 
+### Service Account
+Create a service account with at least the role ```roles/datastore.owner``` and save it to the system that will run the test in the file ```$HOME/.config/gcloud/datastore_default_credentials.json```. The CLI environment will need these permissions to create the test database and to run the post-test cleanup. Make sure the CLI is authorized to perform these actions. 
+```
+gcloud auth activate-service-account datastore-service-account@project.iam.gserviceaccount.com --key-file=/home/user/.config/gcloud/datastore_default_credentials.json
+```
+
 Please refer to https://github.com/brianfrankcooper/YCSB/wiki/Using-the-Database-Libraries
 for more information on setup.
 

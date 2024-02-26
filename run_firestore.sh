@@ -44,6 +44,8 @@ do
 done
 shift $((OPTIND -1))
 
+gcloud config set compute/region "$REGION"
+
 for run_workload in {a..f}
 do
   workload="workloads/workload${run_workload}"
@@ -52,8 +54,10 @@ do
 
   echo "Creating Firestore database ${DATABASE}"
   gcloud firestore databases create --location="${REGION}" --database="${DATABASE}"
+  sleep 1
   java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
   java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
   echo "Deleting Firestore database ${DATABASE}"
   gcloud firestore databases delete --database="${DATABASE}" -q
+  sleep 360
 done
