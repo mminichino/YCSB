@@ -17,5 +17,5 @@
  * S3 storage client binding for YCSB.
  */
 
-package site.ycsb.db;
+package site.ycsb.db.s3;
 
