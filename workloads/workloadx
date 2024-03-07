@@ -1,0 +1,17 @@
+# Yahoo! Cloud System Benchmark
+# Workload X: XDCR test workload
+
+recordcount=500000
+operationcount=100000000
+workload=site.ycsb.workloads.CoreWorkload
+maxexecutiontime=360
+
+readallfields=true
+statistics.enable=true
+
+readproportion=0
+updateproportion=1
+scanproportion=0
+insertproportion=0
+
+requestdistribution=uniform

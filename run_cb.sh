@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
 SCRIPTDIR=$(cd $(dirname $0) && pwd)
 source $SCRIPTDIR/libcommon.sh
-PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O | -T | -R | -P | -l | -r | -M | -B | -I | -X ]
+PRINT_USAGE="Usage: $0 -h host_name [ options ]
               -h Connect host name
               -w Run workload (a .. f)
               -o Run scenario for backwards compatibility
               -u User name
               -p Password
               -b Bucket name
+              -c Collection name
+              -S Scope name
               -m Index storage option (defaults to memopt)
               -s Use SSL
               -C Record count
               -O Operation count
-              -T Thread count
-              -R Run time
+              -N Thread count
+              -T Run time
               -P Max parallelism
+              -R Replica count
+              -K KV timeout (milliseconds)
+              -Q Query timeout (milliseconds)
               -l Load only in manual mode
               -r Run only in manual mode
               -M manual mode
@@ -23,6 +28,9 @@ PRINT_USAGE="Usage: $0 -h host_name [ -w | -o | -u | -p | -b | -m | -s | -C | -O
 USERNAME="Administrator"
 PASSWORD="password"
 BUCKET="ycsb"
+BUCKET_BACKEND="couchstore"
+SCOPE="_default"
+COLLECTION="_default"
 SCENARIO=""
 CURRENT_SCENARIO=""
 LOAD=1
@@ -38,10 +46,20 @@ INDEX_WORKLOAD="e"
 TMP_OUTPUT=$(mktemp)
 REPL_NUM=1
 MANUALMODE=0
-SSLMODE="none"
+SSLMODE="true"
 CONTYPE="couchbase"
 CONOPTIONS=""
+HTTP_PREFIX="http"
+HTTP_PORT="8091"
 BYPASS=0
+KV_TIMEOUT=2000
+QUERY_TIMEOUT=14000
+TEST_TYPE="DEFAULT"
+WRITE_ALL_FIELDS="false"
+TTL_SECONDS=0
+DO_UPSERT="true"
+EXTRA_ARGS=""
+VERBOSE=0
 
 function create_bucket {
 cbc stats -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD >/dev/null 2>&1
@@ -56,7 +74,13 @@ if [ $? -ne 0 ]; then
       echo "Can not get cluster statistics. Is the cluster available?"
       exit 1
     fi
-    cbc bucket-create -U ${CONTYPE}://${HOST}${CONOPTIONS} -u $USERNAME -P $PASSWORD --ram-quota $MEMQUOTA --num-replicas $REPL_NUM $BUCKET >$TMP_OUTPUT 2>&1
+    curl -k -X POST -u "${USERNAME}:${PASSWORD}" \
+    "${HTTP_PREFIX}://${HOST}:${HTTP_PORT}/pools/default/buckets${CONOPTIONS}" \
+    -d name=$BUCKET \
+    -d ramQuota=$MEMQUOTA \
+    -d replicaNumber=$REPL_NUM \
+    -d storageBackend=$BUCKET_BACKEND >$TMP_OUTPUT 2>&1
+
     if [ $? -ne 0 ]; then
        echo "Can not create $BUCKET bucket."
        echo "Memory Quota: $MEMQUOTA"
@@ -70,6 +94,38 @@ if [ $? -ne 0 ]; then
 fi
 
 sleep 1
+}
+
+function create_scope() {
+local QUERY_TEXT="CREATE SCOPE ${BUCKET}.${SCOPE} IF NOT EXISTS;"
+
+if [ "$SCOPE" = "_default" ]; then
+  return
+fi
+
+cbc query -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD "$QUERY_TEXT" >$TMP_OUTPUT 2>&1
+if [ $? -ne 0 ]; then
+   echo "Query failed."
+   echo "$QUERY_TEXT"
+   cat $TMP_OUTPUT
+   exit 1
+fi
+}
+
+function create_collection() {
+local QUERY_TEXT="CREATE COLLECTION ${BUCKET}.${SCOPE}.${COLLECTION} IF NOT EXISTS;"
+
+if [ "$COLLECTION" = "_default" ]; then
+  return
+fi
+
+cbc query -U ${CONTYPE}://${HOST}/${BUCKET}${CONOPTIONS} -u $USERNAME -P $PASSWORD "$QUERY_TEXT" >$TMP_OUTPUT 2>&1
+if [ $? -ne 0 ]; then
+   echo "Query failed."
+   echo "$QUERY_TEXT"
+   cat $TMP_OUTPUT
+   exit 1
+fi
 }
 
 function delete_bucket {
@@ -88,7 +144,7 @@ sleep 1
 }
 
 function create_index {
-local QUERY_TEXT="CREATE INDEX record_id_${BUCKET} ON \`${BUCKET}\`(\`record_id\`) WITH {\"num_replica\": 1};"
+local QUERY_TEXT="CREATE INDEX idx_${BUCKET} ON \`${BUCKET}\`.${SCOPE}.${COLLECTION}(meta().id) WITH {\"num_replica\": 2};"
 local retry_count=1
 
 while [ "$retry_count" -le 3 ]; do
@@ -118,7 +174,7 @@ sleep 1
 }
 
 function drop_index {
-local QUERY_TEXT="DROP INDEX record_id_${BUCKET} ON \`${BUCKET}\` USING GSI;"
+local QUERY_TEXT="DROP INDEX idx_${BUCKET} ON \`${BUCKET}\`.${SCOPE}.${COLLECTION} USING GSI;"
 local retry_count=1
 
 while [ "$retry_count" -le 3 ]; do
@@ -148,45 +204,81 @@ sleep 1
 }
 
 function run_load {
-[ "$MANUALMODE" -eq 0 ] && create_bucket
+[ "$MANUALMODE" -eq 0 ] && create_bucket && create_scope && create_collection
 [ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && create_index
 ${SCRIPTDIR}/bin/ycsb load couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_LOAD \
 	-p couchbase.host=$HOST \
 	-p couchbase.bucket=$BUCKET \
-	-p couchbase.upsert=true \
+	-p couchbase.scope=$SCOPE \
+	-p couchbase.collection=$COLLECTION \
+	-p couchbase.upsert=$DO_UPSERT \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.epoll=true \
 	-p couchbase.sslMode=$SSLMODE \
 	-p couchbase.username=$USERNAME \
 	-p couchbase.password=$PASSWORD \
+	-p couchbase.kvTimeout=$KV_TIMEOUT \
+	-p couchbase.queryTimeout=$QUERY_TIMEOUT \
+	-p couchbase.mode=$TEST_TYPE \
+	-p couchbase.ttlSeconds=$TTL_SECONDS \
+	-p couchbase.loading="true" \
+	-p api.host=$HOST \
+	-p api.tls=$SSLMODE \
+	-p api.username=$USERNAME \
+  -p api.password=$PASSWORD \
+  -p api.instance=$BUCKET \
+  -p api.class=site.ycsb.db.couchbase3.CouchbaseCollect \
+	-p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \
 	-s > ${WORKLOAD}-load.dat
 }
 
 function run_workload {
+[ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && THREADCOUNT_RUN=32
 ${SCRIPTDIR}/bin/ycsb run couchbase3 \
 	-P $WORKLOAD \
 	-threads $THREADCOUNT_RUN \
 	-p couchbase.host=$HOST \
 	-p couchbase.bucket=$BUCKET \
-	-p couchbase.upsert=true \
+	-p couchbase.scope=$SCOPE \
+  -p couchbase.collection=$COLLECTION \
+	-p couchbase.upsert=$DO_UPSERT \
 	-p couchbase.kvEndpoints=4 \
 	-p couchbase.epoll=true \
+=======
+	-p couchbase.scope=$SCOPE \
+  -p couchbase.collection=$COLLECTION \
+	-p couchbase.upsert=$DO_UPSERT \
+	-p couchbase.kvEndpoints=4 \
+>>>>>>> experimental
 	-p couchbase.sslMode=$SSLMODE \
 	-p couchbase.maxParallelism=$MAXPARALLELISM \
 	-p couchbase.username=$USERNAME \
 	-p couchbase.password=$PASSWORD \
+	-p couchbase.kvTimeout=$KV_TIMEOUT \
+  -p couchbase.queryTimeout=$QUERY_TIMEOUT \
+  -p couchbase.mode=$TEST_TYPE \
+  -p couchbase.ttlSeconds=$TTL_SECONDS \
+  -p couchbase.loading="false" \
+  -p api.host=$HOST \
+  -p api.tls=$SSLMODE \
+  -p api.username=$USERNAME \
+  -p api.password=$PASSWORD \
+  -p api.instance=$BUCKET \
+  -p api.class=site.ycsb.db.couchbase3.CouchbaseCollect \
+  -p writeallfields=$WRITE_ALL_FIELDS \
 	-p recordcount=$RECORDCOUNT \
   -p operationcount=$OPCOUNT \
   -p maxexecutiontime=$RUNTIME \
+  $EXTRA_ARGS \
 	-s > ${WORKLOAD}-run.dat
 [ "$CURRENT_SCENARIO" = "$INDEX_WORKLOAD" ] && [ "$MANUALMODE" -eq 0 ] && drop_index
 [ "$MANUALMODE" -eq 0 ] && delete_bucket
 }
 
-while getopts "h:w:o:p:u:b:m:sC:O:T:R:P:lrMBIXZ" opt
+while getopts "h:w:o:p:u:b:m:sC:O:N:A:T:P:R:K:Q:lrMBIX:Zc:S:Y:L:WFGvD" opt
 do
   case $opt in
     h)
@@ -207,13 +299,21 @@ do
     b)
       BUCKET=$OPTARG
       ;;
+    c)
+      COLLECTION=$OPTARG
+      ;;
+    S)
+      SCOPE=$OPTARG
+      ;;
     m)
       MEMOPT=$OPTARG
       ;;
     s)
-      SSLMODE="data"
+      SSLMODE="true"
       CONTYPE="couchbases"
       CONOPTIONS="?ssl=no_verify"
+      HTTP_PREFIX="https"
+      HTTP_PORT="18091"
       ;;
     C)
       RECORDCOUNT=$OPTARG
@@ -221,15 +321,35 @@ do
     O)
       OPCOUNT=$OPTARG
       ;;
-    T)
+    N)
       THREADCOUNT_RUN=$OPTARG
+      ;;
+    A)
       THREADCOUNT_LOAD=$OPTARG
       ;;
     R)
+=======
+    N)
+      THREADCOUNT_RUN=$OPTARG
+      ;;
+    A)
+      THREADCOUNT_LOAD=$OPTARG
+      ;;
+    T)
+>>>>>>> experimental
       RUNTIME=$OPTARG
       ;;
     P)
       MAXPARALLELISM=$OPTARG
+      ;;
+    R)
+      REPL_NUM=$OPTARG
+      ;;
+    K)
+      KV_TIMEOUT=$OPTARG
+      ;;
+    Q)
+      QUERY_TIMEOUT=$OPTARG
       ;;
     l)
       RUN=0
@@ -242,7 +362,7 @@ do
       ;;
     B)
       echo "Creating bucket ... "
-      create_bucket
+      create_bucket && create_scope && create_collection
       echo "Done."
       exit
       ;;
@@ -252,7 +372,7 @@ do
       echo "Done."
       exit
       ;;
-    X)
+    D)
       echo "Cleaning up."
       echo "Dropping index ..."
       drop_index
@@ -263,6 +383,27 @@ do
       ;;
     Z)
       BYPASS=1
+      ;;
+    Y)
+      TEST_TYPE=$OPTARG
+      ;;
+    L)
+      TTL_SECONDS=$OPTARG
+      ;;
+    W)
+      DO_UPSERT="false"
+      ;;
+    F)
+      WRITE_ALL_FIELDS="true"
+      ;;
+    G)
+      BUCKET_BACKEND="magma"
+      ;;
+    v)
+      VERBOSE=1
+      ;;
+    X)
+      EXTRA_ARGS="${EXTRA_ARGS} -p $OPTARG"
       ;;
     \?)
       print_usage
@@ -277,7 +418,11 @@ which jq >/dev/null 2>&1
 which cbc >/dev/null 2>&1
 [ $? -ne 0 ] && err_exit "This utility requires cbc from libcouchbase."
 
-cd $SCRIPTDIR
+if [ "$VERBOSE" -eq 1 ]; then
+  echo "Output file: $TMP_OUTPUT"
+fi
+
+cd $SCRIPTDIR || err_exit "Can not change to directory $SCRIPTDIR"
 
 [ -z "$HOST" ] && err_exit
 

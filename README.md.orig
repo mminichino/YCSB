@@ -1,0 +1,211 @@
+<<<<<<< HEAD
+<!--
+Copyright (c) 2010 Yahoo! Inc., 2012 - 2016 YCSB contributors.
+All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you
+may not use this file except in compliance with the License. You
+may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing
+permissions and limitations under the License. See accompanying
+LICENSE file.
+-->
+
+Yahoo! Cloud System Benchmark (YCSB)
+====================================
+[![Build Status](https://travis-ci.org/brianfrankcooper/YCSB.png?branch=master)](https://travis-ci.org/brianfrankcooper/YCSB)
+
+Links
+-----
+http://wiki.github.com/brianfrankcooper/YCSB/  
+https://labs.yahoo.com/news/yahoo-cloud-serving-benchmark/
+ycsb-users@yahoogroups.com  
+
+Getting Started
+---------------
+
+1. Download the [latest release of YCSB](https://github.com/brianfrankcooper/YCSB/releases/latest):
+
+    ```sh
+    curl -O --location https://github.com/brianfrankcooper/YCSB/releases/download/0.14.0/ycsb-0.14.0.tar.gz
+    tar xfvz ycsb-0.14.0.tar.gz
+    cd ycsb-0.14.0
+    ```
+    
+2. Set up a database to benchmark. There is a README file under each binding 
+   directory.
+
+3. Run YCSB command. 
+
+    On Linux:
+    ```sh
+    bin/ycsb.sh load basic -P workloads/workloada
+    bin/ycsb.sh run basic -P workloads/workloada
+    ```
+
+    On Windows:
+    ```bat
+    bin/ycsb.bat load basic -P workloads\workloada
+    bin/ycsb.bat run basic -P workloads\workloada
+    ```
+
+  Running the `ycsb` command without any argument will print the usage. 
+   
+  See https://github.com/brianfrankcooper/YCSB/wiki/Running-a-Workload
+  for a detailed documentation on how to run a workload.
+
+  See https://github.com/brianfrankcooper/YCSB/wiki/Core-Properties for 
+  the list of available workload properties.
+
+Building from source
+--------------------
+
+YCSB requires the use of Maven 3; if you use Maven 2, you may see [errors
+such as these](https://github.com/brianfrankcooper/YCSB/issues/406).
+
+To build the full distribution, with all database bindings:
+
+    mvn clean package
+
+To build a single database binding:
+
+    mvn -pl com.yahoo.ycsb:mongodb-binding -am clean package
+=======
+# Couchbase Driver for YCSB 2.0.0
+This driver is a binding for the YCSB facilities to operate against a Couchbase Server cluster. It uses the official
+Couchbase Java SDK (version 3.x) and provides a rich set of configuration options.
+
+## Quickstart
+
+### 1. Start Couchbase Server
+You need to start a single node or a cluster to point the client at. Please see [http://couchbase.com](couchbase.com)
+for more details and instructions.
+
+### 2. Set up YCSB
+You can either download the release zip and run it, or just clone from master.
+
+```
+curl -OLs https://github.com/couchbaselabs/ycsb-couchbase/releases/download/1.0.1/ycsb-couchbase.zip
+```
+```
+unzip ycsb-couchbase.zip
+```
+```
+cd ycsb-couchbase
+```
+```
+sudo ./setup.sh
+```
+
+### Manual Setup
+The bucket and index automation in the helper script requires the ```cbc``` CLI that is part of ```libcouchbase```. You can 
+read about it [here](https://docs.couchbase.com/c-sdk/current/hello-world/cbc.html).
+
+First create a repo configuration for your Linux distribution per the [documentation](https://docs.couchbase.com/c-sdk/current/hello-world/start-using-sdk.html) and then install the packages.
+To install it on Red Hat/CentOS Linux:
+
+```
+yum install -y libcouchbase3 libcouchbase-devel libcouchbase3-tools
+```
+
+For Debian type systems such as Ubuntu:
+
+```
+apt-get install -y libcouchbase3 libcouchbase-dev libcouchbase3-tools libcouchbase-dbg libcouchbase3-libev libcouchbase3-libevent
+```
+
+Additionally, the helper script requires the ```jq``` and ```python3``` packages if not already installed.
+
+### 3. Run the Tests (A-F)
+
+```
+./run_cb.sh -h cbnode-0000.domain.com -u user -p password 
+```
+
+To use SSL to connect to the cluster:
+
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -u user -p password
+```
+
+To run a specific workload (YCSB-A in this example):
+
+```
+./run_cb.sh -h cbnode-0000.domain.com -u user -p password -w a
+```
+
+### Manual Mode
+
+To just create the bucket:
+```
+./run_cb.sh -h cbnode-0000.domain.com -B
+```
+
+To just create the index:
+```
+./run_cb.sh -h cbnode-0000.domain.com -I
+```
+
+To run a data load:
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -M -l -w a
+```
+
+To run a scenario:
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -M -r -w a
+```
+
+To manually load data (without any script automation - i.e. if ```cbc``` isn't installed):
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -Z -M -l -w a
+```
+
+To manually run a scenario (without any automation):
+```
+./run_cb.sh -h cbnode-0000.domain.com -s -Z -M -r -w a
+```
+
+## Capella
+For Couchbase Capella (Couchbase hosted DBaaS) you will need to create a bucket named "ycsb" before you run the test(s).
+This is because Capella database users do not have sufficient permissions to operate on buckets. You will also need to 
+use SSL to connect. You can provide the name given on the Capella portal as the host. The helper utility will get the SRV 
+records and extract a node name to use for the host parameter.
+
+```
+./run_cb.sh -h cb.abcdefg.cloud.couchbase.com -s -u dbuser -p password 
+```
+
+## Configuration Options
+Since no setup is the same and the goal of YCSB is to deliver realistic benchmarks, here are some setups that you can
+tune. Note that if you need more flexibility (let's say a custom transcoder), you still need to extend this driver and
+implement the facilities on your own.
+
+You can set the following properties (with the default settings applied):
+
+- couchbase.host=127.0.0.1: The hostname from one server.
+- couchbase.bucket=ycsb: The bucket name to use.
+- couchbase.scope=_default: The scope to use.
+- couchbase.collection=_default: The collection to use.
+- couchbase.password=: The password of the bucket.
+- couchbase.durability=: Durability level to use.
+- couchbase.persistTo=0: Persistence durability requirement
+- couchbase.replicateTo=0: Replication durability requirement
+- couchbase.upsert=false: Use upsert instead of insert or replace.
+- couchbase.adhoc=false: If set to true, prepared statements are not used.
+- couchbase.maxParallelism=1: The server parallelism for all n1ql queries.
+- couchbase.kvEndpoints=1: The number of KV sockets to open per server.
+- couchbase.sslMode=false: Set to ```true``` to use SSL to connect to the cluster.
+- couchbase.sslNoVerify=true: Set to ```false``` to check the SSL server certificate.
+- couchbase.certificateFile=: Path to file containing certificates to trust.
+- couchbase.kvTimeout=2000: KV operation timeout (milliseconds)
+- couchbase.queryTimeout=14000: Query timeout (milliseconds)
+- couchbase.mode=DEFAULT: Test operating mode (DEFAULT or ARRAY).
+- couchbase.ttlSeconds=0: Set document expiration (TTL) in seconds.
+>>>>>>> experimental

@@ -4,6 +4,10 @@ target
 # ignore output files from testing
 output*
 workloads/*.dat
+statistics.dat
+key_stats.dat
+test.properties
+output/
 
 # ignore standard Eclipse files
 .project

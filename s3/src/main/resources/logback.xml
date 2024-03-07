@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+    <file>output.log</file>
+    <append>false</append>
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <logger name="ch.qos.logback" level="error" additivity="false">
+    <appender-ref ref="STDOUT" />
+  </logger>
+
+  <logger name="site.ycsb.db.s3.S3Client" level="info" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <root level="error">
+    <appender-ref ref="STDOUT" />
+  </root>
+
+</configuration>

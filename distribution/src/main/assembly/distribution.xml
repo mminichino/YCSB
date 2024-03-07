@@ -19,18 +19,35 @@ LICENSE file.
   xsi:schemaLocation="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.2 http://maven.apache.org/xsd/assembly-1.1.2.xsd">
   <id>package</id>
   <formats>
-    <format>tar.gz</format>
+    <format>zip</format>
   </formats>
-  <includeBaseDirectory>true</includeBaseDirectory>
+  <baseDirectory>ycsb-couchbase</baseDirectory>
+  <files>
+    <file>
+      <source>../couchbase3/src/main/conf/example.properties</source>
+      <outputDirectory>conf</outputDirectory>
+      <destName>db.properties</destName>
+    </file>
+  </files>
   <fileSets>
     <fileSet>
       <directory>..</directory>
       <outputDirectory>.</outputDirectory>
       <fileMode>0644</fileMode>
       <includes>
-        <include>README</include>
+        <include>README.md</include>
         <include>LICENSE.txt</include>
         <include>NOTICE.txt</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>..</directory>
+      <outputDirectory>.</outputDirectory>
+      <fileMode>0755</fileMode>
+      <includes>
+        <include>run_cb.sh</include>
+        <include>libcommon.sh</include>
+        <include>setup.sh</include>
       </includes>
     </fileSet>
     <fileSet>
@@ -38,7 +55,7 @@ LICENSE file.
       <outputDirectory>bin</outputDirectory>
       <fileMode>0755</fileMode>
       <includes>
-        <include>ycsb*</include>
+        <include>run*</include>
       </includes>
     </fileSet>
     <fileSet>
@@ -53,13 +70,16 @@ LICENSE file.
       <directory>../workloads</directory>
       <outputDirectory>workloads</outputDirectory>
       <fileMode>0644</fileMode>
+      <excludes>
+        <exclude>*.dat</exclude>
+      </excludes>
     </fileSet>
   </fileSets>
   <dependencySets>
     <dependencySet>
       <outputDirectory>lib</outputDirectory>
       <includes>
-        <include>com.yahoo.ycsb:core</include>
+        <include>site.ycsb:core</include>
       </includes>
       <scope>runtime</scope>
       <useProjectArtifact>false</useProjectArtifact>
@@ -73,11 +93,11 @@ LICENSE file.
       <useAllReactorProjects>true</useAllReactorProjects>
       <includeSubModules>true</includeSubModules>
       <excludes>
-        <exclude>com.yahoo.ycsb:core</exclude>
-        <exclude>com.yahoo.ycsb:binding-parent</exclude>
-        <exclude>com.yahoo.ycsb:datastore-specific-descriptor</exclude>
-        <exclude>com.yahoo.ycsb:ycsb</exclude>
-        <exclude>com.yahoo.ycsb:root</exclude>
+        <exclude>site.ycsb:core</exclude>
+        <exclude>site.ycsb:binding-parent</exclude>
+        <exclude>site.ycsb:datastore-specific-descriptor</exclude>
+        <exclude>site.ycsb:ycsb</exclude>
+        <exclude>site.ycsb:root</exclude>
       </excludes>
       <sources>
         <fileSets>

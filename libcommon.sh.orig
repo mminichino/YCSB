@@ -1,0 +1,68 @@
+<<<<<<< HEAD
+#!/bin/sh
+
+function print_usage {
+=======
+#!/usr/bin/env bash
+
+print_usage() {
+>>>>>>> experimental
+if [ -n "$PRINT_USAGE" ]; then
+   echo "$PRINT_USAGE"
+fi
+}
+
+<<<<<<< HEAD
+function err_exit {
+=======
+err_exit() {
+>>>>>>> experimental
+   if [ -n "$1" ]; then
+      echo "[!] Error: $1"
+   else
+      print_usage
+   fi
+   exit 1
+}
+
+<<<<<<< HEAD
+function warn_msg {
+=======
+warn_msg() {
+>>>>>>> experimental
+   if [ -n "$1" ]; then
+      echo "[!] Warning: $1"
+   fi
+}
+
+<<<<<<< HEAD
+function info_msg {
+=======
+info_msg() {
+>>>>>>> experimental
+   if [ -n "$1" ]; then
+      echo "[i] $1"
+   fi
+}
+
+<<<<<<< HEAD
+function get_password {
+=======
+get_password() {
+>>>>>>> experimental
+   while true
+   do
+      echo -n "Password: "
+      read -s ENTERED_PASSWORD
+      echo ""
+      echo -n "Retype Password: "
+      read -s CHECK_PASSWORD
+      echo ""
+      if [ "$ENTERED_PASSWORD" != "$CHECK_PASSWORD" ]; then
+         echo "Passwords do not match"
+      else
+         break
+      fi
+   done
+   export PASSWORD=$ENTERED_PASSWORD
+}

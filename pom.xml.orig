@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+<<<<<<< HEAD
+Copyright (c) 2012 - 2018 YCSB contributors. All rights reserved.
+=======
+Copyright (c) 2012 - 2020 YCSB contributors. All rights reserved.
+>>>>>>> experimental
+
+Licensed under the Apache License, Version 2.0 (the "License"); you
+may not use this file except in compliance with the License. You
+may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing
+permissions and limitations under the License. See accompanying
+LICENSE file.
+-->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+<<<<<<< HEAD
+  <groupId>com.yahoo.ycsb</groupId>
+  <artifactId>root</artifactId>
+  <version>0.15.0</version>
+=======
+  <groupId>site.ycsb</groupId>
+  <artifactId>root</artifactId>
+  <version>2.0.0</version>
+>>>>>>> experimental
+  <packaging>pom</packaging>
+
+  <name>YCSB Root</name>
+
+  <description>
+    This is the top level project that builds, packages the core and all the DB bindings for YCSB infrastructure.
+  </description>
+
+<<<<<<< HEAD
+=======
+  <url>https://ycsb.site/</url>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <!-- Please see git for authorship information.
+         This list is project maintainers -->
+    <developer>
+      <id>allanbank</id>
+      <name>Robert J. Moore</name>
+      <email>robert.j.moore@allanbank.com</email>
+    </developer>
+    <developer>
+      <id>busbey</id>
+      <name>Sean Busbey</name>
+      <email>sean.busbey@gmail.com</email>
+    </developer>
+    <developer>
+      <id>cmatser</id>
+      <name>Chrisjan Matser</name>
+      <email>cmatser@codespinnerinc.com</email>
+    </developer>
+    <developer>
+      <id>stfeng2</id>
+      <name>Stanley Feng</name>
+      <email>stfeng@google.com</email>
+    </developer>
+  </developers>
+
+>>>>>>> experimental
+  <scm>
+    <connection>scm:git:git://github.com/brianfrankcooper/YCSB.git</connection>
+    <tag>master</tag>
+    <url>https://github.com/brianfrankcooper/YCSB</url>
+  </scm>
+<<<<<<< HEAD
+=======
+  <distributionManagement>
+    <repository>
+      <id>sonatype.releases.https</id>
+      <name>Release Repo at sonatype oss.</name>
+      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
+    </repository>
+    <snapshotRepository>
+      <id>sonatype.snapshots.https</id>
+      <name>snapshot Repo at sonatype oss.</name>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+    </snapshotRepository>
+  </distributionManagement>
+>>>>>>> experimental
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.puppycrawl.tools</groupId>
+        <artifactId>checkstyle</artifactId>
+        <version>7.7.1</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jdom</groupId>
+        <artifactId>jdom</artifactId>
+        <version>1.1</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.collections</groupId>
+        <artifactId>google-collections</artifactId>
+        <version>1.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+<<<<<<< HEAD
+        <version>1.7.32</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-simple</artifactId>
+        <version>1.7.32</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <!-- Properties Management -->
+  <properties>
+    <maven.assembly.version>2.5.5</maven.assembly.version>
+    <maven.dependency.version>2.10</maven.dependency.version>
+
+    <!-- datastore binding versions, lex sorted -->
+    <couchbase.version>1.4.10</couchbase.version>
+    <couchbase2.version>2.7.0</couchbase2.version>
+    <couchbase3.version>3.3.1</couchbase3.version>
+=======
+        <version>1.7.25</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-core</artifactId>
+      <version>1.12.671</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk-s3</artifactId>
+      <version>1.12.671</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.api</groupId>
+      <artifactId>gax</artifactId>
+      <version>1.67.0</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-firestore</artifactId>
+      <version>1.35.2</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.12</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>log4j-over-slf4j</artifactId>
+      <version>2.0.12</version>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>1.4.14</version>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+
+  <!-- Properties Management -->
+  <properties>
+    <maven.assembly.version>3.6.0</maven.assembly.version>
+    <maven.dependency.version>3.6.0</maven.dependency.version>
+>>>>>>> experimental
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <modules>
+    <!-- our internals -->
+    <module>core</module>
+    <module>binding-parent</module>
+    <module>distribution</module>
+<<<<<<< HEAD
+    <!-- all the datastore bindings, lex sorted please -->
+    <module>couchbase</module>
+    <module>couchbase2</module>
+    <module>couchbase3</module>
+=======
+    <module>s3</module>
+>>>>>>> experimental
+  </modules>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-checkstyle-plugin</artifactId>
+          <version>2.16</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+<<<<<<< HEAD
+        <version>3.0.0-M1</version>
+=======
+        <version>3.3.0</version>
+>>>>>>> experimental
+        <executions>
+          <execution>
+            <id>enforce-maven</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireMavenVersion>
+<<<<<<< HEAD
+                  <version>3.1.0</version>
+=======
+                  <!--
+                  Maven 3.6.2 has issues
+                  https://github.com/brianfrankcooper/YCSB/issues/1390
+                  -->
+                  <version>[3.1.0,3.6.2),(3.6.2,)</version>
+>>>>>>> experimental
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+<<<<<<< HEAD
+        <version>3.7.0</version>
+=======
+        <version>3.11.0</version>
+>>>>>>> experimental
+        <configuration>
+          <source>1.8</source>
+          <target>1.8</target>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>validate</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <configLocation>checkstyle.xml</configLocation>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+<<<<<<< HEAD
+=======
+  <profiles>
+    <profile>
+      <!-- plugins needed to pass sonatype repo checks -->
+      <id>ycsb-release</id>
+      <properties>
+        <doclint>none</doclint>
+      </properties>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-deploy-plugin</artifactId>
+              <version>3.1.1</version>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-source-plugin</artifactId>
+              <version>3.3.0</version>
+              <executions>
+                <execution>
+                  <id>attach-sources</id>
+                  <goals>
+                    <goal>jar-no-fork</goal>
+                  </goals>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-javadoc-plugin</artifactId>
+              <version>3.1.1</version>
+              <executions>
+                <execution>
+                  <id>attach-javadocs</id>
+                  <goals>
+                    <goal>jar</goal>
+                  </goals>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-gpg-plugin</artifactId>
+              <version>1.6</version>
+              <executions>
+                <execution>
+                  <id>sign-release-artifacts</id>
+                  <goals>
+                    <goal>sign</goal>
+                  </goals>
+                </execution>
+              </executions>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+    <profile>
+      <id>firestore</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>googlefirestore</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>cosmos</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>azurecosmos</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>spanner</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>cloudspanner</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>jdbc</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>jdbc</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>s3</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>s3</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>couchbase</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>couchbase3</module>
+      </modules>
+    </profile>
+  </profiles>
+>>>>>>> experimental
+</project>

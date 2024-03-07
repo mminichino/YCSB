@@ -19,10 +19,10 @@ LICENSE file.
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>com.yahoo.ycsb</groupId>
+    <groupId>site.ycsb</groupId>
     <artifactId>root</artifactId>
-    <version>0.15.0</version>
-    <relativePath>../../</relativePath>
+    <version>2.0.0</version>
+    <relativePath>../../pom.xml</relativePath>
   </parent>
 
   <artifactId>datastore-specific-descriptor</artifactId>
@@ -35,7 +35,7 @@ LICENSE file.
   </description>
   <dependencies>
     <dependency>
-      <groupId>com.yahoo.ycsb</groupId>
+      <groupId>site.ycsb</groupId>
       <artifactId>core</artifactId>
       <version>${project.version}</version>
     </dependency>
