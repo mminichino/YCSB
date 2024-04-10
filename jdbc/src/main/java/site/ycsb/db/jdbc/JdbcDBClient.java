@@ -14,7 +14,7 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
-package site.ycsb.db;
+package site.ycsb.db.jdbc;
 
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -26,7 +26,7 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import site.ycsb.db.flavors.DBFlavor;
+import site.ycsb.db.jdbc.flavors.DBFlavor;
 
 /**
  * A class that wraps a JDBC compliant database to allow it to be interfaced

@@ -15,13 +15,13 @@
  * LICENSE file.
  */
 
-package com.yahoo.ycsb.db;
+package site.ycsb.db.jdbc;
 
 import static org.junit.Assert.*;
 
-import com.yahoo.ycsb.ByteIterator;
-import com.yahoo.ycsb.DBException;
-import com.yahoo.ycsb.StringByteIterator;
+import site.ycsb.ByteIterator;
+import site.ycsb.DBException;
+import site.ycsb.StringByteIterator;
 import org.junit.*;
 
 import java.sql.*;
@@ -124,7 +124,7 @@ public class JdbcDBClientTest {
     }
 
     /*
-        This is a copy of buildDeterministicValue() from core:com.yahoo.ycsb.workloads.CoreWorkload.java.
+        This is a copy of buildDeterministicValue() from core:site.ycsb.workloads.CoreWorkload.java.
         That method is neither public nor static so we need a copy.
      */
     private String buildDeterministicValue(String key, String fieldkey) {

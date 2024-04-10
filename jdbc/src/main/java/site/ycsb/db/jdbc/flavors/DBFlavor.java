@@ -14,9 +14,9 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
-package site.ycsb.db.flavors;
+package site.ycsb.db.jdbc.flavors;
 
-import site.ycsb.db.StatementType;
+import site.ycsb.db.jdbc.StatementType;
 
 /**
  * DBFlavor captures minor differences in syntax and behavior among JDBC implementations and SQL

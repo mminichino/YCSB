@@ -85,7 +85,7 @@ DATABASES = {
     "ignite-sql": "site.ycsb.db.ignite.IgniteSqlClient",
     "infinispan-cs": "site.ycsb.db.InfinispanRemoteClient",
     "infinispan": "site.ycsb.db.InfinispanClient",
-    "jdbc": "site.ycsb.db.JdbcDBClient",
+    "jdbc": "site.ycsb.db.jdbc.JdbcDBClient",
     "kudu": "site.ycsb.db.KuduYCSBClient",
     "memcached": "site.ycsb.db.MemcachedClient",
     "maprdb": "site.ycsb.db.mapr.MapRDBClient",

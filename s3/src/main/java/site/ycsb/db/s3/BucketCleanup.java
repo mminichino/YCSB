@@ -20,7 +20,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
-public class BucketCleanup {
+/**
+ * A class that cleans up a S3 bucket.
+ */
+public final class BucketCleanup {
   public static void main(String[] args) {
     Options options = new Options();
     CommandLine cmd = null;

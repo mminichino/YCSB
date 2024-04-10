@@ -57,16 +57,16 @@ LICENSE file.
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-assembly-plugin</artifactId>
             <version>${maven.assembly.version}</version>
-            <configuration>
-              <descriptors>
-                <descriptor>src/main/assembly/firestore.xml</descriptor>
-              </descriptors>
-              <finalName>ycsb-firestore</finalName>
-              <appendAssemblyId>false</appendAssemblyId>
-              <tarLongFileMode>posix</tarLongFileMode>
-            </configuration>
             <executions>
               <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/firestore.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-firestore</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
                 <phase>package</phase>
                 <goals>
                   <goal>single</goal>
@@ -92,16 +92,16 @@ LICENSE file.
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-assembly-plugin</artifactId>
             <version>${maven.assembly.version}</version>
-            <configuration>
-              <descriptors>
-                <descriptor>src/main/assembly/cosmos.xml</descriptor>
-              </descriptors>
-              <finalName>ycsb-cosmos</finalName>
-              <appendAssemblyId>false</appendAssemblyId>
-              <tarLongFileMode>posix</tarLongFileMode>
-            </configuration>
             <executions>
               <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/cosmos.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-cosmos</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
                 <phase>package</phase>
                 <goals>
                   <goal>single</goal>
@@ -127,16 +127,16 @@ LICENSE file.
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-assembly-plugin</artifactId>
             <version>${maven.assembly.version}</version>
-            <configuration>
-              <descriptors>
-                <descriptor>src/main/assembly/spanner.xml</descriptor>
-              </descriptors>
-              <finalName>ycsb-spanner</finalName>
-              <appendAssemblyId>false</appendAssemblyId>
-              <tarLongFileMode>posix</tarLongFileMode>
-            </configuration>
             <executions>
               <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/spanner.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-spanner</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
                 <phase>package</phase>
                 <goals>
                   <goal>single</goal>
@@ -162,16 +162,16 @@ LICENSE file.
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-assembly-plugin</artifactId>
             <version>${maven.assembly.version}</version>
-            <configuration>
-              <descriptors>
-                <descriptor>src/main/assembly/jdbc.xml</descriptor>
-              </descriptors>
-              <finalName>ycsb-jdbc</finalName>
-              <appendAssemblyId>false</appendAssemblyId>
-              <tarLongFileMode>posix</tarLongFileMode>
-            </configuration>
             <executions>
               <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/jdbc.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-jdbc</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
                 <phase>package</phase>
                 <goals>
                   <goal>single</goal>
@@ -197,16 +197,16 @@ LICENSE file.
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-assembly-plugin</artifactId>
             <version>${maven.assembly.version}</version>
-            <configuration>
-              <descriptors>
-                <descriptor>src/main/assembly/s3.xml</descriptor>
-              </descriptors>
-              <finalName>ycsb-s3</finalName>
-              <appendAssemblyId>false</appendAssemblyId>
-              <tarLongFileMode>posix</tarLongFileMode>
-            </configuration>
             <executions>
               <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/s3.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-s3</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
                 <phase>package</phase>
                 <goals>
                   <goal>single</goal>
@@ -235,16 +235,16 @@ LICENSE file.
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-assembly-plugin</artifactId>
             <version>${maven.assembly.version}</version>
-            <configuration>
-              <descriptors>
-                <descriptor>src/main/assembly/distribution.xml</descriptor>
-              </descriptors>
-              <finalName>ycsb-couchbase</finalName>
-              <appendAssemblyId>false</appendAssemblyId>
-              <tarLongFileMode>posix</tarLongFileMode>
-            </configuration>
             <executions>
               <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/distribution.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-couchbase</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
                 <phase>package</phase>
                 <goals>
                   <goal>single</goal>

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010 Yahoo! Inc. All rights reserved.
+ * Copyright (c) 2016 YCSB contributors. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you
  * may not use this file except in compliance with the License. You
@@ -14,26 +14,9 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
-
-package com.yahoo.ycsb.generator;
-
-import org.testng.annotations.Test;
-
-import static org.testng.AssertJUnit.assertFalse;
-
-
-public class TestZipfianGenerator {
-    @Test
-    public void testMinAndMaxParameter() {
-        long min = 5;
-        long max = 10;
-        ZipfianGenerator zipfian = new ZipfianGenerator(min, max);
-
-        for (int i = 0; i < 10000; i++) {
-            long rnd = zipfian.nextValue();
-            assertFalse(rnd < min);
-            assertFalse(rnd > max);
-        }
-
-    }
-}
+/**
+ * This package contains a collection of database-specific overrides. This accounts for the variance
+ * that can be present where JDBC does not explicitly define what a database must do or when a
+ * database has a non-standard SQL implementation.
+ */
+package site.ycsb.db.jdbc.flavors;

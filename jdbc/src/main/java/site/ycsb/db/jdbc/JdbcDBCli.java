@@ -14,7 +14,7 @@
  * permissions and limitations under the License. See accompanying 
  * LICENSE file. 
  */
-package site.ycsb.db;
+package site.ycsb.db.jdbc;
 
 import java.io.FileInputStream;
 import java.io.IOException;

@@ -57,7 +57,7 @@ YCSB has a utility to help create your SQL table. NOTE: It does not support all 
 <<<<<<< HEAD
 java -cp YCSB_HOME/jdbc-binding/lib/jdbc-binding-0.4.0.jar:mysql-connector-java-5.1.37-bin.jar com.yahoo.ycsb.db.JdbcDBCreateTable -P db.properties -n usertable
 =======
-java -cp YCSB_HOME/jdbc-binding/lib/jdbc-binding-0.4.0.jar:mysql-connector-java-5.1.37-bin.jar site.ycsb.db.JdbcDBCreateTable -P db.properties -n usertable
+java -cp YCSB_HOME/jdbc-binding/lib/jdbc-binding-0.4.0.jar:mysql-connector-java-5.1.37-bin.jar site.ycsb.db.jdbc.JdbcDBCreateTable -P db.properties -n usertable
 >>>>>>> experimental
 ```
 

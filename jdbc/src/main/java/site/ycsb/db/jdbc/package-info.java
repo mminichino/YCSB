@@ -1,5 +1,5 @@
-/**
- * Copyright (c) 2016 YCSB contributors. All rights reserved.
+/*
+ * Copyright (c) 2014 - 2016, Yahoo!, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you
  * may not use this file except in compliance with the License. You
@@ -14,9 +14,9 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
+
 /**
- * This package contains a collection of database-specific overrides. This accounts for the variance
- * that can be present where JDBC does not explicitly define what a database must do or when a
- * database has a non-standard SQL implementation.
+ * The YCSB binding for stores that can be accessed via JDBC.
  */
-package site.ycsb.db.flavors;
+package site.ycsb.db.jdbc;
+
