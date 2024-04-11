@@ -42,7 +42,7 @@ do
   LOAD_OPTS="-db site.ycsb.db.jdbc.JdbcDBClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -p core_workload_insertion_retry_limit=10 -s -load"
   RUN_OPTS="-db site.ycsb.db.jdbc.JdbcDBClient -P conf/db.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
 
-  java -cp "$CLASSPATH" site.ycsb.db.JdbcDBCreateTable -P conf/db.properties -n usertable
+  java -cp "$CLASSPATH" site.ycsb.db.jdbc.JdbcDBCreateTable -P conf/db.properties -n usertable
   java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
   java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
 done
