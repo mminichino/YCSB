@@ -24,6 +24,9 @@
 
 package site.ycsb.db.redis;
 
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
+import org.slf4j.LoggerFactory;
+import redis.clients.jedis.Connection;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -31,7 +34,6 @@ import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisCluster;
-import redis.clients.jedis.Protocol;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -53,11 +55,11 @@ public class RedisClient extends DB {
 
   private JedisCluster jedis;
 
+  private static final ch.qos.logback.classic.Logger LOGGER =
+      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("site.ycsb.db.redis.RedisClient");
   public static final String HOST_PROPERTY = "redis.endpoints";
-  public static final String PORT_PROPERTY = "redis.port";
+  public static final String USERNAME_PROPERTY = "redis.username";
   public static final String PASSWORD_PROPERTY = "redis.password";
-  public static final String CLUSTER_PROPERTY = "redis.cluster";
-  public static final String TIMEOUT_PROPERTY = "redis.timeout";
 
   public static final String INDEX_KEY = "_indices";
 
@@ -72,21 +74,18 @@ public class RedisClient extends DB {
       String[] host = endpoint.split(":");
       String hostname = host[0];
       int portNumber = Integer.parseInt(host[1]);
+      LOGGER.info(String.format("Adding node %s port %d", hostname, portNumber));
       jedisClusterNodes.add(new HostAndPort(hostname, portNumber));
     }
 
-    jedis = new JedisCluster(jedisClusterNodes);
-
     String password = props.getProperty(PASSWORD_PROPERTY);
+    GenericObjectPoolConfig<Connection> pool = new GenericObjectPoolConfig<>();
 
+    jedis = new JedisCluster(jedisClusterNodes);
   }
 
   public void cleanup() throws DBException {
-    try {
-      ((Closeable) jedis).close();
-    } catch (IOException e) {
-      throw new DBException("Closing connection failed.");
-    }
+    jedis.close();
   }
 
   /*
