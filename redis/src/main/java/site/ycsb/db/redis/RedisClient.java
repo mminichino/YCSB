@@ -22,18 +22,15 @@
  * operations, all keys are saved (by an arbitrary hash) in a sorted set.
  */
 
-package site.ycsb.db;
+package site.ycsb.db.redis;
 
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
-import redis.clients.jedis.BasicCommands;
 import redis.clients.jedis.HostAndPort;
-import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisCluster;
-import redis.clients.jedis.JedisCommands;
 import redis.clients.jedis.Protocol;
 
 import java.io.Closeable;
@@ -54,9 +51,9 @@ import java.util.Vector;
  */
 public class RedisClient extends DB {
 
-  private JedisCommands jedis;
+  private JedisCluster jedis;
 
-  public static final String HOST_PROPERTY = "redis.host";
+  public static final String HOST_PROPERTY = "redis.endpoints";
   public static final String PORT_PROPERTY = "redis.port";
   public static final String PASSWORD_PROPERTY = "redis.password";
   public static final String CLUSTER_PROPERTY = "redis.cluster";
@@ -66,35 +63,22 @@ public class RedisClient extends DB {
 
   public void init() throws DBException {
     Properties props = getProperties();
-    int port;
 
-    String portString = props.getProperty(PORT_PROPERTY);
-    if (portString != null) {
-      port = Integer.parseInt(portString);
-    } else {
-      port = Protocol.DEFAULT_PORT;
-    }
-    String host = props.getProperty(HOST_PROPERTY);
+    String endpoints = props.getProperty(HOST_PROPERTY);
+    String[] endpointsArray = endpoints.split(",");
 
-    boolean clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
-    if (clusterEnabled) {
-      Set<HostAndPort> jedisClusterNodes = new HashSet<>();
-      jedisClusterNodes.add(new HostAndPort(host, port));
-      jedis = new JedisCluster(jedisClusterNodes);
-    } else {
-      String redisTimeout = props.getProperty(TIMEOUT_PROPERTY);
-      if (redisTimeout != null){
-        jedis = new Jedis(host, port, Integer.parseInt(redisTimeout));
-      } else {
-        jedis = new Jedis(host, port);
-      }
-      ((Jedis) jedis).connect();
+    Set<HostAndPort> jedisClusterNodes = new HashSet<>();
+    for (String endpoint : endpointsArray) {
+      String[] host = endpoint.split(":");
+      String hostname = host[0];
+      int portNumber = Integer.parseInt(host[1]);
+      jedisClusterNodes.add(new HostAndPort(hostname, portNumber));
     }
+
+    jedis = new JedisCluster(jedisClusterNodes);
 
     String password = props.getProperty(PASSWORD_PROPERTY);
-    if (password != null) {
-      ((BasicCommands) jedis).auth(password);
-    }
+
   }
 
   public void cleanup() throws DBException {
@@ -165,13 +149,13 @@ public class RedisClient extends DB {
 
   @Override
   public Status scan(String table, String startkey, int recordcount,
-      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-    Set<String> keys = jedis.zrangeByScore(INDEX_KEY, hash(startkey),
+                     Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
+    List<String> keys = jedis.zrangeByScore(INDEX_KEY, hash(startkey),
         Double.POSITIVE_INFINITY, 0, recordcount);
 
     HashMap<String, ByteIterator> values;
     for (String key : keys) {
-      values = new HashMap<String, ByteIterator>();
+      values = new HashMap<>();
       read(table, key, fields, values);
       result.add(values);
     }

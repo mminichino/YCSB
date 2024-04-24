@@ -163,6 +163,7 @@ LICENSE file.
     <module>googlefirestore</module>
     <module>azurecosmos</module>
     <module>cloudspanner</module>
+    <module>redis</module>
   </modules>
 
   <build>
@@ -336,6 +337,15 @@ LICENSE file.
       </activation>
       <modules>
         <module>couchbase3</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>redis</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>redis</module>
       </modules>
     </profile>
   </profiles>

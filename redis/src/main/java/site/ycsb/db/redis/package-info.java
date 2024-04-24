@@ -18,5 +18,4 @@
 /**
  * The YCSB binding for <a href="http://redis.io/">Redis</a>.
  */
-package site.ycsb.db;
-
+package site.ycsb.db.redis;

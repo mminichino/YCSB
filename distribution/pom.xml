@@ -226,9 +226,6 @@ LICENSE file.
     </profile>
     <profile>
       <id>couchbase</id>
-      <activation>
-        <activeByDefault>true</activeByDefault>
-      </activation>
       <build>
         <plugins>
           <plugin>
@@ -258,6 +255,41 @@ LICENSE file.
         <dependency>
           <groupId>site.ycsb</groupId>
           <artifactId>couchbase3-binding</artifactId>
+          <version>${project.version}</version>
+        </dependency>
+      </dependencies>
+    </profile>
+    <profile>
+      <id>redis</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>${maven.assembly.version}</version>
+            <executions>
+              <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/redis.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-redis</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <dependencies>
+        <dependency>
+          <groupId>site.ycsb</groupId>
+          <artifactId>redis-binding</artifactId>
           <version>${project.version}</version>
         </dependency>
       </dependencies>
