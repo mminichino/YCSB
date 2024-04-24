@@ -9,7 +9,6 @@ import java.nio.file.Paths;
 import java.util.Properties;
 
 import com.google.gson.JsonObject;
-import org.slf4j.LoggerFactory;
 import site.ycsb.REST;
 
 /**
@@ -17,8 +16,6 @@ import site.ycsb.REST;
  */
 public final class CreateDatabase {
 
-  private static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("site.ycsb.db.redis.CreateDatabase");
   public static final String HOST_PROPERTY = "redis.endpoints";
   public static final String USERNAME_PROPERTY = "redis.username";
   public static final String PASSWORD_PROPERTY = "redis.password";
@@ -70,7 +67,7 @@ public final class CreateDatabase {
     String username = properties.getProperty(USERNAME_PROPERTY);
     String password = properties.getProperty(PASSWORD_PROPERTY);
 
-    LOGGER.info(String.format("Connecting to %s as %s", hostname, username));
+    System.err.printf("Creating database on %s as user %s", hostname, username);
 
     String endpoint = "/v1/bdbs";
     REST client = new REST(hostname, username, password, true, 9443);

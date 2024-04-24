@@ -35,8 +35,6 @@ import site.ycsb.StringByteIterator;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisCluster;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.HashSet;
