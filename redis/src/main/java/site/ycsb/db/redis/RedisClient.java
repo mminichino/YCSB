@@ -72,7 +72,6 @@ public class RedisClient extends DB {
       String[] host = endpoint.split(":");
       String hostname = host[0];
       int portNumber = Integer.parseInt(host[1]);
-      LOGGER.info(String.format("Adding node %s port %d", hostname, portNumber));
       jedisClusterNodes.add(new HostAndPort(hostname, portNumber));
     }
 
