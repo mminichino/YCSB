@@ -36,7 +36,7 @@ public final class CreateDatabase {
       cmd = parser.parse(options, args);
     } catch (ParseException e) {
       System.out.println(e.getMessage());
-      formatter.printHelp("ClusterInit", options);
+      formatter.printHelp("CreateDatabase", options);
       System.exit(1);
     }
 
@@ -67,7 +67,7 @@ public final class CreateDatabase {
     String username = properties.getProperty(USERNAME_PROPERTY);
     String password = properties.getProperty(PASSWORD_PROPERTY);
 
-    System.err.printf("Creating database on %s as user %s", hostname, username);
+    System.err.printf("Creating database on %s as user %s\n", hostname, username);
 
     String endpoint = "/v1/bdbs";
     REST client = new REST(hostname, username, password, true, 9443);
@@ -97,7 +97,7 @@ public final class CreateDatabase {
     settings.addProperty("oss_cluster_api_preferred_ip_type", "external");
     settings.add("shard_key_regex", shardConfig);
     settings.addProperty("data_persistence", "aof");
-    settings.addProperty("memory_size", 1073741824);
+    settings.addProperty("memory_size", 8589934592L);
     settings.addProperty("name", "ycsb");
     settings.addProperty("port", 12000);
     settings.addProperty("proxy_policy", "all-nodes");

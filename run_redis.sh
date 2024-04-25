@@ -39,11 +39,11 @@ shift $((OPTIND -1))
 for run_workload in {a..f}
 do
   workload="workloads/workload${run_workload}"
-  LOAD_OPTS="-db site.ycsb.db.redis.RedisClient -P conf/redis.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -s -load"
-  RUN_OPTS="-db site.ycsb.db.redis.RedisClient -P conf/redis.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
+  LOAD_OPTS="-db site.ycsb.db.redis.RedisClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -s -load"
+  RUN_OPTS="-db site.ycsb.db.redis.RedisClient -P conf/db.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
 
-  java -cp "$CLASSPATH" site.ycsb.db.redis.CreateDatabase -P conf/db.properties
+  java -cp "$CLASSPATH" site.ycsb.db.redis.CreateDatabase -p conf/db.properties
   java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
   java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
-  java -cp "$CLASSPATH" site.ycsb.db.redis.DeleteDatabase -P conf/db.properties
+  java -cp "$CLASSPATH" site.ycsb.db.redis.DeleteDatabase -p conf/db.properties
 done

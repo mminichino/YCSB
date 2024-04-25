@@ -33,7 +33,7 @@ public final class DeleteDatabase {
       cmd = parser.parse(options, args);
     } catch (ParseException e) {
       System.out.println(e.getMessage());
-      formatter.printHelp("ClusterInit", options);
+      formatter.printHelp("DeleteDatabase", options);
       System.exit(1);
     }
 
@@ -64,7 +64,7 @@ public final class DeleteDatabase {
     String username = properties.getProperty(USERNAME_PROPERTY);
     String password = properties.getProperty(PASSWORD_PROPERTY);
 
-    System.err.printf("Deleting database on %s as user %s", hostname, username);
+    System.err.printf("Deleting database on %s as user %s\n", hostname, username);
 
     String endpoint = "/v1/bdbs/1";
     REST client = new REST(hostname, username, password, true, 9443);
