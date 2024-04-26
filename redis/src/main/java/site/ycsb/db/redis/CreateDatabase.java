@@ -26,8 +26,10 @@ public final class CreateDatabase {
     Properties properties = new Properties();
 
     Option source = new Option("p", "properties", true, "source properties");
+    Option replication = new Option("r", "replication", false, "enable HA");
     source.setRequired(true);
     options.addOption(source);
+    options.addOption(replication);
 
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
@@ -41,6 +43,7 @@ public final class CreateDatabase {
     }
 
     String propFile = cmd.getOptionValue("properties");
+    boolean enableHA = cmd.hasOption("replication");
 
     try {
       properties.load(Files.newInputStream(Paths.get(propFile)));
@@ -51,7 +54,7 @@ public final class CreateDatabase {
     }
 
     try {
-      createDatabase(properties);
+      createDatabase(properties, enableHA);
     } catch (Exception e) {
       System.err.println("Error: " + e);
       e.printStackTrace(System.err);
@@ -59,20 +62,23 @@ public final class CreateDatabase {
     }
   }
 
-  public static void createDatabase(Properties properties) {
+  public static void createDatabase(Properties properties, boolean enableHA) {
     String endpoints = properties.getProperty(HOST_PROPERTY);
     String[] endpointsArray = endpoints.split(",");
     String[] host = endpointsArray[0].split(":");
     String hostname = host[0];
     String username = properties.getProperty(USERNAME_PROPERTY);
     String password = properties.getProperty(PASSWORD_PROPERTY);
+    REST client = new REST(hostname, username, password, true, 9443);
 
     System.err.printf("Creating database on %s as user %s\n", hostname, username);
 
-    String endpoint = "/v1/bdbs";
-    REST client = new REST(hostname, username, password, true, 9443);
+    String endpoint = "/v1/nodes";
+    JsonArray node = client.get(endpoint).validate().jsonArray();
+    long totalMemory = node.get(0).getAsJsonObject().get("total_memory").getAsLong();
 
-    JsonObject parameters = getSettings();
+    endpoint = "/v1/bdbs";
+    JsonObject parameters = getSettings(totalMemory, enableHA);
     JsonObject result = client.jsonBody(parameters).post(endpoint).validate().json();
 
     String actionUid = result.get("action_uid").getAsString();
@@ -82,7 +88,7 @@ public final class CreateDatabase {
     }
   }
 
-  private static JsonObject getSettings() {
+  private static JsonObject getSettings(long memory, boolean enableHA) {
     JsonObject settings = new JsonObject();
     JsonArray shardConfig = new JsonArray();
     JsonObject regexA = new JsonObject();
@@ -97,14 +103,23 @@ public final class CreateDatabase {
     settings.addProperty("oss_cluster_api_preferred_ip_type", "external");
     settings.add("shard_key_regex", shardConfig);
     settings.addProperty("data_persistence", "aof");
-    settings.addProperty("memory_size", 8589934592L);
+    settings.addProperty("memory_size", memory);
     settings.addProperty("name", "ycsb");
     settings.addProperty("port", 12000);
     settings.addProperty("proxy_policy", "all-nodes");
-    settings.addProperty("replication", true);
-    settings.addProperty("slave_ha", true);
+    if (enableHA) {
+      settings.addProperty("replication", true);
+      settings.addProperty("slave_ha", true);
+    } else {
+      settings.addProperty("replication", false);
+      settings.addProperty("slave_ha", false);
+    }
     settings.addProperty("sharding", true);
-    settings.addProperty("shards_count", 2);
+    if (enableHA) {
+      settings.addProperty("shards_count", 2);
+    } else {
+      settings.addProperty("shards_count", 4);
+    }
     settings.addProperty("type", "redis");
     settings.addProperty("uid", 1);
 

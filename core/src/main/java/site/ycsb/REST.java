@@ -1,6 +1,7 @@
 package site.ycsb;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import okhttp3.*;
 import okhttp3.logging.HttpLoggingInterceptor;
@@ -147,6 +148,11 @@ public class REST {
   public JsonObject json() {
     Gson gson = new Gson();
     return gson.fromJson(new String(responseBody), JsonObject.class);
+  }
+
+  public JsonArray jsonArray() {
+    Gson gson = new Gson();
+    return gson.fromJson(new String(responseBody), JsonArray.class);
   }
 
   public REST jsonBody(JsonObject json) {
