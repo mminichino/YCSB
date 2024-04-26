@@ -26,10 +26,8 @@ public final class CreateDatabase {
     Properties properties = new Properties();
 
     Option source = new Option("p", "properties", true, "source properties");
-    Option replication = new Option("r", "replication", false, "enable HA");
     source.setRequired(true);
     options.addOption(source);
-    options.addOption(replication);
 
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
@@ -43,7 +41,6 @@ public final class CreateDatabase {
     }
 
     String propFile = cmd.getOptionValue("properties");
-    boolean enableHA = cmd.hasOption("replication");
 
     try {
       properties.load(Files.newInputStream(Paths.get(propFile)));
@@ -54,7 +51,7 @@ public final class CreateDatabase {
     }
 
     try {
-      createDatabase(properties, enableHA);
+      createDatabase(properties);
     } catch (Exception e) {
       System.err.println("Error: " + e);
       e.printStackTrace(System.err);
@@ -62,7 +59,7 @@ public final class CreateDatabase {
     }
   }
 
-  public static void createDatabase(Properties properties, boolean enableHA) {
+  public static void createDatabase(Properties properties) {
     String endpoints = properties.getProperty(HOST_PROPERTY);
     String[] endpointsArray = endpoints.split(",");
     String[] host = endpointsArray[0].split(":");
@@ -78,7 +75,7 @@ public final class CreateDatabase {
     long totalMemory = node.get(0).getAsJsonObject().get("total_memory").getAsLong();
 
     endpoint = "/v1/bdbs";
-    JsonObject parameters = getSettings(totalMemory, enableHA);
+    JsonObject parameters = getSettings(totalMemory);
     JsonObject result = client.jsonBody(parameters).post(endpoint).validate().json();
 
     String actionUid = result.get("action_uid").getAsString();
@@ -86,9 +83,14 @@ public final class CreateDatabase {
     if (!client.waitForJsonValue(actionEndpoint, "status", "completed", 30)) {
       throw new RuntimeException("timeout waiting for database creation to complete");
     }
+    try {
+      Thread.sleep(1000L);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+    }
   }
 
-  private static JsonObject getSettings(long memory, boolean enableHA) {
+  private static JsonObject getSettings(long memory) {
     JsonObject settings = new JsonObject();
     JsonArray shardConfig = new JsonArray();
     JsonObject regexA = new JsonObject();
@@ -107,19 +109,10 @@ public final class CreateDatabase {
     settings.addProperty("name", "ycsb");
     settings.addProperty("port", 12000);
     settings.addProperty("proxy_policy", "all-nodes");
-    if (enableHA) {
-      settings.addProperty("replication", true);
-      settings.addProperty("slave_ha", true);
-    } else {
-      settings.addProperty("replication", false);
-      settings.addProperty("slave_ha", false);
-    }
+    settings.addProperty("replication", true);
+    settings.addProperty("slave_ha", true);
     settings.addProperty("sharding", true);
-    if (enableHA) {
-      settings.addProperty("shards_count", 2);
-    } else {
-      settings.addProperty("shards_count", 4);
-    }
+    settings.addProperty("shards_count", 2);
     settings.addProperty("type", "redis");
     settings.addProperty("uid", 1);
 

@@ -8,7 +8,6 @@ THREADCOUNT_RUN=256
 RECORDCOUNT=1000000
 OPCOUNT=10000000
 RUNTIME=180
-EXTRA_OPT=""
 PRINT_USAGE="Usage: $0 [ -T run_time -O operations -R record_count -r ]"
 
 function print_usage {
@@ -17,7 +16,7 @@ if [ -n "$PRINT_USAGE" ]; then
 fi
 }
 
-while getopts "R:O:T:r" opt
+while getopts "R:O:T:" opt
 do
   case $opt in
     R)
@@ -28,9 +27,6 @@ do
       ;;
     T)
       RUNTIME=$OPTARG
-      ;;
-    r)
-      EXTRA_OPT="-r"
       ;;
     \?)
       print_usage
@@ -46,7 +42,7 @@ do
   LOAD_OPTS="-db site.ycsb.db.redis.RedisClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -s -load"
   RUN_OPTS="-db site.ycsb.db.redis.RedisClient -P conf/db.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
 
-  java -cp "$CLASSPATH" site.ycsb.db.redis.CreateDatabase -p conf/db.properties $EXTRA_OPT
+  java -cp "$CLASSPATH" site.ycsb.db.redis.CreateDatabase -p conf/db.properties
   java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
   java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
   java -cp "$CLASSPATH" site.ycsb.db.redis.DeleteDatabase -p conf/db.properties

@@ -70,6 +70,15 @@ public final class DeleteDatabase {
     REST client = new REST(hostname, username, password, true, 9443);
 
     client.delete(endpoint).validate();
+
+    if (!client.waitForCode(endpoint, 404, 100)) {
+      throw new RuntimeException("timeout waiting for database deletion to complete");
+    }
+    try {
+      Thread.sleep(1000L);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private DeleteDatabase() {

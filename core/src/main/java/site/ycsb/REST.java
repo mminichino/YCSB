@@ -191,6 +191,22 @@ public class REST {
     return false;
   }
 
+  public boolean waitForCode(String endpoint, int code, int retryCount) {
+    long waitFactor = 100L;
+    for (int retryNumber = 1; retryNumber <= retryCount; retryNumber++) {
+      int result = get(endpoint).code();
+      if (result == code) {
+        return true;
+      }
+      try {
+        Thread.sleep(waitFactor);
+      } catch (InterruptedException ex) {
+        Thread.currentThread().interrupt();
+      }
+    }
+    return false;
+  }
+
   public HttpUrl buildUrl(String endpoint) {
     HttpUrl.Builder builder = new HttpUrl.Builder();
     return builder.scheme(useSsl ? "https" : "http")
