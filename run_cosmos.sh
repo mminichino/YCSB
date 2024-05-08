@@ -3,12 +3,14 @@
 SCRIPT_PATH=$(dirname "$0")
 SCRIPT_ROOT=$(cd "$SCRIPT_PATH/.." && pwd)
 CLASSPATH="${SCRIPT_ROOT}/conf:${SCRIPT_ROOT}/lib/*:${SCRIPT_ROOT}/azurecosmos-binding/lib/*"
-RESOURCE_GROUP=""
+THREADCOUNT_LOAD=32
+THREADCOUNT_RUN=256
+RESOURCE_GROUP="ycsb-rg"
 RECORDCOUNT=1000000
 OPCOUNT=10000000
 RUNTIME=180
 THROUGHPUT=48000
-PRINT_USAGE="Usage: $0 [ -r resource_group | -c record_count | -w workload ]"
+PRINT_USAGE="Usage: $0 [ -r resource_group | -t throughput ]"
 
 function print_usage {
 if [ -n "$PRINT_USAGE" ]; then
@@ -48,9 +50,6 @@ do
   esac
 done
 shift $((OPTIND -1))
-
-RUN_THREADS=$(("$THROUGHPUT" / 1000))
-echo "Run threads: $RUN_THREADS"
 
 for run_workload in {a..f}
 do
