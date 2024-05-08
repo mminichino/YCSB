@@ -1,8 +1,12 @@
 #!/bin/bash
+#
+SCRIPT_PATH=$(dirname "$0")
+SCRIPT_ROOT=$(cd "$SCRIPT_PATH/.." && pwd)
+CLASSPATH="${SCRIPT_ROOT}/conf:${SCRIPT_ROOT}/lib/*:${SCRIPT_ROOT}/azurecosmos-binding/lib/*"
 RESOURCE_GROUP=""
-RECORD_COUNT=1000000
-WORKLOAD_START="a"
-WORKLOAD_END="f"
+RECORDCOUNT=1000000
+OPCOUNT=10000000
+RUNTIME=180
 THROUGHPUT=48000
 PRINT_USAGE="Usage: $0 [ -r resource_group | -c record_count | -w workload ]"
 
@@ -19,21 +23,23 @@ err_exit() {
    exit 1
 }
 
-while getopts "r:c:w:t:" opt
+while getopts "r:t:R:O:T:" opt
 do
   case $opt in
     r)
       RESOURCE_GROUP=$OPTARG
       ;;
-    c)
-      RECORD_COUNT=$OPTARG
-      ;;
-    w)
-      WORKLOAD_START=$OPTARG
-      WORKLOAD_END=$OPTARG
-      ;;
     t)
       THROUGHPUT=$OPTARG
+      ;;
+    R)
+      RECORDCOUNT=$OPTARG
+      ;;
+    O)
+      OPCOUNT=$OPTARG
+      ;;
+    T)
+      RUNTIME=$OPTARG
       ;;
     \?)
       print_usage
@@ -46,7 +52,7 @@ shift $((OPTIND -1))
 RUN_THREADS=$(("$THROUGHPUT" / 1000))
 echo "Run threads: $RUN_THREADS"
 
-for run_workload in $(eval echo "{$WORKLOAD_START..$WORKLOAD_END}")
+for run_workload in {a..f}
 do
   echo "Creating database"
   az cosmosdb sql database create \
@@ -65,19 +71,12 @@ do
   --throughput "$THROUGHPUT" >/var/tmp/cosmos.log 2>&1
   [ $? -ne 0 ] && err_exit "Error creating container"
 
-  ./bin/ycsb load azurecosmos -P conf/azurecosmos.properties \
-  -P "workloads/workload${run_workload}" \
-  -p recordcount="$RECORD_COUNT" \
-  -p core_workload_insertion_retry_limit=10 \
-  -threads $RUN_THREADS \
-  -s > "workload${run_workload}-load.dat"
-  ./bin/ycsb run azurecosmos -P conf/azurecosmos.properties \
-  -P "workloads/workload${run_workload}" \
-  -p recordcount="$RECORD_COUNT" \
-  -p operationcount=10000000 \
-  -threads $RUN_THREADS \
-  -p maxexecutiontime=180 \
-  -s > "workload${run_workload}-run.dat"
+  workload="workloads/workload${run_workload}"
+  LOAD_OPTS="-db site.ycsb.db.azurecosmos.AzureCosmosClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -s -load"
+  RUN_OPTS="-db site.ycsb.db.azurecosmos.AzureCosmosClient -P conf/db.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
+
+  java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
+  java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
 
   echo "Deleting container"
   az cosmosdb sql container delete \

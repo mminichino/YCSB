@@ -24,9 +24,9 @@ LICENSE file.
   <baseDirectory>ycsb-cosmos</baseDirectory>
   <files>
     <file>
-      <source>../azurecosmos/conf/azurecosmos.properties</source>
+      <source>../azurecosmos/conf/db.properties</source>
       <outputDirectory>conf</outputDirectory>
-      <destName>azurecosmos.properties</destName>
+      <destName>db.properties</destName>
     </file>
   </files>
   <fileSets>
@@ -42,27 +42,10 @@ LICENSE file.
     </fileSet>
     <fileSet>
       <directory>..</directory>
-      <outputDirectory>.</outputDirectory>
+      <outputDirectory>bin</outputDirectory>
       <fileMode>0755</fileMode>
       <includes>
         <include>run_cosmos.sh</include>
-        <include>setup.sh</include>
-      </includes>
-    </fileSet>
-    <fileSet>
-      <directory>../bin</directory>
-      <outputDirectory>bin</outputDirectory>
-      <fileMode>0755</fileMode>
-      <includes>
-        <include>ycsb*</include>
-      </includes>
-    </fileSet>
-    <fileSet>
-      <directory>../bin</directory>
-      <outputDirectory>bin</outputDirectory>
-      <fileMode>0644</fileMode>
-      <includes>
-        <include>bindings.properties</include>
       </includes>
     </fileSet>
     <fileSet>
@@ -97,6 +80,11 @@ LICENSE file.
         <exclude>site.ycsb:datastore-specific-descriptor</exclude>
         <exclude>site.ycsb:ycsb</exclude>
         <exclude>site.ycsb:root</exclude>
+        <exclude>site.ycsb:s3-binding</exclude>
+        <exclude>site.ycsb:googlefirestore-binding</exclude>
+        <exclude>site.ycsb:redis-binding</exclude>
+        <exclude>site.ycsb:cloudspanner-binding</exclude>
+        <exclude>site.ycsb:jdbc-binding</exclude>
       </excludes>
       <sources>
         <fileSets>

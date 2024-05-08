@@ -14,7 +14,7 @@
  * the License. See accompanying LICENSE file.
  */
 
-package site.ycsb.db;
+package site.ycsb.db.azurecosmos;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -32,7 +32,6 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
 
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.azure.cosmos.ConsistencyLevel;
@@ -63,7 +62,7 @@ import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
 
 /**
- * Azure Cosmos DB Java SDK 4.6.0 client for YCSB.
+ * Azure Cosmos DB Java SDK 4.59.0 client for YCSB.
  */
 
 public class AzureCosmosClient extends DB {
@@ -81,8 +80,8 @@ public class AzureCosmosClient extends DB {
   public static final int NUM_UPDATE_ATTEMPTS = 4;
   private static final boolean DEFAULT_INCLUDE_EXCEPTION_STACK_IN_LOG = false;
   private static final String DEFAULT_USER_AGENT = "azurecosmos-ycsb";
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(AzureCosmosClient.class);
+  protected static final ch.qos.logback.classic.Logger LOGGER =
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.azurecosmos.AzureCosmosClient");
 
   /**
    * Count the number of times initialized to teardown on the last

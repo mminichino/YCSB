@@ -18,5 +18,5 @@
 /**
  * The YCSB binding for <a href="https://azure.microsoft.com/services/cosmos-db/">Azure Cosmos</a>.
  */
-package site.ycsb.db;
+package site.ycsb.db.azurecosmos;
 
