@@ -26,7 +26,6 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Callable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -67,28 +66,21 @@ import site.ycsb.StringByteIterator;
 
 public class AzureCosmosClient extends DB {
 
+  protected static final ch.qos.logback.classic.Logger LOGGER =
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.azurecosmos.AzureCosmosClient");
   protected static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+  private static final Object INIT_COORDINATOR = new Object();
 
   // Default configuration values
   private static final ConsistencyLevel DEFAULT_CONSISTENCY_LEVEL = ConsistencyLevel.SESSION;
   private static final String DEFAULT_DATABASE_NAME = "ycsb";
   private static final boolean DEFAULT_USE_GATEWAY = false;
-  private static final boolean DEFAULT_USE_UPSERT = false;
+  private static final boolean DEFAULT_USE_UPSERT = true;
   private static final int DEFAULT_MAX_DEGREE_OF_PARALLELISM = -1;
   private static final int DEFAULT_MAX_BUFFERED_ITEM_COUNT = 0;
   private static final int DEFAULT_PREFERRED_PAGE_SIZE = -1;
   public static final int NUM_UPDATE_ATTEMPTS = 4;
-  private static final boolean DEFAULT_INCLUDE_EXCEPTION_STACK_IN_LOG = false;
   private static final String DEFAULT_USER_AGENT = "azurecosmos-ycsb";
-  protected static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.azurecosmos.AzureCosmosClient");
-
-  /**
-   * Count the number of times initialized to teardown on the last
-   * {@link #cleanup()}.
-   */
-  private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
-
   private static CosmosClient client;
   private static CosmosDatabase database;
   private static String databaseName;
@@ -96,20 +88,16 @@ public class AzureCosmosClient extends DB {
   private static int maxDegreeOfParallelism;
   private static int maxBufferedItemCount;
   private static int preferredPageSize;
-  private static boolean includeExceptionStackInLog;
   private static Map<String, CosmosContainer> containerCache;
   private static String userAgent;
 
   @Override
   public void init() throws DBException {
-    INIT_COUNT.incrementAndGet();
-
-    synchronized (INIT_COUNT) {
-      if (client != null) {
-        return;
-      }
+    synchronized (INIT_COORDINATOR) {
       try {
-        initAzureCosmosClient();
+        if (database == null) {
+          initAzureCosmosClient();
+        }
       } catch (Exception e) {
         throw new DBException(e);
       }
@@ -125,9 +113,6 @@ public class AzureCosmosClient extends DB {
     }
 
     String uri = this.getStringProperty("azurecosmos.uri", null);
-    if (primaryKey == null || primaryKey.isEmpty()) {
-      throw new DBException("Missing uri required to connect to the database.");
-    }
 
     AzureCosmosClient.userAgent = this.getStringProperty("azurecosmos.userAgent", DEFAULT_USER_AGENT);
 
@@ -143,9 +128,6 @@ public class AzureCosmosClient extends DB {
 
     AzureCosmosClient.preferredPageSize = this.getIntProperty("azurecosmos.preferredPageSize",
         DEFAULT_PREFERRED_PAGE_SIZE);
-
-    AzureCosmosClient.includeExceptionStackInLog = this.getBooleanProperty("azurecosmos.includeExceptionStackInLog",
-        DEFAULT_INCLUDE_EXCEPTION_STACK_IN_LOG);
 
     ConsistencyLevel consistencyLevel = ConsistencyLevel.valueOf(
         this.getStringProperty("azurecosmos.consistencyLevel", DEFAULT_CONSISTENCY_LEVEL.toString().toUpperCase()));
@@ -207,9 +189,6 @@ public class AzureCosmosClient extends DB {
       AzureCosmosClient.client = builder.buildClient();
       LOGGER.info("Azure Cosmos DB connection created to {}", uri);
     } catch (IllegalArgumentException e) {
-      if (!AzureCosmosClient.includeExceptionStackInLog) {
-        e = null;
-      }
       throw new DBException("Illegal argument passed in. Check the format of your parameters.", e);
     }
 
@@ -220,9 +199,6 @@ public class AzureCosmosClient extends DB {
       AzureCosmosClient.database = AzureCosmosClient.client.getDatabase(databaseName);
       AzureCosmosClient.database.read();
     } catch (CosmosException e) {
-      if (!AzureCosmosClient.includeExceptionStackInLog) {
-        e = null;
-      }
       throw new DBException(
           "Invalid database name (" + AzureCosmosClient.databaseName + ") or failed to read database.", e);
     }
@@ -285,21 +261,7 @@ public class AzureCosmosClient extends DB {
    * instance per client thread.
    */
   @Override
-  public void cleanup() throws DBException {
-    synchronized (INIT_COUNT) {
-      if (INIT_COUNT.decrementAndGet() <= 0 && AzureCosmosClient.client != null) {
-        try {
-          AzureCosmosClient.client.close();
-        } catch (Exception e) {
-          if (!AzureCosmosClient.includeExceptionStackInLog) {
-            e = null;
-          }
-          LOGGER.error("Could not close DocumentClient", e);
-        } finally {
-          AzureCosmosClient.client = null;
-        }
-      }
-    }
+  public synchronized void cleanup() {
   }
 
   /**
@@ -325,23 +287,21 @@ public class AzureCosmosClient extends DB {
           CosmosItemResponse<ObjectNode> response = container.readItem(key, new PartitionKey(key), ObjectNode.class);
           ObjectNode node = response.getItem();
           Map<String, String> stringResults = new HashMap<>(node.size());
+          Iterator<Entry<String, JsonNode>> iter = node.fields();
           if (fields == null) {
-            Iterator<Map.Entry<String, JsonNode>> iter = node.fields();
             while (iter.hasNext()) {
-              Entry<String, JsonNode> pair = iter.next();
-              stringResults.put(pair.getKey().toString(), pair.getValue().toString());
-            }
-            StringByteIterator.putAllAsByteIterators(result, stringResults);
+                Entry<String, JsonNode> pair = iter.next();
+                stringResults.put(pair.getKey(), pair.getValue().toString());
+              }
           } else {
-            Iterator<Map.Entry<String, JsonNode>> iter = node.fields();
             while (iter.hasNext()) {
               Entry<String, JsonNode> pair = iter.next();
               if (fields.contains(pair.getKey())) {
-                stringResults.put(pair.getKey().toString(), pair.getValue().toString());
+                stringResults.put(pair.getKey(), pair.getValue().toString());
               }
             }
-            StringByteIterator.putAllAsByteIterators(result, stringResults);
           }
+          StringByteIterator.putAllAsByteIterators(result, stringResults);
           return Status.OK;
         });
     } catch (Throwable e) {
@@ -385,28 +345,24 @@ public class AzureCosmosClient extends DB {
           SqlQuerySpec querySpec = new SqlQuerySpec(
               this.createSelectTop(fields, recordcount) + " FROM root r WHERE r.id >= @startkey", paramList);
           CosmosPagedIterable<ObjectNode> pagedIterable = container.queryItems(querySpec, queryOptions, ObjectNode.class);
-          Iterator<FeedResponse<ObjectNode>> pageIterator = pagedIterable
-              .iterableByPage(AzureCosmosClient.preferredPageSize).iterator();
-          while (pageIterator.hasNext()) {
-            List<ObjectNode> pageDocs = pageIterator.next().getResults();
-            for (ObjectNode doc : pageDocs) {
-              Map<String, String> stringResults = new HashMap<>(doc.size());
-              Iterator<Map.Entry<String, JsonNode>> nodeIterator = doc.fields();
-              while (nodeIterator.hasNext()) {
-                Entry<String, JsonNode> pair = nodeIterator.next();
-                stringResults.put(pair.getKey().toString(), pair.getValue().toString());
-              }
-              HashMap<String, ByteIterator> byteResults = new HashMap<>(doc.size());
-              StringByteIterator.putAllAsByteIterators(byteResults, stringResults);
-              result.add(byteResults);
+        for (FeedResponse<ObjectNode> objectNodeFeedResponse : pagedIterable
+            .iterableByPage(AzureCosmosClient.preferredPageSize)) {
+          List<ObjectNode> pageDocs = objectNodeFeedResponse.getResults();
+          for (ObjectNode doc : pageDocs) {
+            Map<String, String> stringResults = new HashMap<>(doc.size());
+            Iterator<Entry<String, JsonNode>> nodeIterator = doc.fields();
+            while (nodeIterator.hasNext()) {
+              Entry<String, JsonNode> pair = nodeIterator.next();
+              stringResults.put(pair.getKey(), pair.getValue().toString());
             }
+            HashMap<String, ByteIterator> byteResults = new HashMap<>(doc.size());
+            StringByteIterator.putAllAsByteIterators(byteResults, stringResults);
+            result.add(byteResults);
           }
+        }
           return Status.OK;
         });
     } catch (Throwable e) {
-      if (!AzureCosmosClient.includeExceptionStackInLog) {
-        e = null;
-      }
       LOGGER.error("Failed to query key {} from collection {} in database {}", startkey, table,
           AzureCosmosClient.databaseName, e);
     }
@@ -453,14 +409,15 @@ public class AzureCosmosClient extends DB {
             CosmosItemRequestOptions requestOptions = new CosmosItemRequestOptions();
             requestOptions.setIfMatchETag(readEtag);
             PartitionKey pk = new PartitionKey(key);
-            container.replaceItem(node, key, pk, requestOptions);
+            if (AzureCosmosClient.useUpsert) {
+              container.upsertItem(node, pk, new CosmosItemRequestOptions());
+            } else {
+              container.replaceItem(node, key, pk, requestOptions);
+            }
 
             return Status.OK;
           });
       } catch (Throwable e) {
-        if (!AzureCosmosClient.includeExceptionStackInLog) {
-          e = null;
-        }
         LOGGER.error("Failed to update key {} to collection {} in database {} on attempt {}", key, table,
             AzureCosmosClient.databaseName, attempt, e);
       }
@@ -506,9 +463,6 @@ public class AzureCosmosClient extends DB {
           return Status.OK;
         });
     } catch (Throwable e) {
-      if (!AzureCosmosClient.includeExceptionStackInLog) {
-        e = null;
-      }
       LOGGER.error("Failed to insert key {} to collection {} in database {}", key, table,
           AzureCosmosClient.databaseName, e);
     }
@@ -532,9 +486,6 @@ public class AzureCosmosClient extends DB {
           return Status.OK;
         });
     } catch (Exception e) {
-      if (!AzureCosmosClient.includeExceptionStackInLog) {
-        e = null;
-      }
       LOGGER.error("Failed to delete key {} in collection {}", key, table, e);
     }
     return Status.ERROR;
