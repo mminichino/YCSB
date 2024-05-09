@@ -168,7 +168,7 @@ public class AzureCosmosClient extends DB {
     }
 
     try {
-      LOGGER.info(
+      LOGGER.debug(
           "Creating Cosmos DB client {}, useGateway={}, consistencyLevel={},"
               + " maxRetryAttemptsOnThrottledRequests={}, maxRetryWaitTimeInSeconds={}"
               + " useUpsert={}, maxDegreeOfParallelism={}, maxBufferedItemCount={}, preferredPageSize={}",
@@ -187,7 +187,7 @@ public class AzureCosmosClient extends DB {
       }
 
       AzureCosmosClient.client = builder.buildClient();
-      LOGGER.info("Azure Cosmos DB connection created to {}", uri);
+      LOGGER.debug("Azure Cosmos DB connection created to {}", uri);
     } catch (IllegalArgumentException e) {
       throw new DBException("Illegal argument passed in. Check the format of your parameters.", e);
     }
