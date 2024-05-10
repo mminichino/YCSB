@@ -97,55 +97,8 @@ LICENSE file.
         <artifactId>google-collections</artifactId>
         <version>1.0</version>
       </dependency>
-      <dependency>
-        <groupId>org.slf4j</groupId>
-        <artifactId>slf4j-api</artifactId>
-        <version>2.0.12</version>
-      </dependency>
     </dependencies>
   </dependencyManagement>
-  <dependencies>
-    <dependency>
-      <groupId>com.amazonaws</groupId>
-      <artifactId>aws-java-sdk-core</artifactId>
-      <version>1.12.671</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.amazonaws</groupId>
-      <artifactId>aws-java-sdk-s3</artifactId>
-      <version>1.12.671</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.google.api</groupId>
-      <artifactId>gax</artifactId>
-      <version>2.46.1</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.google.cloud</groupId>
-      <artifactId>google-cloud-firestore</artifactId>
-      <version>3.20.0</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-      <version>2.0.12</version>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>log4j-over-slf4j</artifactId>
-      <version>2.0.12</version>
-    </dependency>
-    <dependency>
-      <groupId>ch.qos.logback</groupId>
-      <artifactId>logback-classic</artifactId>
-      <version>1.5.6</version>
-      <scope>compile</scope>
-    </dependency>
-  </dependencies>
 
   <!-- Properties Management -->
   <properties>
@@ -158,12 +111,6 @@ LICENSE file.
     <module>core</module>
     <module>binding-parent</module>
     <module>distribution</module>
-    <module>s3</module>
-    <module>jdbc</module>
-    <module>googlefirestore</module>
-    <module>azurecosmos</module>
-    <module>cloudspanner</module>
-    <module>redis</module>
   </modules>
 
   <build>
@@ -345,6 +292,20 @@ LICENSE file.
         <activeByDefault>false</activeByDefault>
       </activation>
       <modules>
+        <module>redis</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>default</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <modules>
+        <module>s3</module>
+        <module>jdbc</module>
+        <module>googlefirestore</module>
+        <module>azurecosmos</module>
+        <module>cloudspanner</module>
         <module>redis</module>
       </modules>
     </profile>

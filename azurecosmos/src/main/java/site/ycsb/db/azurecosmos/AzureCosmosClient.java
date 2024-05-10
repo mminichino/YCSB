@@ -172,7 +172,7 @@ public class AzureCosmosClient extends DB {
           "Creating Cosmos DB client {}, useGateway={}, consistencyLevel={},"
               + " maxRetryAttemptsOnThrottledRequests={}, maxRetryWaitTimeInSeconds={}"
               + " useUpsert={}, maxDegreeOfParallelism={}, maxBufferedItemCount={}, preferredPageSize={}",
-          uri, useGateway, consistencyLevel.toString(), retryOptions.getMaxRetryAttemptsOnThrottledRequests(),
+          uri, useGateway, consistencyLevel, retryOptions.getMaxRetryAttemptsOnThrottledRequests(),
           retryOptions.getMaxRetryWaitTime().toMillis() / 1000, AzureCosmosClient.useUpsert,
           AzureCosmosClient.maxDegreeOfParallelism, AzureCosmosClient.maxBufferedItemCount,
           AzureCosmosClient.preferredPageSize);

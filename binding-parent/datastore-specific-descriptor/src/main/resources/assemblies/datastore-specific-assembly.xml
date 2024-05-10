@@ -20,18 +20,13 @@ LICENSE file.
   <id>dist</id>
   <includeBaseDirectory>true</includeBaseDirectory>
   <baseDirectory>ycsb-${artifactId}-${version}</baseDirectory>
-  <files>
-    <file>
-      <source>README.md</source>
-      <outputDirectory></outputDirectory>
-    </file>
-  </files>
   <fileSets>
     <fileSet>
       <directory>..</directory>
-      <outputDirectory></outputDirectory>
+      <outputDirectory>.</outputDirectory>
       <fileMode>0644</fileMode>
       <includes>
+        <include>README.md</include>
         <include>LICENSE.txt</include>
         <include>NOTICE.txt</include>
       </includes>
@@ -77,9 +72,6 @@ LICENSE file.
       <includes>
         <include>*:jar:*</include>
       </includes>
-      <excludes>
-        <exclude>*:sources</exclude>
-      </excludes>
     </dependencySet>
   </dependencySets>
 </assembly>
