@@ -79,11 +79,6 @@ LICENSE file.
         <exclude>site.ycsb:binding-parent</exclude>
         <exclude>site.ycsb:datastore-specific-descriptor</exclude>
         <exclude>site.ycsb:ycsb</exclude>
-        <exclude>site.ycsb:root</exclude>
-        <exclude>site.ycsb:s3-binding</exclude>
-        <exclude>site.ycsb:googlefirestore-binding</exclude>
-        <exclude>site.ycsb:azurecosmos-binding</exclude>
-        <exclude>site.ycsb:cloudspanner-binding</exclude>
       </excludes>
       <sources>
         <fileSets>
