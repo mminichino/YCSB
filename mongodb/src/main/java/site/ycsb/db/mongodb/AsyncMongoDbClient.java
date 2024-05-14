@@ -14,30 +14,30 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
-package site.ycsb.db;
+package site.ycsb.db.mongodb;
 
-import static com.allanbank.mongodb.builder.QueryBuilder.where;
+import static com.mongodb.builder.QueryBuilder.where;
 
-import com.allanbank.mongodb.Durability;
-import com.allanbank.mongodb.LockType;
-import com.allanbank.mongodb.MongoClient;
-import com.allanbank.mongodb.MongoClientConfiguration;
-import com.allanbank.mongodb.MongoCollection;
-import com.allanbank.mongodb.MongoDatabase;
-import com.allanbank.mongodb.MongoDbUri;
-import com.allanbank.mongodb.MongoFactory;
-import com.allanbank.mongodb.MongoIterator;
-import com.allanbank.mongodb.ReadPreference;
-import com.allanbank.mongodb.bson.Document;
-import com.allanbank.mongodb.bson.Element;
-import com.allanbank.mongodb.bson.ElementType;
-import com.allanbank.mongodb.bson.builder.BuilderFactory;
-import com.allanbank.mongodb.bson.builder.DocumentBuilder;
-import com.allanbank.mongodb.bson.element.BinaryElement;
-import com.allanbank.mongodb.builder.BatchedWrite;
-import com.allanbank.mongodb.builder.BatchedWriteMode;
-import com.allanbank.mongodb.builder.Find;
-import com.allanbank.mongodb.builder.Sort;
+import com.mongodb.Durability;
+import com.mongodb.LockType;
+import com.mongodb.MongoClient;
+import com.mongodb.MongoClientConfiguration;
+import com.mongodb.MongoCollection;
+import com.mongodb.MongoDatabase;
+import com.mongodb.MongoDbUri;
+import com.mongodb.MongoFactory;
+import com.mongodb.MongoIterator;
+import com.mongodb.ReadPreference;
+import com.mongodb.bson.Document;
+import com.mongodb.bson.Element;
+import com.mongodb.bson.ElementType;
+import com.mongodb.bson.builder.BuilderFactory;
+import com.mongodb.bson.builder.DocumentBuilder;
+import com.mongodb.bson.element.BinaryElement;
+import com.mongodb.builder.BatchedWrite;
+import com.mongodb.builder.BatchedWriteMode;
+import com.mongodb.builder.Find;
+import com.mongodb.builder.Sort;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -52,16 +52,10 @@ import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * MongoDB asynchronous client for YCSB framework using the <a
- * href="http://www.allanbank.com/mongodb-async-driver/">Asynchronous Java
- * Driver</a>
+ * MongoDB asynchronous client for YCSB framework
  * <p>
  * See the <code>README.md</code> for configuration information.
  * </p>
- *
- * @author rjm
- * @see <a href="http://www.allanbank.com/mongodb-async-driver/">Asynchronous
- *      Java Driver</a>
  */
 public class AsyncMongoDbClient extends DB {
 
@@ -113,20 +107,7 @@ public class AsyncMongoDbClient extends DB {
    * instance per client thread.
    */
   @Override
-  public final void cleanup() throws DBException {
-    if (INIT_COUNT.decrementAndGet() == 0) {
-      try {
-        mongoClient.close();
-      } catch (final Exception e1) {
-        System.err.println("Could not close MongoDB connection pool: "
-            + e1.toString());
-        e1.printStackTrace();
-        return;
-      } finally {
-        mongoClient = null;
-        database = null;
-      }
-    }
+  public final void cleanup() {
   }
 
   /**

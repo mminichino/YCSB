@@ -14,9 +14,9 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
-package com.yahoo.ycsb.db;
+package site.ycsb.db.mongodb;
 
-import static com.yahoo.ycsb.db.OptionsSupport.updateUrl;
+import static site.ycsb.db.OptionsSupport.updateUrl;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
 

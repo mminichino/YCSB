@@ -1,12 +1,9 @@
 /**
  * Copyright (c) 2012 - 2015 YCSB contributors. All rights reserved.
- *
  * Licensed under the Apache License, Version 2.0 (the "License"); you
  * may not use this file except in compliance with the License. You
  * may obtain a copy of the License at
- *
  * http://www.apache.org/licenses/LICENSE-2.0
- *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
@@ -17,17 +14,12 @@
 
 /*
  * MongoDB client binding for YCSB.
- *
- * Submitted by Yen Pai on 5/11/2010.
- *
- * https://gist.github.com/000a66b8db2caf42467b#file_mongo_database.java
  */
-package site.ycsb.db;
+package site.ycsb.db.mongodb;
 
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
-import com.mongodb.ReadPreference;
-import com.mongodb.WriteConcern;
+import com.mongodb.*;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -42,6 +34,8 @@ import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
+
+import org.slf4j.LoggerFactory;
 
 import org.bson.Document;
 import org.bson.types.Binary;
@@ -68,8 +62,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class MongoDbClient extends DB {
 
+  protected static final ch.qos.logback.classic.Logger LOGGER =
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.mongodb.MongoDbClient");
+
   /** Used to include a field in a response. */
   private static final Integer INCLUDE = Integer.valueOf(1);
+  private static final Object INIT_COORDINATOR = new Object();
 
   /** The options to use for inserting many documents. */
   private static final InsertManyOptions INSERT_UNORDERED =
@@ -78,11 +76,6 @@ public class MongoDbClient extends DB {
   /** The options to use for inserting a single document. */
   private static final UpdateOptions UPDATE_WITH_UPSERT = new UpdateOptions()
       .upsert(true);
-
-  /**
-   * The database name to access.
-   */
-  private static String databaseName;
 
   /** The database name to access. */
   private static MongoDatabase database;
@@ -112,24 +105,10 @@ public class MongoDbClient extends DB {
   private final List<Document> bulkInserts = new ArrayList<Document>();
 
   /**
-   * Cleanup any state for this DB. Called once per DB instance; there is one DB
-   * instance per client thread.
+   * Cleanup any state for this DB
    */
   @Override
-  public void cleanup() throws DBException {
-    if (INIT_COUNT.decrementAndGet() == 0) {
-      try {
-        mongoClient.close();
-      } catch (Exception e1) {
-        System.err.println("Could not close MongoDB connection pool: "
-            + e1.toString());
-        e1.printStackTrace();
-        return;
-      } finally {
-        database = null;
-        mongoClient = null;
-      }
-    }
+  public void cleanup() {
   }
 
   /**
@@ -167,71 +146,48 @@ public class MongoDbClient extends DB {
    */
   @Override
   public void init() throws DBException {
-    INIT_COUNT.incrementAndGet();
-    synchronized (INCLUDE) {
-      if (mongoClient != null) {
-        return;
-      }
+    synchronized (INIT_COORDINATOR) {
+      if (database == null) {
+        Properties props = getProperties();
 
-      Properties props = getProperties();
+        // Set insert batchsize, default 1 - to be YCSB-original equivalent
+        batchSize = Integer.parseInt(props.getProperty("mongodb.batchsize", "1"));
 
-      // Set insert batchsize, default 1 - to be YCSB-original equivalent
-      batchSize = Integer.parseInt(props.getProperty("batchsize", "1"));
+        // Set is inserts are done as upserts. Defaults to false.
+        useUpsert = Boolean.parseBoolean(
+            props.getProperty("mongodb.upsert", "true"));
 
-      // Set is inserts are done as upserts. Defaults to false.
-      useUpsert = Boolean.parseBoolean(
-          props.getProperty("mongodb.upsert", "false"));
+        String databaseName = props.getProperty("mongodb.database", "ycsb");
 
-      // Just use the standard connection format URL
-      // http://docs.mongodb.org/manual/reference/connection-string/
-      // to configure the client.
-      String url = props.getProperty("mongodb.url", null);
-      boolean defaultedUrl = false;
-      if (url == null) {
-        defaultedUrl = true;
-        url = "mongodb://localhost:27017/ycsb?w=1";
-      }
+        // Just use the standard connection format URL
+        // http://docs.mongodb.org/manual/reference/connection-string/
+        // to configure the client.
+        String url = props.getProperty("mongodb.url", null);
 
-      url = OptionsSupport.updateUrl(url, props);
+        url = OptionsSupport.updateUrl(url, props);
 
-      if (!url.startsWith("mongodb://") && !url.startsWith("mongodb+srv://")) {
-        System.err.println("ERROR: Invalid URL: '" + url
-            + "'. Must be of the form "
-            + "'mongodb://<host1>:<port1>,<host2>:<port2>/database?options' "
-            + "or 'mongodb+srv://<host>/database?options'. "
-            + "http://docs.mongodb.org/manual/reference/connection-string/");
-        System.exit(1);
-      }
-
-      try {
-        MongoClientURI uri = new MongoClientURI(url);
-
-        String uriDb = uri.getDatabase();
-        if (!defaultedUrl && (uriDb != null) && !uriDb.isEmpty()
-            && !"admin".equals(uriDb)) {
-          databaseName = uriDb;
-        } else {
-          // If no database is specified in URI, use "ycsb"
-          databaseName = "ycsb";
-
+        if (!url.startsWith("mongodb://") && !url.startsWith("mongodb+srv://")) {
+          LOGGER.error("ERROR: Invalid URL: '{}'. Must be of the form " +
+              "'mongodb://<host1>:<port1>,<host2>:<port2>/database?options' or " +
+              "'mongodb+srv://<host>/database?options'. " +
+              "http://docs.mongodb.org/manual/reference/connection-string/", url);
         }
 
-        readPreference = uri.getOptions().getReadPreference();
-        writeConcern = uri.getOptions().getWriteConcern();
+        ServerApi serverApi = ServerApi.builder()
+            .version(ServerApiVersion.V1)
+            .build();
 
-        mongoClient = new MongoClient(uri);
-        database =
-            mongoClient.getDatabase(databaseName)
-                .withReadPreference(readPreference)
-                .withWriteConcern(writeConcern);
+        MongoClientSettings settings = MongoClientSettings.builder()
+            .applyConnectionString(new ConnectionString(url))
+            .serverApi(serverApi)
+            .build();
 
-        System.out.println("mongo client connection created with " + url);
-      } catch (Exception e1) {
-        System.err
-            .println("Could not initialize MongoDB connection pool for Loader: "
-                + e1.toString());
-        e1.printStackTrace();
-        return;
+        try (MongoClient mongoClient = MongoClients.create(settings)) {
+          database = mongoClient.getDatabase(databaseName);
+          LOGGER.debug("mongo client connection created with {}", url);
+        } catch (Exception e) {
+          LOGGER.error("mongo client connection creation failed", e);
+        }
       }
     }
   }
@@ -265,7 +221,7 @@ public class MongoDbClient extends DB {
           // this is effectively an insert, but using an upsert instead due
           // to current inability of the framework to clean up after itself
           // between test runs.
-          collection.replaceOne(new Document("_id", toInsert.get("_id")),
+          collection.updateOne(new Document("_id", toInsert.get("_id")),
               toInsert, UPDATE_WITH_UPSERT);
         } else {
           collection.insertOne(toInsert);

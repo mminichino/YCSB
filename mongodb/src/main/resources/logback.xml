@@ -16,17 +16,26 @@ permissions and limitations under the License. See accompanying
 LICENSE file.
 -->
 <configuration>
-	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-		<encoder>
-			<pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
-		</encoder>
-	</appender>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
 
-	<logger name="org.mongodb" level="WARN">
-		<appender-ref ref="STDOUT"/>
-	</logger>
+  <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+    <file>output.log</file>
+    <append>false</append>
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
 
-	<root level="INFO">
-		<appender-ref ref="STDOUT"/>
-	</root>
+  <logger name="ch.qos.logback" level="ERROR">
+    <appender-ref ref="STDOUT" />
+  </logger>
+
+  <logger name="site.ycsb.db.mongodb.MongoDbClient" level="INFO">
+    <appender-ref ref="FILE"/>
+  </logger>
+
 </configuration>

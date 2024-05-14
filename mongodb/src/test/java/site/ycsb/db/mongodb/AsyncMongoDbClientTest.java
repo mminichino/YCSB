@@ -14,19 +14,17 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
+package site.ycsb.db.mongodb;
+
+import site.ycsb.DB;
 
 /**
- * The YCSB binding for <a href="https://www.mongodb.org/">MongoDB</a>.
- * For additional details on using and configuring the binding see the 
- * accompanying <a 
- * href="https://github.com/brianfrankcooper/YCSB/blob/master/mongodb/README.md"
- * >README.md</a>.
- * <p>
- * A YCSB binding is provided for both the the
- * <a href="http://www.allanbank.com/mongodb-async-driver/">Asynchronous
- * Java Driver</a> and the MongoDB Inc.
- * <a href="http://docs.mongodb.org/ecosystem/drivers/java/">driver</a>.
- * </p>
+ * AsyncMongoDbClientTest provides runs the basic workload operations.
  */
-package site.ycsb.db;
+public class AsyncMongoDbClientTest extends MongoDbClientTest {
 
+  @Override
+  protected DB instantiateClient() {
+    return new AsyncMongoDbClient();
+  }
+}

@@ -296,6 +296,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>mongodb</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>mongodb</module>
+      </modules>
+    </profile>
+    <profile>
       <id>default</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -307,6 +316,7 @@ LICENSE file.
         <module>azurecosmos</module>
         <module>cloudspanner</module>
         <module>redis</module>
+        <module>mongodb</module>
       </modules>
     </profile>
   </profiles>

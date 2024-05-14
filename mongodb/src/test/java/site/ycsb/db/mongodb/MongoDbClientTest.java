@@ -14,7 +14,7 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
-package com.yahoo.ycsb.db;
+package site.ycsb.db.mongodb;
 
 import static org.junit.Assume.assumeNoException;
 
@@ -22,7 +22,7 @@ import java.util.Properties;
 
 import org.junit.After;
 
-import com.yahoo.ycsb.DB;
+import site.ycsb.DB;
 
 /**
  * MongoDbClientTest provides runs the basic workload operations.
