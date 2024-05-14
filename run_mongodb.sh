@@ -42,8 +42,8 @@ do
   LOAD_OPTS="-db site.ycsb.db.mongodb.MongoDbClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -s -load"
   RUN_OPTS="-db site.ycsb.db.mongodb.MongoDbClient -P conf/db.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
 
-  java -cp "$CLASSPATH" site.ycsb.db.redis.CreateDatabase -p conf/db.properties
+  java -cp "$CLASSPATH" site.ycsb.db.mongodb.CreateCollection -p conf/db.properties
   java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
   java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
-  java -cp "$CLASSPATH" site.ycsb.db.redis.DeleteDatabase -p conf/db.properties
+  java -cp "$CLASSPATH" site.ycsb.db.mongodb.DropCollection -p conf/db.properties
 done
