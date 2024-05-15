@@ -18,15 +18,18 @@
 package site.ycsb.db.mongodb;
 
 import com.mongodb.*;
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.FindIterable;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
-import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.result.InsertOneResult;
+import com.mongodb.reactivestreams.client.MongoClients;
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoCollection;
+import com.mongodb.reactivestreams.client.MongoDatabase;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
+
+import site.ycsb.db.mongodb.SubscriberHelpers.ObservableSubscriber;
+import site.ycsb.db.mongodb.SubscriberHelpers.OperationSubscriber;
+
 import site.ycsb.ByteArrayByteIterator;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
@@ -36,15 +39,8 @@ import org.slf4j.LoggerFactory;
 
 import org.bson.Document;
 import org.bson.types.Binary;
-import org.bson.BsonDocument;
-import org.bson.BsonInt64;
-import org.bson.conversions.Bson;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.Vector;
+import java.util.*;
 
 /**
  * MongoDB binding for YCSB framework using the MongoDB Inc. <a
@@ -74,9 +70,6 @@ public class MongoDbClient extends DB {
   private static volatile MongoDatabase database;
   private static volatile MongoCollection<Document> collection;
 
-  /** The default write concern for the test. */
-  private static WriteConcern writeConcern;
-
   /** If true then use updates with the upsert option for inserts. */
   private static boolean useUpsert;
 
@@ -100,18 +93,13 @@ public class MongoDbClient extends DB {
   @Override
   public Status delete(String table, String key) {
     try {
-      collection = database.getCollection(table);
-
       Document query = new Document("_id", key);
-      DeleteResult result =
-          collection.withWriteConcern(writeConcern).deleteOne(query);
-      if (result.wasAcknowledged() && result.getDeletedCount() == 0) {
-        LOGGER.error("Nothing deleted for key {}", key);
-        return Status.NOT_FOUND;
-      }
+      ObservableSubscriber<DeleteResult> subscriber = new OperationSubscriber<>();
+      collection.deleteOne(query).subscribe(subscriber);
+      subscriber.await();
       return Status.OK;
     } catch (Exception e) {
-      LOGGER.error("read transaction exception: {}", e.getMessage(), e);
+      LOGGER.error("delete exception: {}", e.getMessage(), e);
       return Status.ERROR;
     }
   }
@@ -143,8 +131,8 @@ public class MongoDbClient extends DB {
         useUpsert = Boolean.parseBoolean(
             props.getProperty("mongodb.upsert", "true"));
 
-        writeConcern =
-            setDurabilityLevel(Integer.parseInt(props.getProperty("mongodb.durability", "0")));
+        WriteConcern writeConcern = setDurabilityLevel(
+            Integer.parseInt(props.getProperty("mongodb.durability", "0")));
 
         String databaseName = props.getProperty("mongodb.database", "ycsb");
         String table = props.getProperty("mongodb.collection", "usertable");
@@ -170,9 +158,7 @@ public class MongoDbClient extends DB {
         mongoClient = MongoClients.create(settings);
         try {
           database = mongoClient.getDatabase(databaseName);
-          Bson command = new BsonDocument("ping", new BsonInt64(1));
-          database.runCommand(command);
-          collection = database.getCollection(table);
+          collection = database.getCollection(table).withWriteConcern(writeConcern);
           LOGGER.debug("mongo client connection created with {}", url);
         } catch (Exception e) {
           LOGGER.error("client init error: {}", e.getMessage(), e);
@@ -199,8 +185,6 @@ public class MongoDbClient extends DB {
   public Status insert(String table, String key,
       Map<String, ByteIterator> values) {
     try {
-      collection = database.getCollection(table);
-
       if (useUpsert) {
         Document query = new Document("_id", key);
         Document fieldsToSet = new Document();
@@ -208,13 +192,17 @@ public class MongoDbClient extends DB {
           fieldsToSet.put(entry.getKey(), entry.getValue().toString());
         }
         Document update = new Document("$set", fieldsToSet);
-        collection.updateOne(query, update, UPDATE_WITH_UPSERT);
+        ObservableSubscriber<UpdateResult> subscriber = new OperationSubscriber<>();
+        collection.updateOne(query, update, UPDATE_WITH_UPSERT).subscribe(subscriber);
+        subscriber.await();
       } else {
         Document toInsert = new Document("_id", key);
         for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
           toInsert.put(entry.getKey(), entry.getValue().toString());
         }
-        collection.insertOne(toInsert);
+        ObservableSubscriber<InsertOneResult> subscriber = new OperationSubscriber<>();
+        collection.insertOne(toInsert).subscribe(subscriber);
+        subscriber.await();
       }
 
       return Status.OK;
@@ -245,23 +233,15 @@ public class MongoDbClient extends DB {
       collection = database.getCollection(table);
       Document query = new Document("_id", key);
 
-      FindIterable<Document> findIterable = collection.find(query);
-
-      if (fields != null) {
-        Document projection = new Document();
-        for (String field : fields) {
-          projection.put(field, INCLUDE);
-        }
-        findIterable.projection(projection);
-      }
-
-      Document queryResult = findIterable.first();
+      ObservableSubscriber<Document> subscriber = new OperationSubscriber<>();
+      collection.find(query).subscribe(subscriber);
+      Document queryResult = subscriber.first();
 
       if (queryResult != null) {
         fillMap(result, queryResult);
       }
       return queryResult != null ? Status.OK : Status.NOT_FOUND;
-    } catch (Exception e) {
+    } catch (Throwable e) {
       LOGGER.error("read error: {}", e.getMessage(), e);
       return Status.ERROR;
     }
@@ -288,7 +268,6 @@ public class MongoDbClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount,
       Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-    MongoCursor<Document> cursor = null;
     try {
       collection = database.getCollection(table);
 
@@ -296,31 +275,19 @@ public class MongoDbClient extends DB {
       Document query = new Document("_id", scanRange);
       Document sort = new Document("_id", INCLUDE);
 
-      FindIterable<Document> findIterable =
-          collection.find(query).sort(sort).limit(recordcount);
+      ObservableSubscriber<Document> subscriber = new OperationSubscriber<>();
+      collection.find(query).sort(sort).limit(recordcount).subscribe(subscriber);
+      List<Document> docs = subscriber.getReceived();
 
-      if (fields != null) {
-        Document projection = new Document();
-        for (String fieldName : fields) {
-          projection.put(fieldName, INCLUDE);
-        }
-        findIterable.projection(projection);
-      }
-
-      cursor = findIterable.iterator();
-
-      if (!cursor.hasNext()) {
-        System.err.println("Nothing found in scan for key " + startkey);
+      if (docs.isEmpty()) {
+        LOGGER.error("Nothing found in scan for key {}", startkey);
         return Status.ERROR;
       }
 
-      result.ensureCapacity(recordcount);
-
-      while (cursor.hasNext()) {
+      for (Document obj : docs) {
         HashMap<String, ByteIterator> resultMap =
             new HashMap<>();
 
-        Document obj = cursor.next();
         fillMap(resultMap, obj);
 
         result.add(resultMap);
@@ -330,10 +297,6 @@ public class MongoDbClient extends DB {
     } catch (Exception e) {
       LOGGER.error("scan error: {}", e.getMessage(), e);
       return Status.ERROR;
-    } finally {
-      if (cursor != null) {
-        cursor.close();
-      }
     }
   }
 
@@ -364,11 +327,9 @@ public class MongoDbClient extends DB {
       }
       Document update = new Document("$set", fieldsToSet);
 
-      UpdateResult result = collection.updateOne(query, update);
-      if (result.wasAcknowledged() && result.getMatchedCount() == 0) {
-        System.err.println("Nothing updated for key " + key);
-        return Status.NOT_FOUND;
-      }
+      ObservableSubscriber<UpdateResult> subscriber = new OperationSubscriber<>();
+      collection.updateOne(query, update, UPDATE_WITH_UPSERT).subscribe(subscriber);
+      subscriber.await();
       return Status.OK;
     } catch (Exception e) {
       LOGGER.error("update error: {}", e.getMessage(), e);
