@@ -1,18 +1,21 @@
-# Couchbase Driver for YCSB 2.0.0
-This driver is a binding for the YCSB facilities to operate against a Couchbase Server cluster. It uses the official
-Couchbase Java SDK (version 3.x) and provides a rich set of configuration options.
+# Couchbase YCSB 2.0.0
+This pacakge is a YCSB implementation to test against a Couchbase cluster. It uses YCSB core 0.18.0 and the Couchbase Java SDK v3.5.
+
+## Requirements
+- Java 11 or higher
+- Linux, macOS, or Windows load generator system (8 cores / 32GB RAM minimum recommended)
+- Couchbase Server or Couchbase Capella
 
 ## Quickstart
 
 ### 1. Start Couchbase Server
-You need to start a single node or a cluster to point the client at. Please see [http://couchbase.com](couchbase.com)
-for more details and instructions.
+You will need a Couchbase cluster for testing. Please see either the documentation on [Couchbase Server](https://docs.couchbase.com/home/server.html) for self-managed deployments or [Couchbase Capella](https://docs.couchbase.com/cloud/index.html)
+for public cloud based DBaaS deployments.
 
 ### 2. Set up YCSB
-You can either download the release zip and run it, or just clone from master.
-
+Download the distribution to begin testing.
 ```
-curl -OLs https://github.com/couchbaselabs/ycsb-couchbase/releases/download/1.0.1/ycsb-couchbase.zip
+curl -OLs https://github.com/mminichino/YCSB/releases/download/2.0.0/ycsb-couchbase.zip
 ```
 ```
 unzip ycsb-couchbase.zip
@@ -20,113 +23,116 @@ unzip ycsb-couchbase.zip
 ```
 cd ycsb-couchbase
 ```
+On Linux/macOS:
 ```
-sudo ./setup.sh
+vi conf/db.properties
 ```
-
-### Manual Setup
-The bucket and index automation in the helper script requires the ```cbc``` CLI that is part of ```libcouchbase```. You can 
-read about it [here](https://docs.couchbase.com/c-sdk/current/hello-world/cbc.html).
-
-First create a repo configuration for your Linux distribution per the [documentation](https://docs.couchbase.com/c-sdk/current/hello-world/start-using-sdk.html) and then install the packages.
-To install it on Red Hat/CentOS Linux:
-
+On Windows:
 ```
-yum install -y libcouchbase3 libcouchbase-devel libcouchbase3-tools
+notepad conf\db.properties
 ```
-
-For Debian type systems such as Ubuntu:
-
+On Linux/macOS:
 ```
-apt-get install -y libcouchbase3 libcouchbase-dev libcouchbase3-tools libcouchbase-dbg libcouchbase3-libev libcouchbase3-libevent
+bin/run.sh
+```
+On Windows:
+```
+bin\run.bat
 ```
 
-Additionally, the helper script requires the ```jq``` and ```python3``` packages if not already installed.
-
-### 3. Run the Tests (A-F)
+### 3. Run a specific test
 
 ```
-./run_cb.sh -h cbnode-0000.domain.com -u user -p password 
-```
-
-To use SSL to connect to the cluster:
-
-```
-./run_cb.sh -h cbnode-0000.domain.com -s -u user -p password
-```
-
-YCSB requires the use of Maven 3; if you use Maven 2, you may see [errors
-such as these](https://github.com/brianfrankcooper/YCSB/issues/406).
-
-```
-./run_cb.sh -h cbnode-0000.domain.com -u user -p password -w a
-```
-
-### Manual Mode
-
-To just create the bucket:
-```
-./run_cb.sh -h cbnode-0000.domain.com -B
-```
-
-To just create the index:
-```
-./run_cb.sh -h cbnode-0000.domain.com -I
-```
-
-To run a data load:
-```
-./run_cb.sh -h cbnode-0000.domain.com -s -M -l -w a
-```
-
-To run a scenario:
-```
-./run_cb.sh -h cbnode-0000.domain.com -s -M -r -w a
-```
-
-To manually load data (without any script automation - i.e. if ```cbc``` isn't installed):
-```
-./run_cb.sh -h cbnode-0000.domain.com -s -Z -M -l -w a
-```
-
-To manually run a scenario (without any automation):
-```
-./run_cb.sh -h cbnode-0000.domain.com -s -Z -M -r -w a
+bin/run.sh -w workloads/workloada
 ```
 
 ## Capella
-For Couchbase Capella (Couchbase hosted DBaaS) you will need to create a bucket named "ycsb" before you run the test(s).
-This is because Capella database users do not have sufficient permissions to operate on buckets. You will also need to 
-use SSL to connect. You can provide the name given on the Capella portal as the host. The helper utility will get the SRV 
-records and extract a node name to use for the host parameter.
+The bucket automation for Capella uses the v4 public API. To use the automation, create an API key in the Capella UI and save it to a file named ```default-api-key-token.txt``` in a directory named ```.capella``` in either $HOME (Linux/macOS) or %userprofile% (Windows).
 
+Uncomment the project and database properties in the config file and set them to match the project and database names as configured in Capella for the database you want to use for testing.
+
+For the hostname property, use the ```cb.abcxyz.cloud.couchbase.com``` name provided in the UI - note: *omit* the prefix ```couchbases://```.
+
+On Linux/macOS
 ```
-./run_cb.sh -h cb.abcdefg.cloud.couchbase.com -s -u dbuser -p password 
+% mkdir .capella
+% vi .capella/default-api-key-token.txt
 ```
+
+On Windows
+```
+C:\Users\Username> mkdir .capella
+C:\Users\Username> cd .capella
+C:\Users\Username\.capella> notepad default-api-key-token.txt
+```
+
+Edit properties
+````
+couchbase.project=ycsb-capella
+couchbase.database=testdb01
+````
+
+## Database Credentials
+To use the automation, be sure to use credentials that have permission to create and mange buckets and indexes. While this test suite should not interfere with other buckets in a cluster, it will consume cluster resources, so it is advisable to make sure that the test operations are the only operations being performed against the cluster. It is also a best practice to not use a production cluster that is being used for production operations.
+
+## Run script options
+| Option        | Description                                                                 |
+|---------------|-----------------------------------------------------------------------------|
+| -w WORKLOAD   | Path to workload definition file                                            |
+| -l            | Only load data (don't do run phase)                                         |
+| -r            | Only run test (don't do load phase - requires previously loaded data)       |
+| -R RECORDS    | Record count (number of records to load)                                    |
+| -O OPERATIONS | Operation count (number of transaction to perform in run phase)             |
+| -T TIME       | Stop run after this amount of time (in seconds)                             |
+| -M            | Manual mode - bucket and index (for workload E) have to be created manually |
+| -S            | Enable statistics collection during the test                                |
 
 ## Configuration Options
-Since no setup is the same and the goal of YCSB is to deliver realistic benchmarks, here are some setups that you can
-tune. Note that if you need more flexibility (let's say a custom transcoder), you still need to extend this driver and
-implement the facilities on your own.
+Under normal circumstances you should only need to set the hostname, username, and password properties. If you are using a cluster that was just built for testing with default settings then technically you just need to set the hostname parameter. For Capella, you should at least set the hostname, username, password, project and database properties.
 
-You can set the following properties (with the default settings applied):
+| Property                 | Default       | Description                                                                       |
+|--------------------------|---------------|-----------------------------------------------------------------------------------|
+| statistics.enable        | false         | Enable statistics collection and reporting                                        |
+| couchbase.hostname       | 127.0.0.1     | Connect hostname or IP address                                                    |
+| couchbase.bucket         | ycsb          | Test bucket                                                                       |
+| couchbase.scope          | _default      | Test scope                                                                        |
+| couchbase.collection     | _default      | Test collection                                                                   |
+| couchbase.username       | Administrator | Database credential username                                                      |
+| couchbase.password       | password      | Database credential password                                                      |
+| couchbase.bucketType     | 0             | Create bucket of type Couchstore (0) or Magma (1)                                 |
+| couchbase.replicaNum     | 1             | Replica number for bucket                                                         |
+| couchbase.project        | test-project  | Capella project name                                                              |
+| couchbase.database       | cbdb01        | Capella database name                                                             |
+| couchbase.durability     | 0             | Durability None (0) Majority (1) Persist to Active (2) or Persist to Majority (3) |
+| couchbase.adhoc          | false         | If true queries will not use a pre-generated plan                                 |
+| couchbase.maxParallelism | 0             | Set maximum parallelism for queries                                               |
+| couchbase.kvEndpoints    | 4             | Set the number of KV endpoints for data operations                                |
+| couchbase.sslMode        | true          | Use SSL (true) or do not use SSL (false)                                          |
+| couchbase.kvTimeout      | 5             | Timeout for KV operations                                                         |
+| couchbase.connectTimeout | 5             | Timeout for connections                                                           |
+| couchbase.queryTimeout   | 75            | Timeout for query operations                                                      |
+| couchbase.mode           | default       | Test mode either normal (default) or array append (array)                         |
+| couchbase.ttlSeconds     | 0             | Document TTL                                                                      |
+| couchbase.eventing       | timestamp.js  | Experimental future feature to create an Eventing function                        |
 
-- couchbase.host=127.0.0.1: The hostname from one server.
-- couchbase.bucket=ycsb: The bucket name to use.
-- couchbase.scope=_default: The scope to use.
-- couchbase.collection=_default: The collection to use.
-- couchbase.password=: The password of the bucket.
-- couchbase.durability=: Durability level to use.
-- couchbase.persistTo=0: Persistence durability requirement
-- couchbase.replicateTo=0: Replication durability requirement
-- couchbase.upsert=false: Use upsert instead of insert or replace.
-- couchbase.adhoc=false: If set to true, prepared statements are not used.
-- couchbase.maxParallelism=1: The server parallelism for all n1ql queries.
-- couchbase.kvEndpoints=1: The number of KV sockets to open per server.
-- couchbase.sslMode=false: Set to ```true``` to use SSL to connect to the cluster.
-- couchbase.sslNoVerify=true: Set to ```false``` to check the SSL server certificate.
-- couchbase.certificateFile=: Path to file containing certificates to trust.
-- couchbase.kvTimeout=2000: KV operation timeout (milliseconds)
-- couchbase.queryTimeout=14000: Query timeout (milliseconds)
-- couchbase.mode=DEFAULT: Test operating mode (DEFAULT or ARRAY).
-- couchbase.ttlSeconds=0: Set document expiration (TTL) in seconds.
+## Manual mode
+Linux or macOS:
+```
+java -cp "$(pwd)/lib/*" site.ycsb.db.couchbase3.ClusterInit -p conf/db.properties
+```
+```
+bin/run.sh -M -w workloads/workloada
+```
+```
+java -cp "$(pwd)/lib/*" site.ycsb.db.couchbase3.ClusterClean -p conf/db.properties
+```
+Windows:
+```
+java -cp "lib\*" site.ycsb.db.couchbase3.ClusterInit -p conf\db.properties
+```
+```
+.\bin\run.bat -M -w .\workloads\workloada
+```
+```
+java -cp "lib\*" site.ycsb.db.couchbase3.ClusterClean -p conf\db.properties
+```
