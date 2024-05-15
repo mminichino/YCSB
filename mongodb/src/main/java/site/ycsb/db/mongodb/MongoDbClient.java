@@ -273,11 +273,10 @@ public class MongoDbClient extends DB {
 
       Document scanRange = new Document("$gte", startkey);
       Document query = new Document("_id", scanRange);
-      Document sort = new Document("_id", INCLUDE);
 
       ObservableSubscriber<Document> subscriber = new OperationSubscriber<>();
-      collection.find(query).sort(sort).limit(recordcount).subscribe(subscriber);
-      List<Document> docs = subscriber.getReceived();
+      collection.find(query).limit(recordcount).subscribe(subscriber);
+      List<Document> docs = subscriber.get();
 
       if (docs.isEmpty()) {
         LOGGER.error("Nothing found in scan for key {}", startkey);
