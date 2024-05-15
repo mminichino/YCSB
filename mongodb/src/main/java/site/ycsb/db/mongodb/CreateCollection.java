@@ -77,7 +77,7 @@ public final class CreateCollection {
     try (MongoClient mongoClient = MongoClients.create(settings)) {
       MongoDatabase database = mongoClient.getDatabase(databaseName);
       database.createCollection(collection);
-      System.out.printf("Created collection %s", collection);
+      System.err.printf("Created collection %s", collection);
     } catch (Exception e) {
       System.err.printf("mongo collection creation failed: %s\n", e.getMessage());
       e.printStackTrace(System.err);
