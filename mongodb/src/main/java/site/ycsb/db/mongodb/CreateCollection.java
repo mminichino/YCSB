@@ -32,8 +32,11 @@ public final class CreateCollection {
     Properties properties = new Properties();
 
     Option source = new Option("p", "properties", true, "source properties");
+    Option shard = new Option("s", "shard", false, "sharded database");
     source.setRequired(true);
+    shard.setRequired(false);
     options.addOption(source);
+    options.addOption(shard);
 
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
@@ -57,7 +60,7 @@ public final class CreateCollection {
     }
 
     try {
-      createCollection(properties);
+      createCollection(properties, cmd.hasOption("shard"));
     } catch (Exception e) {
       System.err.println("Error: " + e);
       e.printStackTrace(System.err);
@@ -65,7 +68,7 @@ public final class CreateCollection {
     }
   }
 
-  public static void createCollection(Properties properties) {
+  public static void createCollection(Properties properties, boolean useSharding) {
     String url = properties.getProperty(MONGO_URL_PROPERTY);
     String databaseName = properties.getProperty(MONGO_DB_PROPERTY);
     String collection = properties.getProperty(MONGO_COLLECTION_PROPERTY);
@@ -84,14 +87,16 @@ public final class CreateCollection {
       database.createCollection(collection);
       System.err.printf("Created collection %s\n", collection);
 
-      String collectionReference = String.format("%s.%s", databaseName, collection);
-      Bson command = new BsonDocument("shardCollection", new BsonString(collectionReference))
-          .append("key", new BsonDocument("_id", new BsonInt64(1)));
-      mongoClient.getDatabase("admin").runCommand(command);
-      System.err.printf("Enabled sharding on collection %s\n", collection);
+      if (useSharding) {
+        String collectionReference = String.format("%s.%s", databaseName, collection);
+        Bson command = new BsonDocument("shardCollection", new BsonString(collectionReference))
+            .append("key", new BsonDocument("_id", new BsonInt64(1)));
+        mongoClient.getDatabase("admin").runCommand(command);
+        System.err.printf("Enabled sharding on collection %s\n", collection);
 
-      String indexResult = database.getCollection(collection).createIndex(Indexes.hashed("_id"));
-      System.err.printf("Created index %s\n", indexResult);
+        String indexResult = database.getCollection(collection).createIndex(Indexes.hashed("_id"));
+        System.err.printf("Created index %s\n", indexResult);
+      }
     } catch (Exception e) {
       System.err.printf("mongo collection creation failed: %s\n", e.getMessage());
       e.printStackTrace(System.err);
