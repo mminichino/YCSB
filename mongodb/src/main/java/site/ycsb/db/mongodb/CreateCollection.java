@@ -82,16 +82,16 @@ public final class CreateCollection {
     try (MongoClient mongoClient = MongoClients.create(settings)) {
       MongoDatabase database = mongoClient.getDatabase(databaseName);
       database.createCollection(collection);
-      System.err.printf("Created collection %s", collection);
+      System.err.printf("Created collection %s\n", collection);
 
       String collectionReference = String.format("%s.%s", databaseName, collection);
       Bson command = new BsonDocument("shardCollection", new BsonString(collectionReference))
           .append("key", new BsonDocument("_id", new BsonInt64(1)));
       mongoClient.getDatabase("admin").runCommand(command);
-      System.err.printf("Enabled sharding on collection %s", collection);
+      System.err.printf("Enabled sharding on collection %s\n", collection);
 
       String indexResult = database.getCollection(collection).createIndex(Indexes.hashed("_id"));
-      System.err.printf("Created index %s", indexResult);
+      System.err.printf("Created index %s\n", indexResult);
     } catch (Exception e) {
       System.err.printf("mongo collection creation failed: %s\n", e.getMessage());
       e.printStackTrace(System.err);
