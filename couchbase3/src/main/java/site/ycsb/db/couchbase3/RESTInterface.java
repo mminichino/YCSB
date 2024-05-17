@@ -20,6 +20,7 @@ import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.regex.Pattern;
 
 /**
  * Connect To REST Interface.
@@ -158,7 +159,7 @@ public class RESTInterface {
       try {
         Gson gson = new Gson();
         JsonObject response = gson.fromJson(new String(responseBody), JsonObject.class);
-        String message = "Can not access Capella API: Response Code: " + responseCode;
+        String message = "Can not access endpoint: Response Code: " + responseCode;
         if (response.has("hint")) {
           message = message + " Hint: " + response.get("hint").getAsString();
         }
@@ -172,16 +173,18 @@ public class RESTInterface {
 
   public List<JsonElement> getCapella(String endpoint) {
     HttpUrl url = buildUrl(endpoint);
+    LOGGER.debug("GET {}", url);
     JsonObject response = get(url).validate().json();
     return new ArrayList<>(response.get("data").getAsJsonArray().asList());
   }
 
   public HttpUrl buildUrl(String endpoint) {
     HttpUrl.Builder builder = new HttpUrl.Builder();
+    Pattern removeLeadingSlashes = Pattern.compile("^/+");
     return builder.scheme(useSsl ? "https" : "http")
             .host(hostname)
             .port(port)
-            .addPathSegment(endpoint)
+            .addPathSegments(removeLeadingSlashes.matcher(endpoint).replaceFirst(""))
             .build();
   }
 
@@ -212,10 +215,11 @@ public class RESTInterface {
 
   public HttpUrl buildPageUrl(String endpoint, int page, int perPage) {
     HttpUrl.Builder builder = new HttpUrl.Builder();
+    Pattern removeLeadingSlashes = Pattern.compile("^/+");
     return builder.scheme(useSsl ? "https" : "http")
             .host(hostname)
             .port(port)
-            .addPathSegment(endpoint)
+            .addPathSegments(removeLeadingSlashes.matcher(endpoint).replaceFirst(""))
             .addQueryParameter("page", String.valueOf(page))
             .addQueryParameter("perPage", String.valueOf(perPage))
             .build();
@@ -231,6 +235,7 @@ public class RESTInterface {
 
   public List<JsonElement> getCapellaList(String endpoint) {
     HttpUrl url = buildPageUrl(endpoint, 1, 10);
+    LOGGER.debug("GET {}", url);
     JsonObject cursor = get(url).validate().json();
 
     int totalItems = cursor.get("cursor").getAsJsonObject().get("pages").getAsJsonObject().get("totalItems").getAsInt();

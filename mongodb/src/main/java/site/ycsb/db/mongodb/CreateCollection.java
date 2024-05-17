@@ -1,5 +1,6 @@
 package site.ycsb.db.mongodb;
 
+import com.mongodb.client.model.Indexes;
 import org.apache.commons.cli.*;
 
 import java.io.IOException;
@@ -11,6 +12,10 @@ import com.mongodb.*;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
+import org.bson.BsonDocument;
+import org.bson.BsonInt64;
+import org.bson.BsonString;
+import org.bson.conversions.Bson;
 
 /**
  * Prepare Collection for Testing.
@@ -78,6 +83,15 @@ public final class CreateCollection {
       MongoDatabase database = mongoClient.getDatabase(databaseName);
       database.createCollection(collection);
       System.err.printf("Created collection %s", collection);
+
+      String collectionReference = String.format("%s.%s", databaseName, collection);
+      Bson command = new BsonDocument("shardCollection", new BsonString(collectionReference))
+          .append("key", new BsonDocument("_id", new BsonInt64(1)));
+      mongoClient.getDatabase("admin").runCommand(command);
+      System.err.printf("Enabled sharding on collection %s", collection);
+
+      String indexResult = database.getCollection(collection).createIndex(Indexes.hashed("_id"));
+      System.err.printf("Created index %s", indexResult);
     } catch (Exception e) {
       System.err.printf("mongo collection creation failed: %s\n", e.getMessage());
       e.printStackTrace(System.err);

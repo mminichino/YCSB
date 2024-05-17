@@ -11,6 +11,7 @@ operationcount=1000
 workload=site.ycsb.workloads.CoreWorkload
 
 readallfields=true
+
 readproportion=0
 updateproportion=1
 scanproportion=0
