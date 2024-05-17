@@ -83,7 +83,7 @@ public final class DropCollection {
       MongoDatabase database = mongoClient.getDatabase(databaseName);
       MongoCollection<Document> collection = database.getCollection(collectionName);
       collection.drop();
-      System.err.printf("Dropped collection %s", collectionName);
+      System.err.printf("Dropped collection %s\n", collectionName);
     } catch (Exception e) {
       System.err.printf("mongo collection creation failed: %s\n", e.getMessage());
       e.printStackTrace(System.err);
