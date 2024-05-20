@@ -24,7 +24,6 @@ import software.amazon.awssdk.services.dynamodb.model.*;
 import ch.qos.logback.classic.Level;
 import org.slf4j.LoggerFactory;
 import site.ycsb.*;
-import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbWaiter;
 
 import java.net.URI;
 import java.util.HashMap;
@@ -62,26 +61,23 @@ public class DynamoDBClient extends DB {
 
   private boolean consistentRead = false;
   protected static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.dynamodb.DynamoDbClient");
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.dynamodb.DynamoDBClient");
   private static final String DEFAULT_HASH_KEY_VALUE = "YCSB_0";
 
   @Override
   public void init() throws DBException {
-    String debug = getProperties().getProperty("dynamodb.debug", null);
+    boolean debug = getProperties().getProperty("dynamodb.debug", "false").equals("true");
 
-    if ("true".equalsIgnoreCase(debug)) {
+    if (debug) {
       LOGGER.setLevel(Level.DEBUG);
     }
 
     String endpoint = getProperties().getProperty("dynamodb.endpoint", null);
-    primaryKeyName = getProperties().getProperty("dynamodb.primaryKey", "firstname");
+    primaryKeyName = getProperties().getProperty("dynamodb.primaryKey", "userid");
     String primaryKeyTypeString = getProperties().getProperty("dynamodb.primaryKeyType", "HASH");
     consistentRead = getProperties().getProperty("dynamodb.consistentReads", "false").equals("true");
     String configuredRegion = getProperties().getProperty("dynamodb.region", "us-east-1");
     String credentialProfile = getProperties().getProperty("dynamodb.profile", "default");
-    String tableName = getProperties().getProperty("dynamodb.tableName", "usertable");
-    long RCU = Long.parseLong(getProperties().getProperty("dynamodb.RCU", "20308"));
-    long WCU = Long.parseLong(getProperties().getProperty("dynamodb.WCU", "4062"));
 
     try {
       primaryKeyType = PrimaryKeyType.valueOf(primaryKeyTypeString.trim().toUpperCase());
@@ -116,31 +112,7 @@ public class DynamoDBClient extends DB {
       }
 
       dynamoDB = dynamoDBBuilder.build();
-
-      DynamoDbWaiter dbWaiter = dynamoDB.waiter();
-      CreateTableRequest request = CreateTableRequest.builder()
-          .attributeDefinitions(AttributeDefinition.builder()
-              .attributeName(primaryKeyName)
-              .attributeType(ScalarAttributeType.S)
-              .build())
-          .keySchema(KeySchemaElement.builder()
-              .attributeName(primaryKeyName)
-              .keyType(KeyType.valueOf(primaryKeyTypeString.trim().toUpperCase()))
-              .build())
-          .provisionedThroughput(ProvisionedThroughput.builder()
-              .readCapacityUnits(RCU)
-              .writeCapacityUnits(WCU)
-              .build())
-          .tableName(tableName)
-          .build();
-
-      dynamoDB.createTable(request);
-      DescribeTableRequest tableRequest = DescribeTableRequest.builder()
-          .tableName(tableName)
-          .build();
-
-      dbWaiter.waitUntilTableExists(tableRequest);
-      LOGGER.debug("dynamodb connection created with {}", endpoint);
+      LOGGER.info("dynamodb connection successful");
     } catch (Exception e1) {
       LOGGER.error("DynamoDBClient.init(): Could not initialize DynamoDB client.", e1);
     }

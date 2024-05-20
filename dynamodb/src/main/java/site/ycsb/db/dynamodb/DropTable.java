@@ -90,6 +90,7 @@ public final class DropTable {
           .tableName(tableName)
           .build();
       dbWaiter.waitUntilTableNotExists(tableRequest);
+      System.err.printf("Dropped table %s\n", tableName);
     } catch (DynamoDbException e) {
       System.err.printf("Can not delete table: %s\n", e.getMessage());
       e.printStackTrace(System.err);

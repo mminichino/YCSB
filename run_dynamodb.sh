@@ -8,6 +8,8 @@ THREADCOUNT_RUN=256
 RECORDCOUNT=1000000
 OPCOUNT=10000000
 RUNTIME=180
+RCU=20000
+WCU=4000
 PRINT_USAGE="Usage: $0 [ -T run_time -O operations -R record_count -r ]"
 
 function print_usage {
@@ -16,7 +18,7 @@ if [ -n "$PRINT_USAGE" ]; then
 fi
 }
 
-while getopts "R:O:T:" opt
+while getopts "R:O:T:r:w:" opt
 do
   case $opt in
     R)
@@ -27,6 +29,12 @@ do
       ;;
     T)
       RUNTIME=$OPTARG
+      ;;
+    r)
+      RCU=$OPTARG
+      ;;
+    w)
+      WCU=$OPTARG
       ;;
     \?)
       print_usage
@@ -42,6 +50,7 @@ do
   LOAD_OPTS="-db site.ycsb.db.dynamodb.DynamoDbClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -s -load"
   RUN_OPTS="-db site.ycsb.db.dynamodb.DynamoDbClient -P conf/db.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
 
+  java -cp "$CLASSPATH" site.ycsb.db.dynamodb.CreateTable -p conf/db.properties -r "$RCU" -w "$WCU"
   java -cp "$CLASSPATH" site.ycsb.Client $LOAD_OPTS
   java -cp "$CLASSPATH" site.ycsb.Client $RUN_OPTS
   java -cp "$CLASSPATH" site.ycsb.db.dynamodb.DropTable -p conf/db.properties
