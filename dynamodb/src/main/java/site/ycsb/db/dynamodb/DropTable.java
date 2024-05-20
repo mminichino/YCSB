@@ -9,6 +9,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 import software.amazon.awssdk.services.dynamodb.model.DeleteTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
+import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbWaiter;
 
 import java.io.IOException;
@@ -91,6 +92,8 @@ public final class DropTable {
           .build();
       dbWaiter.waitUntilTableNotExists(tableRequest);
       System.err.printf("Dropped table %s\n", tableName);
+    } catch (ResourceNotFoundException e) {
+      System.err.printf("Table %s does not exist\n", tableName);
     } catch (DynamoDbException e) {
       System.err.printf("Can not delete table: %s\n", e.getMessage());
       e.printStackTrace(System.err);

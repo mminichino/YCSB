@@ -131,13 +131,7 @@ public final class CreateTable {
       }
 
       CreateTableRequest request = requestBuilder.build();
-
-      try {
-        dynamoDB.createTable(request);
-      } catch (ResourceInUseException e) {
-        System.err.printf("Table %s already exists\n", tableName);
-        return;
-      }
+      dynamoDB.createTable(request);
 
       DescribeTableRequest tableRequest = DescribeTableRequest.builder()
           .tableName(tableName)
@@ -145,6 +139,8 @@ public final class CreateTable {
 
       dbWaiter.waitUntilTableExists(tableRequest);
       System.err.printf("Created table %s with %d RCU / %d WCU\n", tableName, RCU, WCU);
+    } catch (ResourceInUseException e) {
+      System.err.printf("Table %s already exists\n", tableName);
     } catch (DynamoDbException e) {
       System.err.printf("Can not create table: %s\n", e.getMessage());
       e.printStackTrace(System.err);
