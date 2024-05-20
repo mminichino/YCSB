@@ -289,6 +289,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>dynamodb</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>dynamodb</module>
+      </modules>
+    </profile>
+    <profile>
       <id>default</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -301,6 +310,7 @@ LICENSE file.
         <module>cloudspanner</module>
         <module>redis</module>
         <module>mongodb</module>
+        <module>dynamodb</module>
       </modules>
     </profile>
   </profiles>

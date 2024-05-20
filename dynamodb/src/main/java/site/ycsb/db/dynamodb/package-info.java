@@ -18,5 +18,4 @@
 /**
  * The YCSB binding for <a href="https://aws.amazon.com/dynamodb/">DynamoDB</a>.
  */
-package site.ycsb.db;
-
+package site.ycsb.db.dynamodb;
