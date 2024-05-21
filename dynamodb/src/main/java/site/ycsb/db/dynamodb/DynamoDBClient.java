@@ -192,12 +192,16 @@ public class DynamoDBClient extends DB {
       return Status.ERROR;
     }
 
-    int count = 1; // startKey is done, rest to go.
+    if (recordcount > 1) {
+      recordcount--;
+    } else {
+      return Status.OK;
+    }
 
     ScanRequest scanRequest = ScanRequest.builder()
         .tableName(table)
         .exclusiveStartKey(createPrimaryKey(startkey))
-        .limit(recordcount - count)
+        .limit(recordcount)
         .consistentRead(consistentRead)
         .build();
 
