@@ -9,7 +9,7 @@ RECORDCOUNT=1000000
 OPCOUNT=10000000
 RUNTIME=180
 RCU=20000
-WCU=4000
+WCU=20000
 PRINT_USAGE="Usage: $0 [ -T run_time -O operations -R record_count -r ]"
 
 function print_usage {

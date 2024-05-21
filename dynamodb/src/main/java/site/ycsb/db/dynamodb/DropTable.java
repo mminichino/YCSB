@@ -2,7 +2,8 @@ package site.ycsb.db.dynamodb;
 
 import org.apache.commons.cli.*;
 
-import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.*;
+import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
@@ -65,13 +66,24 @@ public final class DropTable {
   public static void dropTable(Properties properties) {
     String endpoint = properties.getProperty("dynamodb.endpoint", null);
     String configuredRegion = properties.getProperty("dynamodb.region", "us-east-1");
-    String credentialProfile = properties.getProperty("dynamodb.profile", "default");
     String tableName = properties.getProperty("dynamodb.tableName", "usertable");
+    String accessKeyID = properties.getProperty("dynamodb.accessKeyID",
+        System.getenv("AWS_ACCESS_KEY_ID"));
+    String secretAccessKey = properties.getProperty("dynamodb.secretAccessKey",
+        System.getenv("AWS_SECRET_ACCESS_KEY"));
+    String sessionToken = properties.getProperty("dynamodb.sessionToken",
+        System.getenv("AWS_SESSION_TOKEN"));
 
     Region awsRegion = Region.of(configuredRegion);
-
-    ProfileCredentialsProvider provider = ProfileCredentialsProvider.create(credentialProfile);
+    AwsCredentials credentials;
+    if (sessionToken == null) {
+      credentials = AwsBasicCredentials.create(accessKeyID, secretAccessKey);
+    } else {
+      credentials = AwsSessionCredentials.create(accessKeyID, secretAccessKey, sessionToken);
+    }
+    StaticCredentialsProvider provider = StaticCredentialsProvider.create(credentials);
     DynamoDbClientBuilder dynamoDBBuilder = DynamoDbClient.builder()
+        .defaultsMode(DefaultsMode.AUTO)
         .region(awsRegion)
         .credentialsProvider(provider);
     if (endpoint != null) {

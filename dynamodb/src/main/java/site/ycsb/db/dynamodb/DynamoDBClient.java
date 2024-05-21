@@ -16,7 +16,8 @@
 
 package site.ycsb.db.dynamodb;
 
-import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.*;
+import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
@@ -49,7 +50,9 @@ public class DynamoDBClient extends DB {
     HASH_AND_RANGE
   }
 
-  private DynamoDbClient dynamoDB;
+  private static final Object INIT_COORDINATOR = new Object();
+
+  private static volatile DynamoDbClient dynamoDB;
   private static String primaryKeyName;
   private static PrimaryKeyType primaryKeyType = PrimaryKeyType.HASH;
 
@@ -77,7 +80,12 @@ public class DynamoDBClient extends DB {
     String primaryKeyTypeString = getProperties().getProperty("dynamodb.primaryKeyType", "HASH");
     consistentRead = getProperties().getProperty("dynamodb.consistentReads", "false").equals("true");
     String configuredRegion = getProperties().getProperty("dynamodb.region", "us-east-1");
-    String credentialProfile = getProperties().getProperty("dynamodb.profile", "default");
+    String accessKeyID = getProperties().getProperty("dynamodb.accessKeyID",
+        System.getenv("AWS_ACCESS_KEY_ID"));
+    String secretAccessKey = getProperties().getProperty("dynamodb.secretAccessKey",
+        System.getenv("AWS_SECRET_ACCESS_KEY"));
+    String sessionToken = getProperties().getProperty("dynamodb.sessionToken",
+        System.getenv("AWS_SESSION_TOKEN"));
 
     try {
       primaryKeyType = PrimaryKeyType.valueOf(primaryKeyTypeString.trim().toUpperCase());
@@ -102,19 +110,30 @@ public class DynamoDBClient extends DB {
 
     Region awsRegion = Region.of(configuredRegion);
 
-    try {
-      ProfileCredentialsProvider provider = ProfileCredentialsProvider.create(credentialProfile);
-      DynamoDbClientBuilder dynamoDBBuilder = DynamoDbClient.builder()
-          .region(awsRegion)
-          .credentialsProvider(provider);
-      if (endpoint != null) {
-        dynamoDBBuilder.endpointOverride(URI.create(endpoint));
-      }
+    synchronized (INIT_COORDINATOR) {
+      if (dynamoDB == null) {
+        AwsCredentials credentials;
+        try {
+          if (sessionToken == null) {
+            credentials = AwsBasicCredentials.create(accessKeyID, secretAccessKey);
+          } else {
+            credentials = AwsSessionCredentials.create(accessKeyID, secretAccessKey, sessionToken);
+          }
+          StaticCredentialsProvider provider = StaticCredentialsProvider.create(credentials);
+          DynamoDbClientBuilder dynamoDBBuilder = DynamoDbClient.builder()
+              .defaultsMode(DefaultsMode.AUTO)
+              .region(awsRegion)
+              .credentialsProvider(provider);
+          if (endpoint != null) {
+            dynamoDBBuilder.endpointOverride(URI.create(endpoint));
+          }
 
-      dynamoDB = dynamoDBBuilder.build();
-      LOGGER.info("dynamodb connection successful");
-    } catch (Exception e1) {
-      LOGGER.error("DynamoDBClient.init(): Could not initialize DynamoDB client.", e1);
+          dynamoDB = dynamoDBBuilder.build();
+          LOGGER.debug("dynamodb connection successful");
+        } catch (Exception e1) {
+          LOGGER.error("DynamoDBClient.init(): Could not initialize DynamoDB client.", e1);
+        }
+      }
     }
   }
 
