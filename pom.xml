@@ -308,6 +308,7 @@ LICENSE file.
         <module>googlefirestore</module>
         <module>azurecosmos</module>
         <module>cloudspanner</module>
+        <module>couchbase3</module>
         <module>redis</module>
         <module>mongodb</module>
         <module>dynamodb</module>

@@ -7,7 +7,7 @@ import java.util.Set;
 import java.util.Map;
 
 /**
- * SQL Database Driver.
+ * SQL Database Driver
  */
 public abstract class SQLDB {
   private Properties properties = new Properties();

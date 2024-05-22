@@ -236,7 +236,7 @@ LICENSE file.
               <execution>
                 <configuration>
                   <descriptors>
-                    <descriptor>src/main/assembly/distribution.xml</descriptor>
+                    <descriptor>src/main/assembly/couchbase.xml</descriptor>
                   </descriptors>
                   <finalName>ycsb-couchbase</finalName>
                   <appendAssemblyId>false</appendAssemblyId>

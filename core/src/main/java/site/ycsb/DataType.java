@@ -1,8 +1,5 @@
 package site.ycsb;
 
-/**
- * A class that represents a table column data type.
- */
 public enum DataType {
   IDENTIFIER,
   INTEGER,

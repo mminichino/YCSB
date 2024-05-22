@@ -22,31 +22,35 @@
     </encoder>
   </appender>
 
-  <logger name="ch.qos.logback" level="ERROR">
+  <root level="OFF">
+    <appender-ref ref="STDOUT" />
+  </root>
+
+  <logger name="ch.qos.logback" level="ERROR" additivity="false">
     <appender-ref ref="STDOUT" />
   </logger>
 
-  <logger name="site.ycsb.db.couchbase3.statistics" level="INFO">
+  <logger name="site.ycsb.db.couchbase3.statistics" level="INFO" additivity="false">
     <appender-ref ref="STATISTICS"/>
   </logger>
 
-  <logger name="site.ycsb.db.couchbase3.Couchbase3Client" level="INFO">
+  <logger name="site.ycsb.db.couchbase3.Couchbase3Client" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 
-  <logger name="site.ycsb.db.couchbase3.CouchbaseConnect" level="INFO">
+  <logger name="site.ycsb.db.couchbase3.CouchbaseConnect" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 
-  <logger name="site.ycsb.db.couchbase3.CouchbaseCollect" level="INFO">
+  <logger name="site.ycsb.db.couchbase3.CouchbaseCollect" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 
-  <logger name="site.ycsb.db.couchbase3.RESTInterface" level="INFO">
+  <logger name="site.ycsb.db.couchbase3.RESTInterface" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 
-  <logger name="com.couchbase" level="ERROR">
+  <logger name="com.couchbase" level="ERROR" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 

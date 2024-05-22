@@ -4,11 +4,8 @@ import site.ycsb.DataType;
 
 import java.util.*;
 
-/**
- * A class that represents the TPC-H schema.
- */
 public abstract class CreateSchema {
-  Map<String, DataType> partTable = new HashMap<>() {{
+  Map<String, DataType> PartTable = new HashMap<>() {{
     put("p_partkey", DataType.IDENTIFIER);
     put("p_name", DataType.VARIABLE_STRING.setLength(55));
     put("p_mfgr", DataType.FIXED_STRING.setLength(25));
@@ -19,10 +16,10 @@ public abstract class CreateSchema {
     put("p_retailprice", DataType.FLOAT);
     put("p_comment", DataType.VARIABLE_STRING.setLength(23));
   }};
-  Set<String> partKeys = new HashSet<>(List.of("p_partkey"));
-  Integer partScaleFactor = 200000;
+  Set<String> PartKeys = new HashSet<>(List.of("p_partkey"));
+  Integer PartScaleFactor = 200000;
 
-  Map<String, DataType> supplierTable = new HashMap<>() {{
+  Map<String, DataType> SupplierTable = new HashMap<>() {{
     put("s_suppkey", DataType.IDENTIFIER);
     put("s_name", DataType.FIXED_STRING.setLength(25));
     put("s_address", DataType.VARIABLE_STRING.setLength(40));
@@ -31,19 +28,19 @@ public abstract class CreateSchema {
     put("s_acctbal", DataType.FLOAT);
     put("s_comment", DataType.VARIABLE_STRING.setLength(101));
   }};
-  Set<String> supplierKeys = new HashSet<>(List.of("s_suppkey"));
-  Integer supplierScaleFactor = 10000;
+  Set<String> SupplierKeys = new HashSet<>(List.of("s_suppkey"));
+  Integer SupplierScaleFactor = 10000;
 
-  Map<String, DataType> partSuppTable = new HashMap<>() {{
+  Map<String, DataType> PartSuppTable = new HashMap<>() {{
     put("ps_partkey", DataType.IDENTIFIER);
     put("ps_suppkey", DataType.IDENTIFIER);
     put("ps_availqty", DataType.INTEGER);
     put("ps_supplycost", DataType.FLOAT);
     put("ps_comment", DataType.VARIABLE_STRING.setLength(199));
   }};
-  Set<String> partSuppKeys = new HashSet<>(List.of("ps_partkey", "ps_suppkey"));
+  Set<String> PartSuppKeys = new HashSet<>(List.of("ps_partkey", "ps_suppkey"));
 
-  Map<String, DataType> customerTable = new HashMap<>() {{
+  Map<String, DataType> CustomerTable = new HashMap<>() {{
     put("c_custkey", DataType.IDENTIFIER);
     put("c_name", DataType.VARIABLE_STRING.setLength(25));
     put("c_address", DataType.VARIABLE_STRING.setLength(40));
@@ -53,10 +50,10 @@ public abstract class CreateSchema {
     put("c_mktsegment", DataType.FIXED_STRING.setLength(10));
     put("c_comment", DataType.VARIABLE_STRING.setLength(117));
   }};
-  Set<String> customerKeys = new HashSet<>(List.of("c_custkey"));
-  Integer customerScaleFactor = 150000;
+  Set<String> CustomerKeys = new HashSet<>(List.of("c_custkey"));
+  Integer CustomerScaleFactor = 150000;
 
-  Map<String, DataType> ordersTable = new HashMap<>() {{
+  Map<String, DataType> OrdersTable = new HashMap<>() {{
     put("o_orderkey", DataType.IDENTIFIER);
     put("o_custkey", DataType.IDENTIFIER);
     put("o_orderstatus", DataType.FIXED_STRING.setLength(1));
@@ -67,10 +64,10 @@ public abstract class CreateSchema {
     put("o_shippriority", DataType.INTEGER);
     put("o_comment", DataType.VARIABLE_STRING.setLength(79));
   }};
-  Set<String> ordersKeys = new HashSet<>(List.of("o_orderkey"));
-  Integer ordersScaleFactor = 1500000;
+  Set<String> OrdersKeys = new HashSet<>(List.of("o_orderkey"));
+  Integer OrdersScaleFactor = 1500000;
 
-  Map<String, DataType> lineItemTable = new HashMap<>() {{
+  Map<String, DataType> LineItemTable = new HashMap<>() {{
     put("l_orderkey", DataType.IDENTIFIER);
     put("l_partkey", DataType.IDENTIFIER);
     put("l_suppkey", DataType.IDENTIFIER);
@@ -88,39 +85,39 @@ public abstract class CreateSchema {
     put("l_shipmode", DataType.FIXED_STRING.setLength(10));
     put("l_comment", DataType.VARIABLE_STRING.setLength(44));
   }};
-  Set<String> lineItemKeys = new HashSet<>(List.of("l_orderkey", "l_linenumber"));
+  Set<String> LineItemKeys = new HashSet<>(List.of("l_orderkey", "l_linenumber"));
 
-  Map<String, DataType> nationTable = new HashMap<>() {{
+  Map<String, DataType> NationTable = new HashMap<>() {{
     put("n_nationkey", DataType.IDENTIFIER);
     put("n_name", DataType.FIXED_STRING.setLength(25));
     put("n_regionkey", DataType.IDENTIFIER);
     put("n_comment", DataType.VARIABLE_STRING.setLength(152));
   }};
-  Set<String> nationKeys = new HashSet<>(List.of("ps_partkey", "ps_suppkey"));
+  Set<String> NationKeys = new HashSet<>(List.of("ps_partkey", "ps_suppkey"));
 
-  Map<String, DataType> regionTable = new HashMap<>() {{
+  Map<String, DataType> RegionTable = new HashMap<>() {{
     put("r_regionkey", DataType.IDENTIFIER);
     put("r_name", DataType.FIXED_STRING.setLength(25));
     put("r_comment", DataType.VARIABLE_STRING.setLength(152));
   }};
-  Set<String> regionKeys = new HashSet<>(List.of("ps_partkey", "ps_suppkey"));
+  Set<String> RegionKeys = new HashSet<>(List.of("ps_partkey", "ps_suppkey"));
 
-  Set<String> type1Set = new HashSet<>(List.of("STANDARD", "SMALL", "MEDIUM", "LARGE", "ECONOMY", "PROMO"));
-  Set<String> type2Set = new HashSet<>(List.of("ANODIZED", "BURNISHED", "PLATED", "POLISHED", "BRUSHED"));
-  Set<String> type3Set = new HashSet<>(List.of("TIN", "NICKEL", "BRASS", "STEEL", "COPPER"));
+  Set<String> Type1Set = new HashSet<>(List.of("STANDARD", "SMALL", "MEDIUM", "LARGE", "ECONOMY", "PROMO"));
+  Set<String> Type2Set = new HashSet<>(List.of("ANODIZED", "BURNISHED", "PLATED", "POLISHED", "BRUSHED"));
+  Set<String> Type3Set = new HashSet<>(List.of("TIN", "NICKEL", "BRASS", "STEEL", "COPPER"));
 
-  Set<String> container1Set = new HashSet<>(List.of("SM", "LG", "MED", "JUMBO", "WRAP"));
-  Set<String> container2Set = new HashSet<>(List.of("CASE", "BOX", "BAG", "JAR", "PKG", "PACK", "CAN", "DRUM"));
+  Set<String> Container1Set = new HashSet<>(List.of("SM", "LG", "MED", "JUMBO", "WRAP"));
+  Set<String> Container2Set = new HashSet<>(List.of("CASE", "BOX", "BAG", "JAR", "PKG", "PACK", "CAN", "DRUM"));
 
-  List<String> segments = List.of("AUTOMOBILE", "BUILDING", "FURNITURE", "MACHINERY", "HOUSEHOLD");
+  List<String> Segments = List.of("AUTOMOBILE", "BUILDING", "FURNITURE", "MACHINERY", "HOUSEHOLD");
 
-  List<String> priorities = List.of("1-URGENT", "2-HIGH", "3-MEDIUM", "4-NOT SPECIFIED", "5-LOW");
+  List<String> Priorities = List.of("1-URGENT", "2-HIGH", "3-MEDIUM", "4-NOT SPECIFIED", "5-LOW");
 
-  List<String> instructions = List.of("DELIVER IN PERSON", "COLLECT COD", "NONE", "TAKE BACK RETURN");
+  List<String> Instructions = List.of("DELIVER IN PERSON", "COLLECT COD", "NONE", "TAKE BACK RETURN");
 
-  List<String> modes = List.of("REG AIR", "AIR RAIL", "SHIP", "TRUCK", "MAIL", "FOB");
+  List<String> Modes = List.of("REG AIR", "AIR RAIL", "SHIP", "TRUCK", "MAIL", "FOB");
 
-  List<String> nouns = List.of(
+  List<String> Nouns = List.of(
       "foxes", "ideas", "theodolites", "pinto beans",
       "instructions", "dependencies", "excuses", "platelets",
       "asymptotes", "courts", "dolphins", "multipliers",
@@ -134,7 +131,7 @@ public abstract class CreateSchema {
       "escapades"
   );
 
-  List<String> verbs = List.of(
+  List<String> Verbs = List.of(
       "sleep", "wake", "are", "cajole",
       "haggle", "nag", "use", "boost",
       "affix", "detect", "integrate", "maintain",
@@ -147,7 +144,7 @@ public abstract class CreateSchema {
       "play", "hang", "believe", "doubt"
   );
 
-  List<String> adjectives = List.of(
+  List<String> Adjectives = List.of(
       "furious", "sly", "careful", "blithe",
       "quick", "fluffy", "slow", "quiet",
       "ruthless", "thin", "close", "dogged",
@@ -157,7 +154,7 @@ public abstract class CreateSchema {
       "silent"
   );
 
-  List<String> adverbs = List.of(
+  List<String> Adverbs = List.of(
       "sometimes", "always", "never", "furiously",
       "slyly", "carefully", "blithely", "quickly",
       "fluffily", "slowly", "quietly", "ruthlessly",
@@ -167,7 +164,7 @@ public abstract class CreateSchema {
       "ironically", "evenly", "boldly", "silently"
   );
 
-  List<String> prepositions = List.of(
+  List<String> Prepositions = List.of(
       "about", "above", "according to", "across",
       "after", "against", "along", "alongside of",
       "among", "around", "at", "atop",
@@ -182,7 +179,7 @@ public abstract class CreateSchema {
       "without", "with", "within"
   );
 
-  List<String> auxiliaries = List.of(
+  List<String> Auxiliaries = List.of(
       "do", "may", "might", "shall",
       "will", "would", "can", "could",
       "should", "ought to", "must", "will have to",
@@ -190,5 +187,5 @@ public abstract class CreateSchema {
       "need to", "try to"
   );
 
-  List<String> terminators = List.of(".", ";", ":", "?", "!", "--");
+  List<String> Terminators = List.of(".", ";", ":", "?", "!", "--");
 }

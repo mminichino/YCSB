@@ -21,6 +21,8 @@ import static com.couchbase.client.java.kv.MutateInOptions.mutateInOptions;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
+
+import ch.qos.logback.classic.Logger;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.NetworkResolution;
@@ -30,9 +32,10 @@ import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.core.retry.FailFastRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.codec.RawJsonTranscoder;
+import com.couchbase.client.java.codec.Transcoder;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
-import com.couchbase.client.java.codec.RawJsonTranscoder;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 
 import java.io.IOException;
@@ -44,17 +47,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import com.couchbase.client.java.json.JsonArray;
-import com.google.gson.Gson;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.slf4j.LoggerFactory;
+import ch.qos.logback.classic.Level;
 import site.ycsb.*;
 
 /**
  * A class that implements the Couchbase Java SDK to be used with YCSB.
  */
 public class Couchbase3Client extends DB {
-  protected static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.couchbase3.Couchbase3Client");
+  protected static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.db.couchbase3.Couchbase3Client");
   private static final String PROPERTY_FILE = "db.properties";
   private static final String PROPERTY_TEST = "test.properties";
   public static final String COUCHBASE_HOST = "couchbase.hostname";
@@ -76,6 +82,8 @@ public class Couchbase3Client extends DB {
   private static int ttlSeconds;
   private boolean arrayMode;
   private String arrayKey;
+  private Transcoder transcoder;
+  private Class<?> contentType;
   private static volatile DurabilityLevel durability = DurabilityLevel.NONE;
 
   @Override
@@ -103,6 +111,21 @@ public class Couchbase3Client extends DB {
     String scopeName = properties.getProperty(COUCHBASE_SCOPE, "_default");
     String collectionName = properties.getProperty(COUCHBASE_COLLECTION, "_default");
     boolean sslMode = properties.getProperty(COUCHBASE_SSL_MODE, "false").equals("true");
+    boolean debug = getProperties().getProperty("couchbase.debug", "false").equals("true");
+
+    if (debug) {
+      LOGGER.setLevel(Level.DEBUG);
+    }
+
+    boolean nativeCodec = getProperties().getProperty("couchbase.codec", "ycsb").equals("native");
+
+    if (nativeCodec) {
+      transcoder = RawJsonTranscoder.INSTANCE;
+      contentType = String.class;
+    } else {
+      transcoder = MapTranscoder.INSTANCE;
+      contentType = Map.class;
+    }
 
     durability =
         setDurabilityLevel(Integer.parseInt(properties.getProperty("couchbase.durability", "0")));
@@ -196,7 +219,7 @@ public class Couchbase3Client extends DB {
       try {
         return block.call();
       } catch (Exception e) {
-        LOGGER.debug("Retry count: " + retryCount + " error: " + e.getMessage(), e);
+        LOGGER.debug("Retry count: {} error: {}", retryCount, e.getMessage(), e);
         if (retryNumber == retryCount) {
           throw e;
         } else {
@@ -218,55 +241,48 @@ public class Couchbase3Client extends DB {
    * @param table The name of the table.
    * @param key The record key of the record to read.
    * @param fields The list of fields to read, or null for all of them.
-   * @param result A HashMap of field/value pairs for the result.
+   * @param result A Map of field/value pairs for the result.
    */
   @Override
-  public Status read(final String table, final String key, final Set<String> fields,
-                     final Map<String, ByteIterator> result) {
+  public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
     try {
-      return retryBlock(() -> {
-        try {
-          collection.get(key, getOptions().transcoder(RawJsonTranscoder.INSTANCE));
-          return Status.OK;
-        } catch (DocumentNotFoundException e) {
-          return Status.NOT_FOUND;
-        }
-      });
+      Object r = retryBlock(() -> collection.get(key, getOptions().transcoder(transcoder))
+          .contentAs(contentType));
+      if (LOGGER.isDebugEnabled()) {
+        LOGGER.debug(r.toString());
+      }
+      return Status.OK;
+    } catch (DocumentNotFoundException e) {
+      return Status.NOT_FOUND;
     } catch (Throwable t) {
-      LOGGER.error("read transaction exception: " + t.getMessage(), t);
+      LOGGER.error("read transaction exception: {}", t.getMessage(), t);
       return Status.ERROR;
     }
   }
 
-  public void upsertArray(String id, String arrayKey, Object content) throws Exception {
-    retryBlock(() -> {
-      try {
-        collection.mutateIn(id, Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(content))),
-            mutateInOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
-      } catch (DocumentNotFoundException e) {
-        com.google.gson.JsonObject document = new com.google.gson.JsonObject();
-        com.google.gson.JsonArray subDocArray = new com.google.gson.JsonArray();
-        Gson gson = new Gson();
-        String subDoc = gson.toJson(content);
-        subDocArray.add(gson.fromJson(subDoc, com.google.gson.JsonObject.class));
-        document.add(arrayKey, subDocArray);
-        collection.upsert(id, document, upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
-      }
-      return null;
-    });
+  public void upsertArray(String id, String arrayKey, Map<String, String> content) {
+    try {
+      collection.mutateIn(id, Collections.singletonList(arrayAppend(arrayKey, Collections.singletonList(content))),
+          mutateInOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
+    } catch (DocumentNotFoundException e) {
+      ObjectMapper mapper = new ObjectMapper();
+      ArrayNode array = mapper.createArrayNode();
+      ObjectNode document = mapper.valueToTree(content);
+      array.add(document);
+      ObjectNode arrayDoc = mapper.createObjectNode();
+      arrayDoc.set(arrayKey, array);
+      collection.upsert(id, arrayDoc, upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
+    }
   }
 
-  public void insertArray(String id, String arrayKey, Object content) throws Exception {
-    retryBlock(() -> {
-      com.google.gson.JsonObject document = new com.google.gson.JsonObject();
-      com.google.gson.JsonArray subDocArray = new com.google.gson.JsonArray();
-      Gson gson = new Gson();
-      String subDoc = gson.toJson(content);
-      subDocArray.add(gson.fromJson(subDoc, com.google.gson.JsonObject.class));
-      document.add(arrayKey, subDocArray);
-      collection.upsert(id, document, upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
-      return null;
-    });
+  public void insertArray(String id, String arrayKey, Map<String, String> content) {
+    ObjectMapper mapper = new ObjectMapper();
+    ArrayNode array = mapper.createArrayNode();
+    ObjectNode document = mapper.valueToTree(content);
+    array.add(document);
+    ObjectNode arrayDoc = mapper.createObjectNode();
+    arrayDoc.set(arrayKey, array);
+    collection.upsert(id, arrayDoc, upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
   }
 
   /**
@@ -282,13 +298,14 @@ public class Couchbase3Client extends DB {
         if (arrayMode) {
           upsertArray(key, arrayKey, encode(values));
         } else {
-          collection.upsert(key, encode(values),
-              upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
+          collection.upsert(key, values,
+              upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability)
+                  .transcoder(MapTranscoder.INSTANCE));
         }
         return Status.OK;
       });
     } catch (Throwable t) {
-      LOGGER.error("update transaction exception: " + t.getMessage(), t);
+      LOGGER.error("update transaction exception: {}", t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -306,13 +323,14 @@ public class Couchbase3Client extends DB {
         if (arrayMode) {
           insertArray(key, arrayKey, encode(values));
         } else {
-          collection.upsert(key, encode(values),
-              upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability));
+          collection.upsert(key, values,
+              upsertOptions().expiry(Duration.ofSeconds(ttlSeconds)).durability(durability)
+                  .transcoder(MapTranscoder.INSTANCE));
         }
         return Status.OK;
       });
     } catch (Throwable t) {
-      LOGGER.error("update transaction exception: " + t.getMessage(), t);
+      LOGGER.error("update transaction exception: {}", t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -325,9 +343,9 @@ public class Couchbase3Client extends DB {
    */
   private static Map<String, String> encode(final Map<String, ByteIterator> values) {
     Map<String, String> result = new HashMap<>();
-    for (Map.Entry<String, ByteIterator> value : values.entrySet()) {
-      result.put(value.getKey(), value.getValue().toString());
-    }
+    values.entrySet()
+        .parallelStream()
+        .forEach(entry -> result.put(entry.getKey(), entry.getValue().toString()));
     return result;
   }
 
@@ -344,7 +362,7 @@ public class Couchbase3Client extends DB {
         return Status.OK;
       });
     } catch (Throwable t) {
-      LOGGER.error("delete transaction exception: " + t.getMessage(), t);
+      LOGGER.error("delete transaction exception: {}", t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -360,9 +378,10 @@ public class Couchbase3Client extends DB {
   @Override
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
+    Vector<Object> results = new Vector<>();
     try {
       return retryBlock(() -> {
-        final String query = "select * from " + bucketName + " where meta().id >= \"$1\" limit $2;";
+        final String query = "select raw meta().id from `" + bucketName + "` where meta().id >= \"$1\" limit $2;";
         cluster.reactive().query(query, queryOptions()
                 .pipelineBatch(128)
                 .pipelineCap(1024)
@@ -372,19 +391,24 @@ public class Couchbase3Client extends DB {
                 .maxParallelism(maxParallelism)
                 .retryStrategy(FailFastRetryStrategy.INSTANCE)
                 .parameters(JsonArray.from(startkey, recordcount)))
-            .flatMapMany(res -> res.rowsAsObject().parallel())
+            .flatMapMany(res -> res.rowsAs(String.class).parallel())
             .parallel()
             .subscribe(
-                    next -> {},
-                    error ->
-                    {
-                      throw new RuntimeException(error);
-                    }
+                next -> results.add(collection.get(next, getOptions().transcoder(transcoder))
+                    .contentAs(contentType)),
+                error ->
+                {
+                  LOGGER.debug(error.getMessage(), error);
+                  throw new RuntimeException(error);
+                }
             );
+        if (LOGGER.isDebugEnabled()) {
+          LOGGER.debug("Scanned {} records", results.size());
+        }
         return Status.OK;
       });
     } catch (Throwable t) {
-      LOGGER.error("scan transaction exception: " + t.getMessage(), t);
+      LOGGER.error("scan transaction exception: {}", t.getMessage(), t);
       return Status.ERROR;
     }
   }
