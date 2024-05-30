@@ -17,6 +17,7 @@
 
 package site.ycsb.db.aerospike;
 
+import ch.qos.logback.classic.Logger;
 import com.aerospike.client.*;
 import com.aerospike.client.exp.Exp;
 import com.aerospike.client.policy.*;
@@ -26,24 +27,22 @@ import site.ycsb.*;
 
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.Vector;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * YCSB binding for <a href="http://www.aerospike.com/">Aerospike</a>.
  */
 public class AerospikeClient extends DB {
-  protected static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.aerospike.AerospikeClient");
+  protected static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.db.aerospike.AerospikeClient");
   private static final String DEFAULT_HOST = "localhost";
   private static final String DEFAULT_PORT = "3000";
   private static final String DEFAULT_TIMEOUT = "10000";
   private static final String DEFAULT_NAMESPACE = "ycsb";
 
   private String namespace = null;
+  private int timeout = 10000;
 
   private com.aerospike.client.AerospikeClient client = null;
 
@@ -51,6 +50,8 @@ public class AerospikeClient extends DB {
   private final WritePolicy insertPolicy = new WritePolicy();
   private final WritePolicy updatePolicy = new WritePolicy();
   private final WritePolicy deletePolicy = new WritePolicy();
+
+  private static final AtomicInteger recordId = new AtomicInteger(0);
 
   @Override
   public void init() throws DBException {
@@ -65,8 +66,7 @@ public class AerospikeClient extends DB {
     String user = props.getProperty("as.user");
     String password = props.getProperty("as.password");
     int port = Integer.parseInt(props.getProperty("as.port", DEFAULT_PORT));
-    int timeout = Integer.parseInt(props.getProperty("as.timeout",
-        DEFAULT_TIMEOUT));
+    timeout = Integer.parseInt(props.getProperty("as.timeout", DEFAULT_TIMEOUT));
     boolean external = getProperties().getProperty("as.external", "false").equals("true");
 
     ClientPolicy clientPolicy = new ClientPolicy();
@@ -126,11 +126,12 @@ public class AerospikeClient extends DB {
     }
   }
 
-  private HashMap<String, ByteIterator> extractResult(Map<String, Object> values) {
+  private HashMap<String, ByteIterator> extractResult(Set<Map.Entry<String, Object>> values) {
     HashMap<String, ByteIterator> result = new HashMap<>();
-    values.entrySet()
-        .parallelStream()
-        .forEach(entry -> result.put(entry.getKey(), new StringByteIterator((String) entry.getValue())));
+    values.parallelStream()
+        .forEach(entry -> result.put(entry.getKey(), new StringByteIterator(entry.getValue().toString()))
+//        .forEach(entry -> LOGGER.info("{} : {}", entry.getKey(), entry.getValue().toString())
+        );
     return result;
   }
 
@@ -138,22 +139,28 @@ public class AerospikeClient extends DB {
   public Status scan(String table, String start, int count, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
     try {
+      Record record = client.get(readPolicy, new Key(namespace, table, start), "id");
+      int startId = record.getInt("id");
+
       Statement stmt = new Statement();
       stmt.setNamespace(namespace);
       stmt.setSetName(table);
 
       QueryPolicy policy = new QueryPolicy();
       policy.includeBinData = false;
+      policy.totalTimeout = timeout;
+      policy.socketTimeout = timeout;
+      policy.connectTimeout = timeout;
       policy.setMaxRecords(count);
       policy.filterExp = Exp.build(
-          Exp.ge(Exp.key(Exp.Type.STRING), Exp.val(start))
+          Exp.ge(Exp.intBin("id"), Exp.val(startId))
       );
 
       RecordSet rs = client.query(policy, stmt);
 
       while (rs.next()) {
         Record document = client.get(readPolicy, rs.getKey());
-        result.add(extractResult(document.bins));
+        result.add(extractResult(document.bins.entrySet()));
       }
       return Status.OK;
     } catch (Throwable ex) {
@@ -163,18 +170,19 @@ public class AerospikeClient extends DB {
   }
 
   private Status write(String table, String key, WritePolicy writePolicy, Map<String, ByteIterator> values) {
-    Bin[] bins = new Bin[values.size()];
-    int index = 0;
+    List<Bin> bins = new ArrayList<>();
+    Bin[] binList = new Bin[0];
+
+    bins.add(new Bin("id", recordId.incrementAndGet()));
 
     for (Map.Entry<String, ByteIterator> entry: values.entrySet()) {
-      bins[index] = new Bin(entry.getKey(), entry.getValue().toString());
-      ++index;
+      bins.add(new Bin(entry.getKey(), entry.getValue().toString()));
     }
 
     Key keyObj = new Key(namespace, table, key);
 
     try {
-      client.put(writePolicy, keyObj, bins);
+      client.put(writePolicy, keyObj, bins.toArray(binList));
       return Status.OK;
     } catch (Throwable ex) {
       LOGGER.error("write error: {}", ex.getMessage(), ex);

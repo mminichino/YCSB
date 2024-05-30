@@ -2,6 +2,11 @@ package site.ycsb.db.aerospike;
 
 import com.aerospike.client.policy.ClientPolicy;
 import com.aerospike.client.policy.InfoPolicy;
+import com.aerospike.client.policy.Policy;
+import com.aerospike.client.task.IndexTask;
+import com.aerospike.client.query.IndexType;
+import com.aerospike.client.AerospikeException;
+import com.aerospike.client.ResultCode;
 import org.apache.commons.cli.*;
 
 import java.io.IOException;
@@ -83,6 +88,16 @@ public class TruncateSet {
              new com.aerospike.client.AerospikeClient(clientPolicy, host, port)) {
       client.truncate(infoPolicy, namespace, set, null);
       System.err.printf("Truncated set %s\n", set);
+
+      Policy policy = new Policy();
+      policy.socketTimeout = 0;
+      IndexTask task = client.createIndex(policy, namespace, set, "ididx", "id", IndexType.NUMERIC);
+      task.waitTillComplete();
+      System.err.println("Created index on id");
+    } catch (AerospikeException ae) {
+      if (ae.getResultCode() != ResultCode.INDEX_ALREADY_EXISTS) {
+        throw ae;
+      }
     } catch (Exception e) {
       System.err.printf("set truncate failed failed: %s\n", e.getMessage());
       e.printStackTrace(System.err);
