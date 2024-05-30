@@ -51,6 +51,7 @@ public class AerospikeClient extends DB {
   public void init() throws DBException {
     insertPolicy.recordExistsAction = RecordExistsAction.UPDATE;
     updatePolicy.recordExistsAction = RecordExistsAction.UPDATE;
+    scanPolicy.includeBinData = false;
 
     Properties props = getProperties();
 
@@ -136,7 +137,8 @@ public class AerospikeClient extends DB {
       AtomicInteger recordCount = new AtomicInteger(1);
       client.scanAll(scanPolicy, namespace, table, (key, record) -> {
         if (key.toString().compareTo(start) <= 0 && recordCount.get() <= count) {
-          result.add(extractResult(record.bins));
+          Record document = client.get(readPolicy, key);
+          result.add(extractResult(document.bins));
           recordCount.incrementAndGet();
         }
       });
