@@ -17,29 +17,21 @@
 
 package site.ycsb.db.aerospike;
 
-import com.aerospike.client.AerospikeException;
-import com.aerospike.client.Bin;
-import com.aerospike.client.Key;
-import com.aerospike.client.Record;
-import com.aerospike.client.policy.ClientPolicy;
-import com.aerospike.client.policy.Policy;
-import com.aerospike.client.policy.RecordExistsAction;
-import com.aerospike.client.policy.WritePolicy;
-import site.ycsb.ByteArrayByteIterator;
-import site.ycsb.ByteIterator;
-import site.ycsb.DBException;
-import site.ycsb.Status;
+import com.aerospike.client.*;
+import com.aerospike.client.policy.*;
+import site.ycsb.*;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.Vector;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * YCSB binding for <a href="http://www.aerospike.com/">Aerospike</a>.
  */
-public class AerospikeClient extends site.ycsb.DB {
+public class AerospikeClient extends DB {
   private static final String DEFAULT_HOST = "localhost";
   private static final String DEFAULT_PORT = "3000";
   private static final String DEFAULT_TIMEOUT = "10000";
@@ -53,11 +45,12 @@ public class AerospikeClient extends site.ycsb.DB {
   private final WritePolicy insertPolicy = new WritePolicy();
   private final WritePolicy updatePolicy = new WritePolicy();
   private final WritePolicy deletePolicy = new WritePolicy();
+  private final ScanPolicy scanPolicy = new ScanPolicy();
 
   @Override
   public void init() throws DBException {
-    insertPolicy.recordExistsAction = RecordExistsAction.CREATE_ONLY;
-    updatePolicy.recordExistsAction = RecordExistsAction.REPLACE_ONLY;
+    insertPolicy.recordExistsAction = RecordExistsAction.UPDATE;
+    updatePolicy.recordExistsAction = RecordExistsAction.UPDATE;
 
     Properties props = getProperties();
 
@@ -69,6 +62,7 @@ public class AerospikeClient extends site.ycsb.DB {
     int port = Integer.parseInt(props.getProperty("as.port", DEFAULT_PORT));
     int timeout = Integer.parseInt(props.getProperty("as.timeout",
         DEFAULT_TIMEOUT));
+    boolean external = getProperties().getProperty("as.external", "false").equals("true");
 
     ClientPolicy clientPolicy = new ClientPolicy();
 
@@ -76,6 +70,10 @@ public class AerospikeClient extends site.ycsb.DB {
       clientPolicy.user = user;
       clientPolicy.password = password;
       clientPolicy.timeout = timeout;
+    }
+
+    if (external) {
+      clientPolicy.useServicesAlternate = true;
     }
 
     try {
@@ -93,13 +91,13 @@ public class AerospikeClient extends site.ycsb.DB {
   }
 
   @Override
-  public Status read(String table, String key, Set<String> fields,
-      Map<String, ByteIterator> result) {
+  public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
     try {
       Record record;
-      String[] fieldList = new String[fields.size()];
+      int size = (fields == null) ? 0 : fields.size();
+      String[] fieldList = new String[size];
 
-      if (!fields.isEmpty()) {
+      if (fields != null) {
         record = client.get(readPolicy, new Key(namespace, table, key),
             fields.toArray(fieldList));
       } else {
@@ -113,7 +111,7 @@ public class AerospikeClient extends site.ycsb.DB {
 
       for (Map.Entry<String, Object> entry: record.bins.entrySet()) {
         result.put(entry.getKey(),
-            new ByteArrayByteIterator((byte[])entry.getValue()));
+            new StringByteIterator(entry.getValue().toString()));
       }
 
       return Status.OK;
@@ -123,20 +121,38 @@ public class AerospikeClient extends site.ycsb.DB {
     }
   }
 
-  @Override
-  public Status scan(String table, String start, int count, Set<String> fields,
-      Vector<HashMap<String, ByteIterator>> result) {
-    System.err.println("Scan not implemented");
-    return Status.ERROR;
+  private HashMap<String, ByteIterator> extractResult(Map<String, Object> values) {
+    HashMap<String, ByteIterator> result = new HashMap<>();
+    values.entrySet()
+        .parallelStream()
+        .forEach(entry -> result.put(entry.getKey(), new StringByteIterator((String) entry.getValue())));
+    return result;
   }
 
-  private Status write(String table, String key, WritePolicy writePolicy,
-      Map<String, ByteIterator> values) {
+  @Override
+  public Status scan(String table, String start, int count, Set<String> fields,
+                     Vector<HashMap<String, ByteIterator>> result) {
+    try {
+      AtomicInteger recordCount = new AtomicInteger(1);
+      client.scanAll(scanPolicy, namespace, table, (key, record) -> {
+        if (key.toString().compareTo(start) <= 0 && recordCount.get() <= count) {
+          result.add(extractResult(record.bins));
+          recordCount.incrementAndGet();
+        }
+      });
+      return Status.OK;
+    } catch (AerospikeException e) {
+      System.err.println("Error while scanning from key " + start + ": " + e);
+      return Status.ERROR;
+    }
+  }
+
+  private Status write(String table, String key, WritePolicy writePolicy, Map<String, ByteIterator> values) {
     Bin[] bins = new Bin[values.size()];
     int index = 0;
 
     for (Map.Entry<String, ByteIterator> entry: values.entrySet()) {
-      bins[index] = new Bin(entry.getKey(), entry.getValue().toArray());
+      bins[index] = new Bin(entry.getKey(), entry.getValue().toString());
       ++index;
     }
 
@@ -152,14 +168,12 @@ public class AerospikeClient extends site.ycsb.DB {
   }
 
   @Override
-  public Status update(String table, String key,
-                       Map<String, ByteIterator> values) {
+  public Status update(String table, String key, Map<String, ByteIterator> values) {
     return write(table, key, updatePolicy, values);
   }
 
   @Override
-  public Status insert(String table, String key,
-                       Map<String, ByteIterator> values) {
+  public Status insert(String table, String key, Map<String, ByteIterator> values) {
     return write(table, key, insertPolicy, values);
   }
 
