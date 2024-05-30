@@ -82,6 +82,7 @@ public class TruncateSet {
     try (com.aerospike.client.AerospikeClient client =
              new com.aerospike.client.AerospikeClient(clientPolicy, host, port)) {
       client.truncate(infoPolicy, namespace, set, null);
+      System.err.printf("Truncated set %s\n", set);
     } catch (Exception e) {
       System.err.printf("set truncate failed failed: %s\n", e.getMessage());
       e.printStackTrace(System.err);
