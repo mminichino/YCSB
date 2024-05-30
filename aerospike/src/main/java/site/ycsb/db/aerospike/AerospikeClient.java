@@ -24,6 +24,8 @@ import com.aerospike.client.query.RecordSet;
 import com.aerospike.client.query.Statement;
 import site.ycsb.*;
 
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -34,6 +36,8 @@ import java.util.Vector;
  * YCSB binding for <a href="http://www.aerospike.com/">Aerospike</a>.
  */
 public class AerospikeClient extends DB {
+  protected static final ch.qos.logback.classic.Logger LOGGER =
+      (ch.qos.logback.classic.Logger)LoggerFactory.getLogger("site.ycsb.db.aerospike.AerospikeClient");
   private static final String DEFAULT_HOST = "localhost";
   private static final String DEFAULT_PORT = "3000";
   private static final String DEFAULT_TIMEOUT = "10000";
@@ -116,8 +120,8 @@ public class AerospikeClient extends DB {
       }
 
       return Status.OK;
-    } catch (AerospikeException e) {
-      System.err.println("Error while reading key " + key + ": " + e);
+    } catch (Throwable ex) {
+      LOGGER.error("read error: {}", ex.getMessage(), ex);
       return Status.ERROR;
     }
   }
@@ -151,8 +155,8 @@ public class AerospikeClient extends DB {
         result.add(extractResult(record.bins));
       }
       return Status.OK;
-    } catch (AerospikeException e) {
-      System.err.println("Error while scanning from key " + start + ": " + e);
+    } catch (Throwable ex) {
+      LOGGER.error("scan error: {}", ex.getMessage(), ex);
       return Status.ERROR;
     }
   }
@@ -171,8 +175,8 @@ public class AerospikeClient extends DB {
     try {
       client.put(writePolicy, keyObj, bins);
       return Status.OK;
-    } catch (AerospikeException e) {
-      System.err.println("Error while writing key " + key + ": " + e);
+    } catch (Throwable ex) {
+      LOGGER.error("write error: {}", ex.getMessage(), ex);
       return Status.ERROR;
     }
   }
@@ -191,13 +195,13 @@ public class AerospikeClient extends DB {
   public Status delete(String table, String key) {
     try {
       if (!client.delete(deletePolicy, new Key(namespace, table, key))) {
-        System.err.println("Record key " + key + " not found (delete)");
+        LOGGER.error("key not found for delete {}", key);
         return Status.ERROR;
       }
 
       return Status.OK;
-    } catch (AerospikeException e) {
-      System.err.println("Error while deleting key " + key + ": " + e);
+    } catch (Throwable ex) {
+      LOGGER.error("delete error: {}", ex.getMessage(), ex);
       return Status.ERROR;
     }
   }
