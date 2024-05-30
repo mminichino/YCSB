@@ -33,7 +33,7 @@ LICENSE file.
     <dependency>
       <groupId>com.aerospike</groupId>
       <artifactId>aerospike-client</artifactId>
-      <version>${aerospike.version}</version>
+      <version>7.2.1</version>
     </dependency>
     <dependency>
       <groupId>site.ycsb</groupId>

@@ -298,6 +298,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>aerospike</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>aerospike</module>
+      </modules>
+    </profile>
+    <profile>
       <id>default</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -312,6 +321,7 @@ LICENSE file.
         <module>redis</module>
         <module>mongodb</module>
         <module>dynamodb</module>
+        <module>aerospike</module>
       </modules>
     </profile>
   </profiles>

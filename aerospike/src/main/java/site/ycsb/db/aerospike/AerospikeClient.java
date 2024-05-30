@@ -1,12 +1,12 @@
 /**
  * Copyright (c) 2015 YCSB contributors. All rights reserved.
- *
+ * -
  * Licensed under the Apache License, Version 2.0 (the "License"); you
  * may not use this file except in compliance with the License. You
  * may obtain a copy of the License at
- *
+ * -
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * -
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
@@ -15,7 +15,7 @@
  * LICENSE file.
  */
 
-package site.ycsb.db;
+package site.ycsb.db.aerospike;
 
 import com.aerospike.client.AerospikeException;
 import com.aerospike.client.Bin;
@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.Vector;
 
 /**
- * YCSB binding for <a href="http://www.aerospike.com/">Areospike</a>.
+ * YCSB binding for <a href="http://www.aerospike.com/">Aerospike</a>.
  */
 public class AerospikeClient extends site.ycsb.DB {
   private static final String DEFAULT_HOST = "localhost";
@@ -49,10 +49,10 @@ public class AerospikeClient extends site.ycsb.DB {
 
   private com.aerospike.client.AerospikeClient client = null;
 
-  private Policy readPolicy = new Policy();
-  private WritePolicy insertPolicy = new WritePolicy();
-  private WritePolicy updatePolicy = new WritePolicy();
-  private WritePolicy deletePolicy = new WritePolicy();
+  private final Policy readPolicy = new Policy();
+  private final WritePolicy insertPolicy = new WritePolicy();
+  private final WritePolicy updatePolicy = new WritePolicy();
+  private final WritePolicy deletePolicy = new WritePolicy();
 
   @Override
   public void init() throws DBException {
@@ -70,16 +70,12 @@ public class AerospikeClient extends site.ycsb.DB {
     int timeout = Integer.parseInt(props.getProperty("as.timeout",
         DEFAULT_TIMEOUT));
 
-    readPolicy.timeout = timeout;
-    insertPolicy.timeout = timeout;
-    updatePolicy.timeout = timeout;
-    deletePolicy.timeout = timeout;
-
     ClientPolicy clientPolicy = new ClientPolicy();
 
     if (user != null && password != null) {
       clientPolicy.user = user;
       clientPolicy.password = password;
+      clientPolicy.timeout = timeout;
     }
 
     try {
@@ -92,7 +88,7 @@ public class AerospikeClient extends site.ycsb.DB {
   }
 
   @Override
-  public void cleanup() throws DBException {
+  public void cleanup() {
     client.close();
   }
 
@@ -101,10 +97,11 @@ public class AerospikeClient extends site.ycsb.DB {
       Map<String, ByteIterator> result) {
     try {
       Record record;
+      String[] fieldList = new String[fields.size()];
 
-      if (fields != null) {
+      if (!fields.isEmpty()) {
         record = client.get(readPolicy, new Key(namespace, table, key),
-            fields.toArray(new String[fields.size()]));
+            fields.toArray(fieldList));
       } else {
         record = client.get(readPolicy, new Key(namespace, table, key));
       }

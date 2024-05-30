@@ -18,4 +18,4 @@
 /**
  * YCSB binding for <a href="http://www.aerospike.com/">Areospike</a>.
  */
-package site.ycsb.db;
+package site.ycsb.db.aerospike;
