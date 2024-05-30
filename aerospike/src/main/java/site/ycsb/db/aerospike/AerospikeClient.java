@@ -19,10 +19,10 @@ package site.ycsb.db.aerospike;
 
 import ch.qos.logback.classic.Logger;
 import com.aerospike.client.*;
-import com.aerospike.client.exp.Exp;
 import com.aerospike.client.policy.*;
 import com.aerospike.client.query.RecordSet;
 import com.aerospike.client.query.Statement;
+import com.aerospike.client.query.Filter;
 import site.ycsb.*;
 
 import org.slf4j.LoggerFactory;
@@ -36,28 +36,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AerospikeClient extends DB {
   protected static final Logger LOGGER =
       (Logger)LoggerFactory.getLogger("site.ycsb.db.aerospike.AerospikeClient");
+  private static final Object INIT_COORDINATOR = new Object();
+
   private static final String DEFAULT_HOST = "localhost";
   private static final String DEFAULT_PORT = "3000";
-  private static final String DEFAULT_TIMEOUT = "10000";
+  private static final String DEFAULT_TIMEOUT = "20000";
   private static final String DEFAULT_NAMESPACE = "ycsb";
 
-  private String namespace = null;
-  private int timeout = 10000;
+  private static String namespace = null;
 
-  private com.aerospike.client.AerospikeClient client = null;
+  private static volatile com.aerospike.client.AerospikeClient client = null;
 
-  private final Policy readPolicy = new Policy();
-  private final WritePolicy insertPolicy = new WritePolicy();
-  private final WritePolicy updatePolicy = new WritePolicy();
-  private final WritePolicy deletePolicy = new WritePolicy();
+  private static final Policy readPolicy = new Policy();
+  private static final WritePolicy insertPolicy = new WritePolicy();
+  private static final WritePolicy updatePolicy = new WritePolicy();
+  private static final WritePolicy deletePolicy = new WritePolicy();
+  private static final QueryPolicy queryPolicy = new QueryPolicy();
 
   private static final AtomicInteger recordId = new AtomicInteger(0);
 
   @Override
-  public void init() throws DBException {
-    insertPolicy.recordExistsAction = RecordExistsAction.UPDATE;
-    updatePolicy.recordExistsAction = RecordExistsAction.UPDATE;
-
+  public void init() {
     Properties props = getProperties();
 
     namespace = props.getProperty("as.namespace", DEFAULT_NAMESPACE);
@@ -66,34 +65,59 @@ public class AerospikeClient extends DB {
     String user = props.getProperty("as.user");
     String password = props.getProperty("as.password");
     int port = Integer.parseInt(props.getProperty("as.port", DEFAULT_PORT));
-    timeout = Integer.parseInt(props.getProperty("as.timeout", DEFAULT_TIMEOUT));
+    int timeout = Integer.parseInt(props.getProperty("as.timeout", DEFAULT_TIMEOUT));
     boolean external = getProperties().getProperty("as.external", "false").equals("true");
 
-    ClientPolicy clientPolicy = new ClientPolicy();
+    synchronized (INIT_COORDINATOR) {
+      if (client == null) {
+        ClientPolicy clientPolicy = new ClientPolicy();
+        insertPolicy.recordExistsAction = RecordExistsAction.UPDATE;
+        updatePolicy.recordExistsAction = RecordExistsAction.UPDATE;
 
-    if (user != null && password != null) {
-      clientPolicy.user = user;
-      clientPolicy.password = password;
-      clientPolicy.timeout = timeout;
-    }
+        insertPolicy.connectTimeout = timeout;
+        insertPolicy.socketTimeout = timeout;
+        insertPolicy.totalTimeout = timeout;
+        insertPolicy.sleepBetweenRetries = 10;
+        insertPolicy.maxRetries = 3;
+        insertPolicy.commitLevel = CommitLevel.COMMIT_MASTER;
 
-    if (external) {
-      clientPolicy.useServicesAlternate = true;
-    }
+        updatePolicy.connectTimeout = timeout;
+        updatePolicy.socketTimeout = timeout;
+        updatePolicy.totalTimeout = timeout;
+        updatePolicy.sleepBetweenRetries = 10;
+        updatePolicy.maxRetries = 3;
+        updatePolicy.commitLevel = CommitLevel.COMMIT_MASTER;
 
-    try {
-      client =
-          new com.aerospike.client.AerospikeClient(clientPolicy, host, port);
-    } catch (AerospikeException e) {
-      throw new DBException(String.format("Error while creating Aerospike " +
-          "client for %s:%d.", host, port), e);
+        queryPolicy.includeBinData = false;
+        queryPolicy.totalTimeout = timeout;
+        queryPolicy.socketTimeout = timeout;
+        queryPolicy.connectTimeout = timeout;
+        queryPolicy.sleepBetweenRetries = 10;
+        queryPolicy.maxRetries = 3;
+
+        if (user != null && password != null) {
+          clientPolicy.user = user;
+          clientPolicy.password = password;
+          clientPolicy.timeout = timeout;
+          clientPolicy.maxConnsPerNode = 512;
+          clientPolicy.asyncMaxConnsPerNode = 512;
+        }
+
+        if (external) {
+          clientPolicy.useServicesAlternate = true;
+        }
+
+        try {
+          client = new com.aerospike.client.AerospikeClient(clientPolicy, host, port);
+        } catch (Exception ex) {
+          LOGGER.error("AerospikeClient.init(): Could not initialize Aerospike client.", ex);
+        }
+      }
     }
   }
 
   @Override
-  public void cleanup() {
-    client.close();
-  }
+  public void cleanup() {}
 
   @Override
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
@@ -130,7 +154,6 @@ public class AerospikeClient extends DB {
     HashMap<String, ByteIterator> result = new HashMap<>();
     values.parallelStream()
         .forEach(entry -> result.put(entry.getKey(), new StringByteIterator(entry.getValue().toString()))
-//        .forEach(entry -> LOGGER.info("{} : {}", entry.getKey(), entry.getValue().toString())
         );
     return result;
   }
@@ -145,18 +168,9 @@ public class AerospikeClient extends DB {
       Statement stmt = new Statement();
       stmt.setNamespace(namespace);
       stmt.setSetName(table);
+      stmt.setFilter(Filter.range("id", startId, startId + count - 1));
 
-      QueryPolicy policy = new QueryPolicy();
-      policy.includeBinData = false;
-      policy.totalTimeout = timeout;
-      policy.socketTimeout = timeout;
-      policy.connectTimeout = timeout;
-      policy.setMaxRecords(count);
-      policy.filterExp = Exp.build(
-          Exp.ge(Exp.intBin("id"), Exp.val(startId))
-      );
-
-      RecordSet rs = client.query(policy, stmt);
+      RecordSet rs = client.query(queryPolicy, stmt);
 
       while (rs.next()) {
         Record document = client.get(readPolicy, rs.getKey());
