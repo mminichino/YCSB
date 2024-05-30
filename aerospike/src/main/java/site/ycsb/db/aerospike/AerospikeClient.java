@@ -143,6 +143,7 @@ public class AerospikeClient extends DB {
       stmt.setSetName(table);
 
       QueryPolicy policy = new QueryPolicy();
+      policy.includeBinData = false;
       policy.setMaxRecords(count);
       policy.filterExp = Exp.build(
           Exp.ge(Exp.key(Exp.Type.STRING), Exp.val(start))
@@ -151,8 +152,8 @@ public class AerospikeClient extends DB {
       RecordSet rs = client.query(policy, stmt);
 
       while (rs.next()) {
-        Record record = rs.getRecord();
-        result.add(extractResult(record.bins));
+        Record document = client.get(readPolicy, rs.getKey());
+        result.add(extractResult(document.bins));
       }
       return Status.OK;
     } catch (Throwable ex) {
