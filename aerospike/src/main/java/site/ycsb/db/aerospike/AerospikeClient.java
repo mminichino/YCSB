@@ -18,7 +18,10 @@
 package site.ycsb.db.aerospike;
 
 import com.aerospike.client.*;
+import com.aerospike.client.exp.Exp;
 import com.aerospike.client.policy.*;
+import com.aerospike.client.query.RecordSet;
+import com.aerospike.client.query.Statement;
 import site.ycsb.*;
 
 import java.util.HashMap;
@@ -26,7 +29,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.Vector;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * YCSB binding for <a href="http://www.aerospike.com/">Aerospike</a>.
@@ -45,13 +47,11 @@ public class AerospikeClient extends DB {
   private final WritePolicy insertPolicy = new WritePolicy();
   private final WritePolicy updatePolicy = new WritePolicy();
   private final WritePolicy deletePolicy = new WritePolicy();
-  private final ScanPolicy scanPolicy = new ScanPolicy();
 
   @Override
   public void init() throws DBException {
     insertPolicy.recordExistsAction = RecordExistsAction.UPDATE;
     updatePolicy.recordExistsAction = RecordExistsAction.UPDATE;
-    scanPolicy.includeBinData = false;
 
     Properties props = getProperties();
 
@@ -134,14 +134,22 @@ public class AerospikeClient extends DB {
   public Status scan(String table, String start, int count, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
     try {
-      AtomicInteger recordCount = new AtomicInteger(1);
-      client.scanAll(scanPolicy, namespace, table, (key, record) -> {
-        if (key.toString().compareTo(start) <= 0 && recordCount.get() <= count) {
-          Record document = client.get(readPolicy, key);
-          result.add(extractResult(document.bins));
-          recordCount.incrementAndGet();
-        }
-      });
+      Statement stmt = new Statement();
+      stmt.setNamespace(namespace);
+      stmt.setSetName(table);
+
+      QueryPolicy policy = new QueryPolicy();
+      policy.setMaxRecords(count);
+      policy.filterExp = Exp.build(
+          Exp.ge(Exp.key(Exp.Type.STRING), Exp.val(start))
+      );
+
+      RecordSet rs = client.query(policy, stmt);
+
+      while (rs.next()) {
+        Record record = rs.getRecord();
+        result.add(extractResult(record.bins));
+      }
       return Status.OK;
     } catch (AerospikeException e) {
       System.err.println("Error while scanning from key " + start + ": " + e);
