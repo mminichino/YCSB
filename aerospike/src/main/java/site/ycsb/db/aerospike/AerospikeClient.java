@@ -67,6 +67,14 @@ public class AerospikeClient extends DB {
     int port = Integer.parseInt(props.getProperty("as.port", DEFAULT_PORT));
     int timeout = Integer.parseInt(props.getProperty("as.timeout", DEFAULT_TIMEOUT));
     boolean external = getProperties().getProperty("as.external", "false").equals("true");
+    boolean durableWrites = getProperties().getProperty("as.durable", "false").equals("true");
+
+    CommitLevel durability;
+    if (durableWrites) {
+      durability = CommitLevel.COMMIT_ALL;
+    } else {
+      durability = CommitLevel.COMMIT_MASTER;
+    }
 
     synchronized (INIT_COORDINATOR) {
       if (client == null) {
@@ -79,14 +87,14 @@ public class AerospikeClient extends DB {
         insertPolicy.totalTimeout = timeout;
         insertPolicy.sleepBetweenRetries = 10;
         insertPolicy.maxRetries = 3;
-        insertPolicy.commitLevel = CommitLevel.COMMIT_MASTER;
+        insertPolicy.commitLevel = durability;
 
         updatePolicy.connectTimeout = timeout;
         updatePolicy.socketTimeout = timeout;
         updatePolicy.totalTimeout = timeout;
         updatePolicy.sleepBetweenRetries = 10;
         updatePolicy.maxRetries = 3;
-        updatePolicy.commitLevel = CommitLevel.COMMIT_MASTER;
+        updatePolicy.commitLevel = durability;
 
         queryPolicy.includeBinData = false;
         queryPolicy.totalTimeout = timeout;
@@ -101,6 +109,7 @@ public class AerospikeClient extends DB {
           clientPolicy.timeout = timeout;
           clientPolicy.maxConnsPerNode = 512;
           clientPolicy.asyncMaxConnsPerNode = 512;
+          clientPolicy.maxErrorRate = 0;
         }
 
         if (external) {
