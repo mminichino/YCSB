@@ -16,7 +16,7 @@ if [ -n "$PRINT_USAGE" ]; then
 fi
 }
 
-while getopts "R:O:T:" opt
+while getopts "R:O:T:l:r:" opt
 do
   case $opt in
     R)
@@ -27,6 +27,12 @@ do
       ;;
     T)
       RUNTIME=$OPTARG
+      ;;
+    l)
+      THREADCOUNT_LOAD=$OPTARG
+      ;;
+    r)
+      THREADCOUNT_RUN=$OPTARG
       ;;
     \?)
       print_usage
