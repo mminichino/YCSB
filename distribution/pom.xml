@@ -399,6 +399,41 @@ LICENSE file.
         </dependency>
       </dependencies>
     </profile>
+    <profile>
+      <id>snowflake</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>${maven.assembly.version}</version>
+            <executions>
+              <execution>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/assembly/snowflake.xml</descriptor>
+                  </descriptors>
+                  <finalName>ycsb-snowflake</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>posix</tarLongFileMode>
+                </configuration>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <dependencies>
+        <dependency>
+          <groupId>site.ycsb</groupId>
+          <artifactId>snowflake-binding</artifactId>
+          <version>${project.version}</version>
+        </dependency>
+      </dependencies>
+    </profile>
   </profiles>
 
 </project>

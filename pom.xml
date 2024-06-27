@@ -307,6 +307,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>snowflake</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>snowflake</module>
+      </modules>
+    </profile>
+    <profile>
       <id>default</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -322,6 +331,7 @@ LICENSE file.
         <module>mongodb</module>
         <module>dynamodb</module>
         <module>aerospike</module>
+        <module>snowflake</module>
       </modules>
     </profile>
   </profiles>
