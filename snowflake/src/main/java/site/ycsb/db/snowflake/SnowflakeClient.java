@@ -13,7 +13,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import site.ycsb.db.snowflake.flavors.DBFlavor;
 
+import ch.qos.logback.classic.Logger;
+import org.slf4j.LoggerFactory;
+
 public class SnowflakeClient extends DB {
+
+  protected static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.db.snowflake.SnowflakeClient");
 
   /** The class to use as the jdbc driver. */
   public static final String DRIVER_CLASS = "db.driver";
@@ -307,7 +313,7 @@ public class SnowflakeClient extends DB {
       try {
         return block.call();
       } catch (Exception e) {
-//        LOGGER.debug("Retry count: {} error: {}", retryCount, e.getMessage(), e);
+        LOGGER.debug("Retry count: {} error: {}", retryCount, e.getMessage(), e);
         if (retryNumber == retryCount) {
           throw e;
         } else {
