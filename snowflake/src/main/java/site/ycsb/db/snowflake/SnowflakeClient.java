@@ -236,6 +236,7 @@ public class SnowflakeClient extends DB {
         }
       } catch (SQLException e) {
         System.err.println("Error in cleanup execution. " + e);
+        e.printStackTrace(System.err);
         throw new DBException(e);
       }
     }
@@ -367,15 +368,9 @@ public class SnowflakeClient extends DB {
       if (scanStatement == null) {
         scanStatement = createAndCacheScanStatement(type, startKey);
       }
-      // SQL Server TOP syntax is at first
-      if (sqlserverScans) {
-        scanStatement.setInt(1, recordcount);
-        scanStatement.setString(2, startKey);
-        // FETCH FIRST and LIMIT are at the end
-      } else {
-        scanStatement.setString(1, startKey);
-        scanStatement.setInt(2, recordcount);
-      }
+      scanStatement.setString(1, startKey);
+      scanStatement.setInt(2, recordcount);
+
       ResultSet resultSet = scanStatement.executeQuery();
       for (int i = 0; i < recordcount && resultSet.next(); i++) {
         if (result != null && fields != null) {

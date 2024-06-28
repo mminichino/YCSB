@@ -70,24 +70,13 @@ public class DefaultDBFlavor extends DBFlavor {
   @Override
   public String createScanStatement(StatementType scanType, String key, boolean sqlserverScans, boolean sqlansiScans) {
     StringBuilder select;
-    if (sqlserverScans) {
-      select = new StringBuilder("SELECT TOP (?) * FROM ");
-    } else {
-      select = new StringBuilder("SELECT * FROM ");
-    }
+    select = new StringBuilder("SELECT * FROM ");
     select.append(scanType.getTableName());
-    select.append(" WHERE ");
+    select.append(" a where a.RECORD >= (select RECORD from ");
+    select.append(scanType.getTableName());
+    select.append(" b where b.");
     select.append(SnowflakeClient.PRIMARY_KEY);
-    select.append(" >= ?");
-    select.append(" ORDER BY ");
-    select.append(SnowflakeClient.PRIMARY_KEY);
-    if (!sqlserverScans) {
-      if (sqlansiScans) {
-        select.append(" FETCH FIRST ? ROWS ONLY");
-      } else {
-        select.append(" LIMIT ?");
-      }
-    }
+    select.append(" = ?) limit ?");
     return select.toString();
   }
 }

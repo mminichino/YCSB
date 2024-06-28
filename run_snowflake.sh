@@ -42,7 +42,7 @@ do
 done
 shift $((OPTIND -1))
 
-for run_workload in {c..e}
+for run_workload in c scan
 do
   workload="workloads/workload${run_workload}"
   LOAD_OPTS="-db site.ycsb.db.snowflake.SnowflakeClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -p core_workload_insertion_retry_limit=10 -s -load"
