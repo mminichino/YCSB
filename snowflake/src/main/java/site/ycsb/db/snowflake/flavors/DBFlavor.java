@@ -6,7 +6,7 @@ public abstract class DBFlavor {
 
   enum DBName {
     DEFAULT,
-    PHOENIX
+    BENCH
   }
 
   private final DBName dbName;
@@ -17,6 +17,10 @@ public abstract class DBFlavor {
 
   public static DBFlavor defaultDriver() {
     return new DefaultDBFlavor();
+  }
+
+  public static DBFlavor benchDriver() {
+    return new BenchDBFlavor();
   }
 
   /**

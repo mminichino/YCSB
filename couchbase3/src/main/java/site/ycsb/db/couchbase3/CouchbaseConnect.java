@@ -11,6 +11,8 @@ import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.BucketExistsException;
 import com.couchbase.client.core.error.BucketNotFoundException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
+import com.couchbase.client.core.error.ScopeExistsException;
+import com.couchbase.client.core.error.CollectionExistsException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.config.PortInfo;
 import com.couchbase.client.java.*;
@@ -24,10 +26,17 @@ import com.couchbase.client.java.http.HttpPath;
 import com.couchbase.client.java.http.HttpResponse;
 import com.couchbase.client.java.http.HttpTarget;
 import com.couchbase.client.java.kv.*;
+import com.couchbase.client.java.manager.analytics.AnalyticsDataType;
 import com.couchbase.client.java.manager.bucket.*;
+import com.couchbase.client.java.manager.collection.CollectionManager;
 import com.couchbase.client.java.manager.query.CollectionQueryIndexManager;
 import com.couchbase.client.java.manager.query.CreatePrimaryQueryIndexOptions;
 import com.couchbase.client.java.manager.query.CreateQueryIndexOptions;
+import com.couchbase.client.java.manager.analytics.AnalyticsIndexManager;
+import static com.couchbase.client.java.manager.analytics.CreateDatasetAnalyticsOptions.createDatasetAnalyticsOptions;
+import static com.couchbase.client.java.manager.analytics.DropDatasetAnalyticsOptions.dropDatasetAnalyticsOptions;
+import static com.couchbase.client.java.manager.analytics.CreateIndexAnalyticsOptions.createIndexAnalyticsOptions;
+import static com.couchbase.client.java.manager.analytics.DropIndexAnalyticsOptions.dropIndexAnalyticsOptions;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.MutateInOptions.mutateInOptions;
@@ -53,6 +62,7 @@ public final class CouchbaseConnect {
   private volatile Collection collection;
   private volatile ClusterEnvironment environment;
   private volatile BucketManager bucketMgr;
+  private volatile AnalyticsIndexManager analytics;
   public static final String DEFAULT_USER = "Administrator";
   public static final String DEFAULT_PASSWORD = "password";
   public static final String DEFAULT_HOSTNAME = "127.0.0.1";
@@ -79,8 +89,10 @@ public final class CouchbaseConnect {
   private JsonObject clusterInfo = new JsonObject();
   private final boolean scopeEnabled;
   private final boolean collectionEnabled;
+  private boolean analyticsEnabled;
   private final DurabilityLevel durability;
   private final int ttlSeconds;
+  private boolean communityEdition = false;
 
   /**
    * Builder Class.
@@ -194,6 +206,7 @@ public final class CouchbaseConnect {
     collectionName = builder.collectionName;
     scopeEnabled = !Objects.equals(scopeName, "_default");
     collectionEnabled = !Objects.equals(collectionName, "_default");
+    analyticsEnabled = false;
     connect();
   }
 
@@ -334,6 +347,8 @@ public final class CouchbaseConnect {
     Gson gson = new Gson();
     clusterInfo = gson.fromJson(response.contentAsString(), JsonObject.class);
 
+    communityEdition = !clusterInfo.has("cbasMemoryQuota");
+
     for (JsonElement node : clusterInfo.getAsJsonArray("nodes").asList()) {
       String hostEntry = node.getAsJsonObject().get("hostname").getAsString();
       String[] endpoint = hostEntry.split(":", 2);
@@ -343,6 +358,11 @@ public final class CouchbaseConnect {
       JsonObject entry = new JsonObject();
       entry.addProperty("hostname", hostname);
       entry.add("services", services);
+      boolean result = services.asList().stream().anyMatch(e -> e.getAsString().equals("cbas"));
+      if (result) {
+        analyticsEnabled = true;
+        analytics = new AnalyticsIndexManager(cluster);
+      }
 
       hostMap.add(entry);
     }
@@ -407,6 +427,65 @@ public final class CouchbaseConnect {
     check.waitUntilReady(Duration.ofSeconds(15));
   }
 
+  public void createAnalyticsCollection(String bucketName) {
+    analytics.createDataset(bucketName, bucketName, createDatasetAnalyticsOptions().ignoreIfExists(true));
+  }
+
+  public void dropAnalyticsCollection(String bucketName) {
+    analytics.dropDataset(bucketName, dropDatasetAnalyticsOptions().ignoreIfNotExists(true));
+  }
+
+  public void createAnalyticsIntIndex(String bucketName, String fieldName) {
+    Map<String,AnalyticsDataType> fieldMap = new HashMap<>();
+    fieldMap.put(fieldName, AnalyticsDataType.INT64);
+    String indexName = bucketName + "_" + fieldName + "_idx";
+    analytics.createIndex(indexName, bucketName, fieldMap, createIndexAnalyticsOptions().ignoreIfExists(true));
+  }
+
+  public void createAnalyticsStrIndex(String bucketName, String fieldName) {
+    Map<String,AnalyticsDataType> fieldMap = new HashMap<>();
+    fieldMap.put(fieldName, AnalyticsDataType.STRING);
+    String indexName = bucketName + "_" + fieldName + "_idx";
+    analytics.createIndex(indexName, bucketName, fieldMap, createIndexAnalyticsOptions().ignoreIfExists(true));
+  }
+
+  public void dropAnalyticsIndex(String bucketName, String fieldName) {
+    String indexName = bucketName + "_" + fieldName + "_idx";
+    analytics.dropIndex(indexName, bucketName, dropIndexAnalyticsOptions().ignoreIfNotExists(true));
+  }
+
+  public void createScope(String bucketName, String scopeName) {
+    if (Objects.equals(scopeName, "_default")) {
+      return;
+    }
+    bucketMgr.getBucket(bucketName);
+    bucket = cluster.bucket(bucketName);
+    CollectionManager collectionManager = bucket.collections();
+    try {
+      collectionManager.createScope(scopeName);
+    } catch (ScopeExistsException e) {
+      LOGGER.info(String.format("Scope %s already exists in cluster", scopeName));
+    }
+  }
+
+  public void createCollection(String bucketName, String scopeName, String collectionName) {
+    if (Objects.equals(collectionName, "_default")) {
+      return;
+    }
+    bucketMgr.getBucket(bucketName);
+    bucket = cluster.bucket(bucketName);
+    CollectionManager collectionManager = bucket.collections();
+    try {
+      collectionManager.createCollection(scopeName, collectionName);
+    } catch (CollectionExistsException e) {
+      LOGGER.info(String.format("Collection %s already exists in cluster", collectionName));
+    }
+  }
+
+  public boolean isAnalyticsEnabled() {
+    return analyticsEnabled;
+  }
+
   public void dropBucket(String bucket) {
     if (project != null && database != null) {
       CouchbaseCapella capella = new CouchbaseCapella(project, database);
@@ -431,7 +510,9 @@ public final class CouchbaseConnect {
 
   public int getIndexReplicaCount() {
     int indexNodes = (int) getIndexNodeCount();
-    if (indexNodes <= 4) {
+    if (communityEdition) {
+      return 0;
+    } else if (indexNodes <= 4) {
       return indexNodes - 1;
     } else {
       return 3;

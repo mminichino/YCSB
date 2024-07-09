@@ -18,8 +18,11 @@ public final class ClusterInit {
     Properties properties = new Properties();
 
     Option source = new Option("p", "properties", true, "source properties");
+    Option queryMode = new Option("q", "query", false, "query mode");
     source.setRequired(true);
+    queryMode.setRequired(false);
     options.addOption(source);
+    options.addOption(queryMode);
 
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
@@ -43,8 +46,13 @@ public final class ClusterInit {
     }
 
     try {
-      CouchbaseTestSetup setup = new CouchbaseTestSetup();
-      setup.testSetup(properties);
+      if (cmd.hasOption("query")) {
+        CouchbaseQuerySetup setup = new CouchbaseQuerySetup();
+        setup.testSetup(properties);
+      } else {
+        CouchbaseTestSetup setup = new CouchbaseTestSetup();
+        setup.testSetup(properties);
+      }
     } catch (Exception e) {
       System.err.println("Error: " + e);
       e.printStackTrace(System.err);

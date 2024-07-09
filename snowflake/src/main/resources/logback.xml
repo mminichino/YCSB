@@ -42,4 +42,8 @@ LICENSE file.
     <appender-ref ref="FILE"/>
   </logger>
 
+  <logger name="site.ycsb.db.snowflake.SnowflakeTPCLoad" level="INFO">
+    <appender-ref ref="FILE"/>
+  </logger>
+
 </configuration>

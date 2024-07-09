@@ -79,6 +79,10 @@ public class CouchbaseTestCleanup extends TestCleanup {
         System.err.printf("Removing eventing bucket on cluster:[%s]\n", host);
         db.dropBucket("eventing");
       }
+      if (db.isAnalyticsEnabled()) {
+        System.err.printf("Removing analytics collection %s\n", bucket);
+        db.dropAnalyticsCollection(bucket);
+      }
       System.err.printf("Removing bucket %s on cluster:[%s]\n", bucket, host);
       db.dropBucket(bucket);
       db.disconnect();

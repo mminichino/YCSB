@@ -1,10 +1,8 @@
 package site.ycsb;
 
-import com.google.gson.JsonObject;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.util.Properties;
-import java.util.Set;
-import java.util.Map;
+import java.util.*;
 
 /**
  * SQL Database Driver
@@ -26,12 +24,17 @@ public abstract class SQLDB {
   public void cleanup() throws DBException {
   }
 
-  public abstract boolean createTable(String tableName,
-                                      Set<String> pkFields,
-                                      Map<String, DataType> tableFields);
+  public abstract Status createTable(String table, Map<String, DataType> columns, Set<String> keys);
 
-  public abstract boolean addRow(String tableName, JsonObject row);
+  public abstract Status dropTable(String table, Map<String, DataType> columns, Set<String> keys);
 
-  public abstract JsonObject query(String sql);
+  public abstract List<Map<String, ?>> select(String statement, ArrayList<Object> parameters);
 
+  public abstract Status insert(Record data);
+
+  public abstract Status update(String statement, ArrayList<Object> parameters);
+
+  public abstract Status query(String statement);
+
+  public abstract Status delete(String table, String statement);
 }

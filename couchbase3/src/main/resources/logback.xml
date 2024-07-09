@@ -38,6 +38,10 @@
     <appender-ref ref="FILE"/>
   </logger>
 
+  <logger name="site.ycsb.db.couchbase3.CouchbaseQuery" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
   <logger name="site.ycsb.db.couchbase3.CouchbaseConnect" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
@@ -47,6 +51,26 @@
   </logger>
 
   <logger name="site.ycsb.db.couchbase3.RESTInterface" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.db.couchbase3.AnalyticsTPCLoad" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.db.couchbase3.CouchbaseTPCLoad" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.db.couchbase3.CouchbaseTPCRun" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.tpc.tpcc.Generate" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.tpc.tpcc.RunDriver" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 

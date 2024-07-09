@@ -18,8 +18,11 @@ public final class ClusterClean {
     Properties properties = new Properties();
 
     Option source = new Option("p", "properties", true, "source properties");
+    Option queryMode = new Option("q", "query", false, "query mode");
     source.setRequired(true);
+    queryMode.setRequired(false);
     options.addOption(source);
+    options.addOption(queryMode);
 
     CommandLineParser parser = new DefaultParser();
     HelpFormatter formatter = new HelpFormatter();
@@ -43,8 +46,13 @@ public final class ClusterClean {
     }
 
     try {
-      CouchbaseTestCleanup clean = new CouchbaseTestCleanup();
-      clean.testClean(properties);
+      if (cmd.hasOption("query")) {
+        CouchbaseQueryCleanup clean = new CouchbaseQueryCleanup();
+        clean.testClean(properties);
+      } else {
+        CouchbaseTestCleanup clean = new CouchbaseTestCleanup();
+        clean.testClean(properties);
+      }
     } catch (Exception e) {
       System.err.println("Error: " + e);
       e.printStackTrace(System.err);
