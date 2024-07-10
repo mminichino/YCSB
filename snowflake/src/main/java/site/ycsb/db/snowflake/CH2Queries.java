@@ -308,19 +308,19 @@ public class CH2Queries extends BenchQueries {
           "GROUP BY z.su_name " +
           "LIMIT 100",
       // Q22
-      "SELECT SUBSTR1(c.c_state,1,1) AS country, COUNT(*) AS numcust, SUM(c.c_balance) AS totacctbal " +
+      "SELECT SUBSTR(c.c_state,1,1) AS country, COUNT(*) AS numcust, SUM(c.c_balance) AS totacctbal " +
           "FROM customer c " +
-          "WHERE SUBSTR1(c.c_phone,1,1) IN ['1','2','3','4','5','6','7'] " +
-          "AND c.c_balance > (SELECT VALUE AVG(c1.c_balance) " +
+          "WHERE ARRAY_CONTAINS(SUBSTR(c.c_phone,1,1)::VARIANT, ARRAY_CONSTRUCT('1','2','3','4','5','6','7')) " +
+          "AND c.c_balance > (SELECT AVG(c1.c_balance) " +
           "FROM customer c1 " +
           "WHERE c1.c_balance > 0.00 " +
-          "AND SUBSTR1(c1.c_phone,1,1) IN ['1','2','3','4','5','6','7'])[0] " +
-          "AND NOT EXISTS (SELECT VALUE 1 " +
+          "AND ARRAY_CONTAINS(SUBSTR(c1.c_phone,1,1)::VARIANT, ARRAY_CONSTRUCT('1','2','3','4','5','6','7'))) " +
+          "AND NOT EXISTS (SELECT 1 " +
           "FROM orders o " +
           "WHERE o.o_c_id = c.c_id AND o.o_w_id = c.c_w_id AND o.o_d_id = c.c_d_id " +
           "AND o.o_entry_d BETWEEN '2013-12-01 00:00:00' AND '2013-12-31 00:00:00') " +
-          "GROUP BY SUBSTR1(c.c_state,1,1) " +
-          "ORDER BY SUBSTR1(c.c_state,1,1)"
+          "GROUP BY SUBSTR(c.c_state,1,1) " +
+          "ORDER BY SUBSTR(c.c_state,1,1)"
   };
 
   public final int[][] queryPermutations = {
