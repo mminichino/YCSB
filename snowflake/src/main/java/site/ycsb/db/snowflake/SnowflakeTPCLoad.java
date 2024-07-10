@@ -427,7 +427,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
       sql.append(" su_nationkey int,");
       sql.append(" su_phone varchar(34),");
       sql.append(" su_acctbal double,");
-      sql.append(" su_comment varchar(200),");
+      sql.append(" su_comment varchar(500),");
       sql.append(" PRIMARY KEY(su_suppkey) )");
 
       stmt.execute(sql.toString());
