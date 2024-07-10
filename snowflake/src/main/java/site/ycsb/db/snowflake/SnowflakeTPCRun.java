@@ -1,6 +1,8 @@
 package site.ycsb.db.snowflake;
 
 import ch.qos.logback.classic.Logger;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.LoggerFactory;
 import site.ycsb.*;
@@ -132,6 +134,10 @@ public class SnowflakeTPCRun extends BenchRun {
     }
   }
 
+  private Connection getDefaultConnection() {
+    return conns.get(0);
+  }
+
   /** Returns parsed int value from the properties if set, otherwise returns -1. */
   private static int getIntProperty(Properties props, String key) throws DBException {
     String valueStr = props.getProperty(key);
@@ -245,67 +251,85 @@ public class SnowflakeTPCRun extends BenchRun {
     }
   }
 
+  public static Class<?> toClass(int type) {
+    Class<?> result = Object.class;
+
+    switch (type) {
+      case Types.CHAR:
+      case Types.VARCHAR:
+      case Types.LONGVARCHAR:
+        result = String.class;
+        break;
+      case Types.NUMERIC:
+      case Types.DECIMAL:
+        result = java.math.BigDecimal.class;
+        break;
+      case Types.BIT:
+        result = Boolean.class;
+        break;
+      case Types.TINYINT:
+      case Types.SMALLINT:
+      case Types.INTEGER:
+        result = Integer.class;
+        break;
+      case Types.BIGINT:
+        result = Long.class;
+        break;
+      case Types.REAL:
+      case Types.FLOAT:
+      case Types.DOUBLE:
+        result = Double.class;
+        break;
+      case Types.BINARY:
+      case Types.VARBINARY:
+      case Types.LONGVARBINARY:
+        result = Byte[].class;
+        break;
+      case Types.DATE:
+        result = java.sql.Date.class;
+        break;
+      case Types.TIME:
+        result = java.sql.Time.class;
+        break;
+      case Types.TIMESTAMP:
+        result = java.sql.Timestamp.class;
+        break;
+    }
+
+    return result;
+  }
+
   @Override
   public List<ObjectNode> query(String statement) {
-    return List.of();
+    List<ObjectNode> results = new ArrayList<>();
+    try {
+      PreparedStatement readStatement = createQueryStatement(statement);
+      ResultSet resultSet = readStatement.executeQuery();
+      if (!resultSet.next()) {
+        resultSet.close();
+        return results;
+      }
+      while (resultSet.next()) {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode data = mapper.createObjectNode();
+        ResultSetMetaData metaData = resultSet.getMetaData();
+        for (int i = 1; i <= metaData.getColumnCount(); i++) {
+          String columnName = metaData.getColumnName(i);
+          JsonNode value = mapper.valueToTree(resultSet.getObject(i));
+          data.set(columnName, value);
+        }
+        results.add(data);
+      }
+      resultSet.close();
+      return results;
+    } catch (Exception e) {
+      LOGGER.error("Error processing query: {}", e.getMessage(), e);
+      return null;
+    }
   }
 
-  private PreparedStatement createAndCacheInsertStatement(StatementType insertType, String key)
-      throws SQLException {
-    String insert = dbFlavor.createInsertStatement(insertType, key);
-    PreparedStatement insertStatement = getShardConnectionByKey(key).prepareStatement(insert);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(insertType, insertStatement);
-    if (stmt == null) {
-      return insertStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheReadStatement(StatementType readType, String key)
-      throws SQLException {
-    String read = dbFlavor.createReadStatement(readType, key);
-    PreparedStatement readStatement = getShardConnectionByKey(key).prepareStatement(read);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(readType, readStatement);
-    if (stmt == null) {
-      return readStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheDeleteStatement(StatementType deleteType, String key)
-      throws SQLException {
-    String delete = dbFlavor.createDeleteStatement(deleteType, key);
-    PreparedStatement deleteStatement = getShardConnectionByKey(key).prepareStatement(delete);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(deleteType, deleteStatement);
-    if (stmt == null) {
-      return deleteStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheUpdateStatement(StatementType updateType, String key)
-      throws SQLException {
-    String update = dbFlavor.createUpdateStatement(updateType, key);
-    PreparedStatement insertStatement = getShardConnectionByKey(key).prepareStatement(update);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(updateType, insertStatement);
-    if (stmt == null) {
-      return insertStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheScanStatement(StatementType scanType, String key)
-      throws SQLException {
-    String select = dbFlavor.createScanStatement(scanType, key, sqlserverScans, sqlansiScans);
-    PreparedStatement scanStatement = getShardConnectionByKey(key).prepareStatement(select);
-    if (this.jdbcFetchSize > 0) {
-      scanStatement.setFetchSize(this.jdbcFetchSize);
-    }
-    PreparedStatement stmt = cachedStatements.putIfAbsent(scanType, scanStatement);
-    if (stmt == null) {
-      return scanStatement;
-    }
-    return stmt;
+  private PreparedStatement createQueryStatement(String statement) throws SQLException {
+    return getDefaultConnection().prepareStatement(statement);
   }
 
   private static <T>T retryBlock(Callable<T> block) throws Exception {
@@ -330,194 +354,5 @@ public class SnowflakeTPCRun extends BenchRun {
       }
     }
     return block.call();
-  }
-
-  public Status read(String tableName, String key, Set<String> fields, Map<String, ByteIterator> result) {
-    try {
-      StatementType type = new StatementType(StatementType.Type.READ, tableName, 1, "", getShardIndexByKey(key));
-      PreparedStatement readStatement = cachedStatements.get(type);
-      if (readStatement == null) {
-        readStatement = createAndCacheReadStatement(type, key);
-      }
-      readStatement.setString(1, key);
-      ResultSet resultSet = readStatement.executeQuery();
-      if (!resultSet.next()) {
-        resultSet.close();
-        return Status.NOT_FOUND;
-      }
-      if (result != null && fields != null) {
-        for (String field : fields) {
-          String value = resultSet.getString(field);
-          result.put(field, new StringByteIterator(value));
-        }
-      }
-      resultSet.close();
-      return Status.OK;
-    } catch (SQLException e) {
-      System.err.println("Error in processing read of table " + tableName + ": " + e);
-      return Status.ERROR;
-    }
-  }
-
-  public Status scan(String tableName, String startKey, int recordcount, Set<String> fields,
-                     Vector<HashMap<String, ByteIterator>> result) {
-    try {
-      StatementType type = new StatementType(StatementType.Type.SCAN, tableName, 1, "", getShardIndexByKey(startKey));
-      PreparedStatement scanStatement = cachedStatements.get(type);
-      if (scanStatement == null) {
-        scanStatement = createAndCacheScanStatement(type, startKey);
-      }
-      scanStatement.setString(1, startKey);
-      scanStatement.setInt(2, recordcount);
-
-      ResultSet resultSet = scanStatement.executeQuery();
-      for (int i = 0; i < recordcount && resultSet.next(); i++) {
-        if (result != null && fields != null) {
-          HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
-          for (String field : fields) {
-            String value = resultSet.getString(field);
-            values.put(field, new StringByteIterator(value));
-          }
-          result.add(values);
-        }
-      }
-      resultSet.close();
-      return Status.OK;
-    } catch (SQLException e) {
-      System.err.println("Error in processing scan of table: " + tableName + e);
-      return Status.ERROR;
-    }
-  }
-
-  public Status update(String tableName, String key, Map<String, ByteIterator> values) {
-    try {
-      return retryBlock(() -> {
-        int numFields = values.size();
-        OrderedFieldInfo fieldInfo = getFieldInfo(values);
-        StatementType type = new StatementType(StatementType.Type.UPDATE, tableName,
-            numFields, fieldInfo.getFieldKeys(), getShardIndexByKey(key));
-        PreparedStatement updateStatement = cachedStatements.get(type);
-        if (updateStatement == null) {
-          updateStatement = createAndCacheUpdateStatement(type, key);
-        }
-        int index = 1;
-        for (String value : fieldInfo.getFieldValues()) {
-          updateStatement.setString(index++, value);
-        }
-        updateStatement.setString(index, key);
-        int result = updateStatement.executeUpdate();
-        if (result == 1) {
-          return Status.OK;
-        }
-        return Status.UNEXPECTED_STATE;
-      });
-    } catch (Exception e) {
-      System.err.println("Error in processing update to table: " + tableName + e);
-      return Status.ERROR;
-    }
-  }
-
-  public Status insert(String tableName, String key, Map<String, ByteIterator> values) {
-    try {
-      return retryBlock(() -> {
-        int numFields = values.size();
-        OrderedFieldInfo fieldInfo = getFieldInfo(values);
-        StatementType type = new StatementType(StatementType.Type.INSERT, tableName,
-            numFields, fieldInfo.getFieldKeys(), getShardIndexByKey(key));
-        PreparedStatement insertStatement = cachedStatements.get(type);
-        if (insertStatement == null) {
-          insertStatement = createAndCacheInsertStatement(type, key);
-        }
-        insertStatement.setString(1, key);
-        int index = 2;
-        for (String value : fieldInfo.getFieldValues()) {
-          insertStatement.setString(index++, value);
-        }
-        // Using the batch insert API
-        if (batchUpdates) {
-          insertStatement.addBatch();
-          // Check for a sane batch size
-          if (batchSize > 0) {
-            // Commit the batch after it grows beyond the configured size
-            if (++numRowsInBatch % batchSize == 0) {
-              int[] results = insertStatement.executeBatch();
-              for (int r : results) {
-                // Acceptable values are 1 and SUCCESS_NO_INFO (-2) from reWriteBatchedInserts=true
-                if (r != 1 && r != -2) {
-                  return Status.ERROR;
-                }
-              }
-              // If autoCommit is off, make sure we commit the batch
-              if (!autoCommit) {
-                getShardConnectionByKey(key).commit();
-              }
-              return Status.OK;
-            } // else, the default value of -1 or a nonsense. Treat it as an infinitely large batch.
-          } // else, we let the batch accumulate
-          // Added element to the batch, potentially committing the batch too.
-          return Status.BATCHED_OK;
-        } else {
-          // Normal update
-          int result = insertStatement.executeUpdate();
-          // If we are not autoCommit, we might have to commit now
-          if (!autoCommit) {
-            // Let updates be batched locally
-            if (batchSize > 0) {
-              if (++numRowsInBatch % batchSize == 0) {
-                // Send the batch of updates
-                getShardConnectionByKey(key).commit();
-              }
-              // uhh
-              return Status.OK;
-            } else {
-              // Commit each update
-              getShardConnectionByKey(key).commit();
-            }
-          }
-          if (result == 1) {
-            return Status.OK;
-          }
-        }
-        return Status.UNEXPECTED_STATE;
-      });
-    } catch (Exception e) {
-      System.err.println("Error in processing insert to table: " + tableName + e);
-      return Status.ERROR;
-    }
-  }
-
-  public Status delete(String tableName, String key) {
-    try {
-      StatementType type = new StatementType(StatementType.Type.DELETE, tableName, 1, "", getShardIndexByKey(key));
-      PreparedStatement deleteStatement = cachedStatements.get(type);
-      if (deleteStatement == null) {
-        deleteStatement = createAndCacheDeleteStatement(type, key);
-      }
-      deleteStatement.setString(1, key);
-      int result = deleteStatement.executeUpdate();
-      if (result == 1) {
-        return Status.OK;
-      }
-      return Status.UNEXPECTED_STATE;
-    } catch (SQLException e) {
-      System.err.println("Error in processing delete to table: " + tableName + e);
-      return Status.ERROR;
-    }
-  }
-
-  private OrderedFieldInfo getFieldInfo(Map<String, ByteIterator> values) {
-    String fieldKeys = "";
-    List<String> fieldValues = new ArrayList<>();
-    int count = 0;
-    for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
-      fieldKeys += entry.getKey();
-      if (count < values.size() - 1) {
-        fieldKeys += ",";
-      }
-      fieldValues.add(count, entry.getValue().toString());
-      count++;
-    }
-
-    return new OrderedFieldInfo(fieldKeys, fieldValues);
   }
 }

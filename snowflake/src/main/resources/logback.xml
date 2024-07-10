@@ -46,4 +46,16 @@ LICENSE file.
     <appender-ref ref="FILE"/>
   </logger>
 
+  <logger name="site.ycsb.db.snowflake.SnowflakeTPCRun" level="INFO">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.tpc.tpcc.Generate" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.tpc.tpcc.RunDriver" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
 </configuration>
