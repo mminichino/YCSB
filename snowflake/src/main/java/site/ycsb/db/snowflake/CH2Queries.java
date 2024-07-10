@@ -268,10 +268,10 @@ public class CH2Queries extends BenchQueries {
       "SELECT su.su_name, su.su_address " +
           "FROM   supplier su, nation n " +
           "WHERE  su.su_suppkey IN " +
-          "(SELECT VALUE MOD(s.s_i_id * s.s_w_id, 10000) " +
+          "(SELECT MOD(s.s_i_id * s.s_w_id, 10000) " +
           "FROM   stock s, order_line ol " +
           "WHERE  s.s_i_id IN " +
-          "(SELECT VALUE i.i_id " +
+          "(SELECT i.i_id " +
           "FROM item i " +
           "WHERE i.i_data LIKE 'co%') " +
           "AND ol.ol_i_id=s.s_i_id " +
