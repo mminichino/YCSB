@@ -127,7 +127,7 @@ public class CH2Queries extends BenchQueries {
           "GROUP BY DATE_PART(year, rn1coolis.o_entry_d) " +
           "ORDER BY l_year",
       // Q09
-      "SELECT sun.n_name, DATE_PART_STR(oolis.o_entry_d, 'year') as l_year, round (SUM(oolis.ol_amount), 2) as SUM_profit " +
+      "SELECT sun.n_name, DATE_PART(year, oolis.o_entry_d) as l_year, round (SUM(oolis.ol_amount), 2) as SUM_profit " +
           "FROM " +
           "(SELECT s.s_w_id, s.s_i_id, ooli.o_entry_d, ooli.ol_amount " +
           "FROM stock s JOIN " +
@@ -140,7 +140,7 @@ public class CH2Queries extends BenchQueries {
           "FROM supplier su, nation n " +
           "WHERE su.su_nationkey = n.n_nationkey) sun " +
           "ON MOD(oolis.s_w_id * oolis.s_i_id, 10000) = sun.su_suppkey " +
-          "GROUP BY sun.n_name, DATE_PART_STR(oolis.o_entry_d, 'year') " +
+          "GROUP BY sun.n_name, DATE_PART(year, oolis.o_entry_d) " +
           "ORDER BY sun.n_name, l_year DESC",
       // Q10
       "SELECT c.c_id, c.c_last, SUM(ol.ol_amount) as revenue, c.c_city, c.c_phone, n.n_name " +
