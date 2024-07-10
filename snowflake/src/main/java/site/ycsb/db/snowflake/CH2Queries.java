@@ -210,7 +210,7 @@ public class CH2Queries extends BenchQueries {
           "SELECT su.su_suppkey, su.su_name, su.su_address, su.su_phone, r.total_revenue " +
           "FROM revenue r,  supplier su " +
           "WHERE  su.su_suppkey = r.supplier_no " +
-          "AND  r.total_revenue = (SELECT VALUE max(r1.total_revenue) FROM revenue r1)[0] " +
+          "AND  r.total_revenue = (SELECT max(r1.total_revenue) FROM revenue r1) " +
           "ORDER BY su.su_suppkey",
       // Q16
       "SELECT i.i_name, SUBSTR1(i.i_data, 1, 3) AS brand, i.i_price, " +
