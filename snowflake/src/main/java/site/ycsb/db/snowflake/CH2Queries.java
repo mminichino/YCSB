@@ -213,16 +213,16 @@ public class CH2Queries extends BenchQueries {
           "AND  r.total_revenue = (SELECT max(r1.total_revenue) FROM revenue r1) " +
           "ORDER BY su.su_suppkey",
       // Q16
-      "SELECT i.i_name, SUBSTR1(i.i_data, 1, 3) AS brand, i.i_price, " +
+      "SELECT i.i_name, SUBSTR(i.i_data, 1, 3) AS brand, i.i_price, " +
           "COUNT(DISTINCT (MOD(s.s_w_id * s.s_i_id, 10000))) AS supplier_cnt " +
           "FROM stock s, item i " +
           "WHERE i.i_id = s.s_i_id " +
           "AND i.i_data not LIKE 'zz%' " +
           "AND (MOD(s.s_w_id * s.s_i_id, 10000) NOT IN " +
-          "(SELECT VALUE su.su_suppkey " +
+          "(SELECT su.su_suppkey " +
           "FROM supplier su " +
           "WHERE su.su_comment LIKE '%Customer%Complaints%')) " +
-          "GROUP BY i.i_name, SUBSTR1(i.i_data, 1, 3), i.i_price " +
+          "GROUP BY i.i_name, SUBSTR(i.i_data, 1, 3), i.i_price " +
           "ORDER BY supplier_cnt DESC",
       // Q17
       "SELECT SUM(ol.ol_amount) / 2.0 AS AVG_yearly " +
