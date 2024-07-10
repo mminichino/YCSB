@@ -292,7 +292,7 @@ public class CH2Queries extends BenchQueries {
           "AND  o1.o_w_id = s.s_w_id " +
           "AND ol1.ol_i_id = s.s_i_id " +
           "AND MOD(s.s_w_id * s.s_i_id, 10000) = su.su_suppkey " +
-          "AND ol1.ol_delivery_d > date_add_str(o1.o_entry_d, 150, 'day') " +
+          "AND ol1.ol_delivery_d > dateadd(day, 150, o1.o_entry_d) " +
           "AND o1.o_entry_d between '2017-12-01 00:00:00' and '2017-12-31 00:00:00' " +
           "AND su.su_nationkey = n.n_nationkey " +
           "AND n.n_name = 'Peru') x " +
