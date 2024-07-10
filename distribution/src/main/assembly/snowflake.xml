@@ -46,6 +46,7 @@ LICENSE file.
       <fileMode>0755</fileMode>
       <includes>
         <include>run_snowflake.sh</include>
+        <include>run_snowflake_ch2.sh</include>
       </includes>
     </fileSet>
     <fileSet>

@@ -19,6 +19,7 @@ import java.util.Date;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -85,12 +86,10 @@ public class SnowflakeTPCLoad extends LoadDriver {
   private boolean initialized = false;
   private Properties props  = new Properties();
   private int jdbcFetchSize;
-  private int batchSize;
   private boolean autoCommit;
-  private boolean batchUpdates;
   private static final String DEFAULT_PROP = "";
-  private ConcurrentMap<StatementType, PreparedStatement> cachedStatements;
-  private long numRowsInBatch = 0;
+  private final ConcurrentMap<String, PreparedStatement> stmtMap = new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, AtomicInteger> countMap = new ConcurrentHashMap<>();
   /** DB flavor defines DB-specific syntax and behavior for the
    * particular database. Current database flavors are: {default, phoenix} */
   private DBFlavor dbFlavor;
@@ -126,9 +125,9 @@ public class SnowflakeTPCLoad extends LoadDriver {
       sql.append("create table item (");
       sql.append(" i_id int not null,");
       sql.append(" i_im_id int,");
-      sql.append(" i_name varchar(24),");
-      sql.append(" i_price decimal,");
-      sql.append(" i_data varchar(50),");
+      sql.append(" i_name varchar(30),");
+      sql.append(" i_price double,");
+      sql.append(" i_data varchar(55),");
       sql.append(" PRIMARY KEY(i_id) )");
 
       stmt.execute(sql.toString());
@@ -153,14 +152,14 @@ public class SnowflakeTPCLoad extends LoadDriver {
 
       sql.append("create table warehouse (");
       sql.append(" w_id int not null,");
-      sql.append(" w_name varchar(10),");
-      sql.append(" w_street_1 varchar(20),");
-      sql.append(" w_street_2 varchar(20),");
-      sql.append(" w_city varchar(20),");
-      sql.append(" w_state varchar(2),");
-      sql.append(" w_zip varchar(9),");
-      sql.append(" w_tax decimal,");
-      sql.append(" w_ytd decimal,");
+      sql.append(" w_name varchar(11),");
+      sql.append(" w_street_1 varchar(21),");
+      sql.append(" w_street_2 varchar(21),");
+      sql.append(" w_city varchar(21),");
+      sql.append(" w_state varchar(3),");
+      sql.append(" w_zip varchar(10),");
+      sql.append(" w_tax double,");
+      sql.append(" w_ytd double,");
       sql.append(" primary key (w_id) )");
 
       stmt.execute(sql.toString());
@@ -424,11 +423,11 @@ public class SnowflakeTPCLoad extends LoadDriver {
       sql.append("create table supplier (");
       sql.append(" su_suppkey int not null,");
       sql.append(" su_name varchar(25),");
-      sql.append(" su_address varchar(40),");
+      sql.append(" su_address varchar(41),");
       sql.append(" su_nationkey int,");
-      sql.append(" su_phone varchar(15),");
-      sql.append(" su_acctbal decimal,");
-      sql.append(" su_comment varchar(101),");
+      sql.append(" su_phone varchar(34),");
+      sql.append(" su_acctbal double,");
+      sql.append(" su_comment varchar(200),");
       sql.append(" PRIMARY KEY(su_suppkey) )");
 
       stmt.execute(sql.toString());
@@ -498,7 +497,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Item i : batch) {
       ObjectNode record = i.asNode();
       String id = itemTable.getDocumentId(record);
-      insert("item", id, record);
+      insert("item", record, batch.size());
     }
   }
 
@@ -508,7 +507,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Warehouse i : batch) {
       ObjectNode record = i.asNode();
       String id = warehouseTable.getDocumentId(record);
-      insert("warehouse", id, record);
+      insert("warehouse", record, batch.size());
     }
   }
 
@@ -518,7 +517,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Stock i : batch) {
       ObjectNode record = i.asNode();
       String id = stockTable.getDocumentId(record);
-      insert("stock", id, record);
+      insert("stock", record, batch.size());
     }
   }
 
@@ -528,7 +527,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (District i : batch) {
       ObjectNode record = i.asNode();
       String id = districtTable.getDocumentId(record);
-      insert("district", id, record);
+      insert("district", record, batch.size());
     }
   }
 
@@ -538,7 +537,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Customer i : batch) {
       ObjectNode record = i.asNode();
       String id = customerTable.getDocumentId(record);
-      insert("customer", id, record);
+      insert("customer", record, batch.size());
     }
   }
 
@@ -548,7 +547,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (History i : batch) {
       ObjectNode record = i.asNode();
       String id = historyTable.getDocumentId(record);
-      insert("history", id, record);
+      insert("history", record, batch.size());
     }
   }
 
@@ -558,7 +557,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Order i : batch) {
       ObjectNode record = i.asNode();
       String id = orderTable.getDocumentId(record);
-      insert("orders", id, record);
+      insert("orders", record, batch.size());
     }
   }
 
@@ -568,7 +567,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (NewOrder i : batch) {
       ObjectNode record = i.asNode();
       String id = newOrderTable.getDocumentId(record);
-      insert("new_orders", id, record);
+      insert("new_orders", record, batch.size());
     }
   }
 
@@ -578,7 +577,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (OrderLine i : batch) {
       ObjectNode record = i.asNode();
       String id = orderLineTable.getDocumentId(record);
-      insert("order_line", id, record);
+      insert("order_line", record, batch.size());
     }
   }
 
@@ -588,7 +587,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Supplier i : batch) {
       ObjectNode record = i.asNode();
       String id = supplierTable.getDocumentId(record);
-      insert("supplier", id, record);
+      insert("supplier", record, batch.size());
     }
   }
 
@@ -598,7 +597,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Nation i : batch) {
       ObjectNode record = i.asNode();
       String id = nationTable.getDocumentId(record);
-      insert("nation", id, record);
+      insert("nation", record, batch.size());
     }
   }
 
@@ -608,7 +607,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     for (Region i : batch) {
       ObjectNode record = i.asNode();
       String id = regionTable.getDocumentId(record);
-      insert("region", id, record);
+      insert("region", record, batch.size());
     }
   }
 
@@ -739,10 +738,8 @@ public class SnowflakeTPCLoad extends LoadDriver {
     String driver = props.getProperty(DRIVER_CLASS);
 
     this.jdbcFetchSize = getIntProperty(props, JDBC_FETCH_SIZE);
-    this.batchSize = getIntProperty(props, DB_BATCH_SIZE);
 
     this.autoCommit = getBoolProperty(props, JDBC_AUTO_COMMIT, true);
-    this.batchUpdates = getBoolProperty(props, JDBC_BATCH_UPDATES, false);
 
     debug = props.getProperty("snowflake.debug", "false").equals("true");
     overwrite = props.getProperty("snowflake.dropIfExists", "false").equals("true");
@@ -776,10 +773,6 @@ public class SnowflakeTPCLoad extends LoadDriver {
         conns.add(conn);
       }
 
-      System.out.println("Using shards: " + shardCount + ", batchSize:" + batchSize + ", fetchSize: " + jdbcFetchSize);
-
-      cachedStatements = new ConcurrentHashMap<StatementType, PreparedStatement>();
-
       this.dbFlavor = DBFlavor.benchDriver();
     } catch (ClassNotFoundException e) {
       LOGGER.error("Error in initializing the JDBC driver: {}", e.getMessage(), e);
@@ -797,19 +790,17 @@ public class SnowflakeTPCLoad extends LoadDriver {
 
   @Override
   public void cleanup() {
-    if (batchSize > 0) {
-      try {
-        // commit un-finished batches
-        for (PreparedStatement st : cachedStatements.values()) {
-          if (!st.getConnection().isClosed() && !st.isClosed() && (numRowsInBatch % batchSize != 0)) {
-            st.executeBatch();
-          }
+    try {
+      for (Map.Entry<String, PreparedStatement> entry : stmtMap.entrySet()) {
+        PreparedStatement st = entry.getValue();
+        if (!st.getConnection().isClosed() && !st.isClosed()) {
+          st.executeBatch();
         }
-      } catch (SQLException e) {
-        LOGGER.error("Error in cleanup execution. {}", e.getMessage(), e);
-        e.printStackTrace(System.err);
-        throw new RuntimeException(e);
       }
+    } catch (SQLException e) {
+      LOGGER.error("Error in cleanup execution. {}", e.getMessage(), e);
+      e.printStackTrace(System.err);
+      throw new RuntimeException(e);
     }
 
     try {
@@ -818,64 +809,6 @@ public class SnowflakeTPCLoad extends LoadDriver {
       LOGGER.error("Error in closing the connection. {}", e.getMessage(), e);
       throw new RuntimeException(e);
     }
-  }
-
-  private PreparedStatement createAndCacheInsertStatement(StatementType insertType, String key)
-      throws SQLException {
-    String insert = dbFlavor.createInsertStatement(insertType, key);
-    PreparedStatement insertStatement = getShardConnectionByKey(key).prepareStatement(insert);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(insertType, insertStatement);
-    if (stmt == null) {
-      return insertStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheReadStatement(StatementType readType, String key)
-      throws SQLException {
-    String read = dbFlavor.createReadStatement(readType, key);
-    PreparedStatement readStatement = getShardConnectionByKey(key).prepareStatement(read);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(readType, readStatement);
-    if (stmt == null) {
-      return readStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheDeleteStatement(StatementType deleteType, String key)
-      throws SQLException {
-    String delete = dbFlavor.createDeleteStatement(deleteType, key);
-    PreparedStatement deleteStatement = getShardConnectionByKey(key).prepareStatement(delete);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(deleteType, deleteStatement);
-    if (stmt == null) {
-      return deleteStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheUpdateStatement(StatementType updateType, String key)
-      throws SQLException {
-    String update = dbFlavor.createUpdateStatement(updateType, key);
-    PreparedStatement insertStatement = getShardConnectionByKey(key).prepareStatement(update);
-    PreparedStatement stmt = cachedStatements.putIfAbsent(updateType, insertStatement);
-    if (stmt == null) {
-      return insertStatement;
-    }
-    return stmt;
-  }
-
-  private PreparedStatement createAndCacheScanStatement(StatementType scanType, String key)
-      throws SQLException {
-    String select = dbFlavor.createScanStatement(scanType, key, sqlserverScans, sqlansiScans);
-    PreparedStatement scanStatement = getShardConnectionByKey(key).prepareStatement(select);
-    if (this.jdbcFetchSize > 0) {
-      scanStatement.setFetchSize(this.jdbcFetchSize);
-    }
-    PreparedStatement stmt = cachedStatements.putIfAbsent(scanType, scanStatement);
-    if (stmt == null) {
-      return scanStatement;
-    }
-    return stmt;
   }
 
   private static <T>T retryBlock(Callable<T> block) throws Exception {
@@ -902,19 +835,44 @@ public class SnowflakeTPCLoad extends LoadDriver {
     return block.call();
   }
 
-  public void insert(String tableName, String key, ObjectNode record) {
+  private Connection getDefaultConnection() {
+    return conns.get(0);
+  }
+
+  public String createInsertSQL(String tableName, String fields, int length) {
+    StringBuilder insert = new StringBuilder("INSERT INTO ");
+    insert.append(tableName);
+    insert.append(" (");
+    insert.append(fields);
+    insert.append(") ");
+    insert.append("VALUES(?");
+    for (int i = 1; i < length; i++) {
+      insert.append(",?");
+    }
+    insert.append(")");
+    return insert.toString();
+  }
+
+  private PreparedStatement createQueryStatement(String statement) throws SQLException {
+    return getDefaultConnection().prepareStatement(statement);
+  }
+
+  public void insert(String tableName, ObjectNode record, int batchSize) {
     try {
       retryBlock(() -> {
         List<String> fieldInfo = getFieldNames(record);
         int numFields = fieldInfo.size();
+        PreparedStatement insertStatement;
 
-        StatementType type = new StatementType(StatementType.Type.INSERT, tableName,
-            numFields, String.join(",", fieldInfo), getShardIndexByKey(key));
+        if (stmtMap.containsKey(tableName)) {
+          insertStatement = stmtMap.get(tableName);
+        } else {
+          insertStatement = createQueryStatement(createInsertSQL(tableName, String.join(",", fieldInfo), numFields));
+          stmtMap.put(tableName, insertStatement);
+        }
 
-        PreparedStatement insertStatement = cachedStatements.get(type);
-
-        if (insertStatement == null) {
-          insertStatement = createAndCacheInsertStatement(type, key);
+        if (!countMap.containsKey(tableName)) {
+          countMap.put(tableName, new AtomicInteger(0));
         }
 
         for (int i = 1; i <= numFields; i++) {
@@ -951,56 +909,27 @@ public class SnowflakeTPCLoad extends LoadDriver {
           LOGGER.debug("Insert statement: {}", insertStatement.toString());
         }
 
-        // Using the batch insert API
-        if (batchUpdates) {
-          insertStatement.addBatch();
-          // Check for a sane batch size
-          if (batchSize > 0) {
-            // Commit the batch after it grows beyond the configured size
-            if (++numRowsInBatch % batchSize == 0) {
-              int[] results = insertStatement.executeBatch();
-              for (int r : results) {
-                // Acceptable values are 1 and SUCCESS_NO_INFO (-2) from reWriteBatchedInserts=true
-                if (r != 1 && r != -2) {
-//                  LOGGER.error();
-                  return Status.ERROR;
-                }
-              }
-              // If autoCommit is off, make sure we commit the batch
-              if (!autoCommit) {
-                getShardConnectionByKey(key).commit();
-              }
-              return Status.OK;
-            } // else, the default value of -1 or a nonsense. Treat it as an infinitely large batch.
-          } // else, we let the batch accumulate
-          // Added element to the batch, potentially committing the batch too.
-          return Status.BATCHED_OK;
-        } else {
-          // Normal update
-          int result = insertStatement.executeUpdate();
-          // If we are not autoCommit, we might have to commit now
-          if (!autoCommit) {
-            // Let updates be batched locally
-            if (batchSize > 0) {
-              if (++numRowsInBatch % batchSize == 0) {
-                // Send the batch of updates
-                getShardConnectionByKey(key).commit();
-              }
-              // uhh
-              return Status.OK;
-            } else {
-              // Commit each update
-              getShardConnectionByKey(key).commit();
+        insertStatement.addBatch();
+        countMap.get(tableName).incrementAndGet();
+
+        if (countMap.get(tableName).get() % batchSize == 0) {
+          int[] results = insertStatement.executeBatch();
+          countMap.get(tableName).set(0);
+          for (int r : results) {
+            if (r == Statement.EXECUTE_FAILED) {
+              LOGGER.error("Batch insert error: table: {} record:\n{}", tableName, record.toPrettyString());
+              return null;
             }
           }
-          if (result == 1) {
-            return Status.OK;
+
+          if (!autoCommit) {
+            getDefaultConnection().commit();
           }
         }
-        return Status.UNEXPECTED_STATE;
+        return null;
       });
-    } catch (Exception e) {
-      LOGGER.error("Error in processing insert to table: {}{}", e.getMessage(), tableName, e);
+    } catch (Throwable t) {
+      LOGGER.error("Error processing insert to table {}: {}", tableName, t.getMessage(), t);
     }
   }
 
