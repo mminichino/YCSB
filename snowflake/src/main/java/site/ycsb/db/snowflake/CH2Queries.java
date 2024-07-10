@@ -52,7 +52,7 @@ public class CH2Queries extends BenchQueries {
           "WHERE o.o_id = ol.ol_o_id " +
           "AND o.o_entry_d >= '2015-07-01 00:00:00.000000' " +
           "AND o.o_entry_d < '2015-10-01 00:00:00.000000' " +
-          "AND ol.ol_delivery_d >= date_add_str(o.o_entry_d, 1, 'week') " +
+          "AND ol.ol_delivery_d >= dateadd(week, 1, o.o_entry_d) " +
           "GROUP BY o.o_ol_cnt " +
           "ORDER BY o.o_ol_cnt ",
       // Q05
@@ -60,18 +60,17 @@ public class CH2Queries extends BenchQueries {
           "FROM (SELECT cnro.ol_amount, cnro.n_name, cnro.n_nationkey, s.s_w_id, s.s_i_id " +
           "FROM stock s JOIN " +
           "(SELECT o.o_w_id, ol.ol_amount, ol.ol_i_id, cnr.n_name, cnr.n_nationkey " +
-          "FROM orders o, order_line ol JOIN " +
+          "FROM orders o JOIN order_line ol ON o.o_id = ol.ol_o_id JOIN " +
           "(SELECT c.c_id, c.c_w_id, c.c_d_id, nr.n_name, nr.n_nationkey " +
           "FROM customer c JOIN " +
           "(SELECT n.n_nationkey, n.n_name " +
           "FROM nation n, region r " +
           "WHERE n.n_regionkey = r.r_regionkey AND r.r_name = 'Asia') nr " +
-          "ON string_to_codepoint(c.c_state)[0] = nr.n_nationkey) cnr " +
+          "ON UNICODE(c.c_state) = nr.n_nationkey) cnr " +
           "ON o.o_entry_d >= '2016-01-01 00:00:00.000000' AND o.o_entry_d < '2017-01-01 00:00:00.000000' " +
-          "AND cnr.c_id = o.o_c_id AND cnr.c_w_id = o.o_w_id AND cnr.c_d_id = o.o_d_id " +
-          "WHERE o.o_id = ol.ol_o_id) cnro " +
+          "AND cnr.c_id = o.o_c_id AND cnr.c_w_id = o.o_w_id AND cnr.c_d_id = o.o_d_id) cnro " +
           "ON cnro.o_w_id = s.s_w_id AND cnro.ol_i_id = s.s_i_id) cnros JOIN supplier su " +
-          "ON cnros.s_w_id * cnros.s_i_id MOD 10000 = su.su_suppkey AND su.su_nationkey = cnros.n_nationkey " +
+          "ON MOD(cnros.s_w_id * cnros.s_i_id, 10000) = su.su_suppkey AND su.su_nationkey = cnros.n_nationkey " +
           "GROUP BY cnros.n_name " +
           "ORDER BY revenue DESC",
       // Q06
@@ -98,7 +97,7 @@ public class CH2Queries extends BenchQueries {
           "AND ol.ol_delivery_d BETWEEN '2017-01-01 00:00:00.000000' AND '2018-12-31 00:00:00.000000' " +
           "WHERE o.o_id = ol.ol_o_id) n1n2cool " +
           "ON n1n2cool.ol_supply_w_id = s.s_w_id AND n1n2cool.ol_i_id = s.s_i_id)  n1n2cools JOIN supplier su " +
-          "ON n1n2cools.s_w_id * n1n2cools.s_i_id MOD 10000 = su.su_suppkey AND su.su_nationkey = n1n2cools.n1key " +
+          "ON MOD(n1n2cools.s_w_id * n1n2cools.s_i_id, 10000) = su.su_suppkey AND su.su_nationkey = n1n2cools.n1key " +
           "GROUP BY su.su_nationkey, SUBSTR1(n1n2cools.c_state,1,1), DATE_PART_STR(n1n2cools.o_entry_d, 'year') " +
           "ORDER BY su.su_nationkey, cust_nation, l_year",
       // Q08
@@ -125,7 +124,7 @@ public class CH2Queries extends BenchQueries {
           "(SELECT su.su_suppkey, n2.n_name " +
           "FROM supplier su, nation n2 " +
           "WHERE su.su_nationkey = n2.n_nationkey) sun2 " +
-          "ON rn1coolis.s_w_id * rn1coolis.s_i_id MOD 10000 = sun2.su_suppkey " +
+          "ON MOD(rn1coolis.s_w_id * rn1coolis.s_i_id, 10000) = sun2.su_suppkey " +
           "GROUP BY DATE_PART_STR(rn1coolis.o_entry_d, 'year') " +
           "ORDER BY l_year",
       // Q09
@@ -141,7 +140,7 @@ public class CH2Queries extends BenchQueries {
           "(SELECT su.su_suppkey, n.n_name " +
           "FROM supplier su, nation n " +
           "WHERE su.su_nationkey = n.n_nationkey) sun " +
-          "ON oolis.s_w_id * oolis.s_i_id MOD 10000 = sun.su_suppkey " +
+          "ON MOD(oolis.s_w_id * oolis.s_i_id, 10000) = sun.su_suppkey " +
           "GROUP BY sun.n_name, DATE_PART_STR(oolis.o_entry_d, 'year') " +
           "ORDER BY sun.n_name, l_year DESC",
       // Q10
@@ -160,14 +159,14 @@ public class CH2Queries extends BenchQueries {
       // Q11
       "SELECT s.s_i_id, SUM(s.s_order_cnt) as ordercount " +
           "FROM   nation n, supplier su, stock s " +
-          "WHERE  s.s_w_id * s.s_i_id MOD 10000 = su.su_suppkey " +
+          "WHERE  MOD(s.s_w_id * s.s_i_id, 10000) = su.su_suppkey " +
           "AND  su.su_nationkey = n.n_nationkey " +
           "AND  n.n_name = 'Germany' " +
           "GROUP BY s.s_i_id " +
           "HAVING SUM(s.s_order_cnt) > " +
           "(SELECT VALUE SUM(s1.s_order_cnt) * 0.00005 " +
           "FROM nation n1, supplier su1, stock s1 " +
-          "WHERE s1.s_w_id * s1.s_i_id MOD 10000 = su1.su_suppkey " +
+          "WHERE MOD(s1.s_w_id * s1.s_i_id, 10000) = su1.su_suppkey " +
           "AND su1.su_nationkey = n1.n_nationkey " +
           "AND n1.n_name = 'Germany')[0] " +
           "ORDER BY ordercount DESC",
@@ -203,12 +202,12 @@ public class CH2Queries extends BenchQueries {
           "AND ol.ol_delivery_d >= '2017-09-01 00:00:00.000000' AND ol.ol_delivery_d < '2017-10-01 00:00:00.000000'",
       // Q15
       "WITH revenue AS ( " +
-          "SELECT s.s_w_id * s.s_i_id MOD 10000 as supplier_no, SUM(ol.ol_amount) AS total_revenue " +
+          "SELECT MOD(s.s_w_id * s.s_i_id, 10000) as supplier_no, SUM(ol.ol_amount) AS total_revenue " +
           "FROM   stock s, order_line ol " +
           "WHERE ol.ol_i_id = s.s_i_id " +
           "AND ol.ol_supply_w_id = s.s_w_id " +
           "AND ol.ol_delivery_d >= '2018-01-01 00:00:00.000000' AND ol.ol_delivery_d < '2018-04-01 00:00:00.000000' " +
-          "GROUP BY s.s_w_id * s.s_i_id MOD 10000) " +
+          "GROUP BY MOD(s.s_w_id * s.s_i_id, 10000)) " +
           "SELECT su.su_suppkey, su.su_name, su.su_address, su.su_phone, r.total_revenue " +
           "FROM revenue r,  supplier su " +
           "WHERE  su.su_suppkey = r.supplier_no " +
@@ -216,11 +215,11 @@ public class CH2Queries extends BenchQueries {
           "ORDER BY su.su_suppkey",
       // Q16
       "SELECT i.i_name, SUBSTR1(i.i_data, 1, 3) AS brand, i.i_price, " +
-          "COUNT(DISTINCT (s.s_w_id * s.s_i_id MOD 10000)) AS supplier_cnt " +
+          "COUNT(DISTINCT (MOD(s.s_w_id * s.s_i_id, 10000))) AS supplier_cnt " +
           "FROM stock s, item i " +
           "WHERE i.i_id = s.s_i_id " +
           "AND i.i_data not LIKE 'zz%' " +
-          "AND (s.s_w_id * s.s_i_id MOD 10000 NOT IN " +
+          "AND (MOD(s.s_w_id * s.s_i_id, 10000) NOT IN " +
           "(SELECT VALUE su.su_suppkey " +
           "FROM supplier su " +
           "WHERE su.su_comment LIKE '%Customer%Complaints%')) " +
@@ -270,7 +269,7 @@ public class CH2Queries extends BenchQueries {
       "SELECT su.su_name, su.su_address " +
           "FROM   supplier su, nation n " +
           "WHERE  su.su_suppkey IN " +
-          "(SELECT VALUE s.s_i_id * s.s_w_id MOD 10000 " +
+          "(SELECT VALUE MOD(s.s_i_id * s.s_w_id, 10000) " +
           "FROM   stock s, order_line ol " +
           "WHERE  s.s_i_id IN " +
           "(SELECT VALUE i.i_id " +
@@ -293,7 +292,7 @@ public class CH2Queries extends BenchQueries {
           "WHERE o1.o_id = ol1.ol_o_id " +
           "AND  o1.o_w_id = s.s_w_id " +
           "AND ol1.ol_i_id = s.s_i_id " +
-          "AND s.s_w_id * s.s_i_id MOD 10000 = su.su_suppkey " +
+          "AND MOD(s.s_w_id * s.s_i_id, 10000) = su.su_suppkey " +
           "AND ol1.ol_delivery_d > date_add_str(o1.o_entry_d, 150, 'day') " +
           "AND o1.o_entry_d between '2017-12-01 00:00:00' and '2017-12-31 00:00:00' " +
           "AND su.su_nationkey = n.n_nationkey " +
