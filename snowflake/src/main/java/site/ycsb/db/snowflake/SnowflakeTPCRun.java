@@ -305,14 +305,11 @@ public class SnowflakeTPCRun extends BenchRun {
     try {
       PreparedStatement readStatement = createQueryStatement(statement);
       ResultSet resultSet = readStatement.executeQuery();
-      if (!resultSet.next()) {
-        resultSet.close();
-        return results;
-      }
       while (resultSet.next()) {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode data = mapper.createObjectNode();
         ResultSetMetaData metaData = resultSet.getMetaData();
+        LOGGER.info(String.valueOf(metaData.getColumnCount()));
         for (int i = 1; i <= metaData.getColumnCount(); i++) {
           String columnName = metaData.getColumnName(i);
           JsonNode value = mapper.valueToTree(resultSet.getObject(i));
