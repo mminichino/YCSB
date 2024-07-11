@@ -86,7 +86,7 @@ public class BenchClientThread implements Runnable {
   }
 
   public int getOpsDone() {
-    return opsCounter.get();
+    return opsDone;
   }
 
   @Override

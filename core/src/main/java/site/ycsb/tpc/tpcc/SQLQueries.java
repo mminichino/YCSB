@@ -60,7 +60,7 @@ public class SQLQueries extends BenchQueries {
       "FROM (SELECT cnro.ol_amount, cnro.n_name, cnro.n_nationkey, s.s_w_id, s.s_i_id " +
       "FROM stock s JOIN " +
       "(SELECT o.o_w_id, ol.ol_amount, ol.ol_i_id, cnr.n_name, cnr.n_nationkey " +
-      "FROM orders o, order_line ol JOIN " +
+      "FROM orders o JOIN order_line ol ON o.o_id = ol.ol_o_id JOIN " +
       "(SELECT c.c_id, c.c_w_id, c.c_d_id, nr.n_name, nr.n_nationkey " +
       "FROM customer c JOIN " +
       "(SELECT n.n_nationkey, n.n_name " +
@@ -68,8 +68,7 @@ public class SQLQueries extends BenchQueries {
       "WHERE n.n_regionkey = r.r_regionkey AND r.r_name = 'Asia') nr " +
       "ON string_to_codepoint(c.c_state)[0] = nr.n_nationkey) cnr " +
       "ON o.o_entry_d >= '2016-01-01 00:00:00.000000' AND o.o_entry_d < '2017-01-01 00:00:00.000000' " +
-      "AND cnr.c_id = o.o_c_id AND cnr.c_w_id = o.o_w_id AND cnr.c_d_id = o.o_d_id " +
-      "WHERE o.o_id = ol.ol_o_id) cnro " +
+      "AND cnr.c_id = o.o_c_id AND cnr.c_w_id = o.o_w_id AND cnr.c_d_id = o.o_d_id) cnro " +
       "ON cnro.o_w_id = s.s_w_id AND cnro.ol_i_id = s.s_i_id) cnros JOIN supplier su " +
       "ON cnros.s_w_id * cnros.s_i_id MOD 10000 = su.su_suppkey AND su.su_nationkey = cnros.n_nationkey " +
       "GROUP BY cnros.n_name " +
@@ -86,7 +85,7 @@ public class SQLQueries extends BenchQueries {
       "(select n1n2cool.c_state, n1n2cool.o_entry_d, n1n2cool.ol_amount, n1n2cool.n1key, s.s_w_id, s.s_i_id " +
       "FROM stock s JOIN " +
       "(SELECT o.o_entry_d, ol.ol_supply_w_id, ol.ol_i_id, n1n2c.c_state, ol.ol_amount, n1n2c.n1key " +
-      "FROM orders o, order_line ol JOIN " +
+      "FROM orders o JOIN order_line ol ON o.o_id = ol.ol_o_id JOIN " +
       "(SELECT c.c_id, c.c_w_id, c.c_d_id, c.c_state, n1n2.n1key " +
       "FROM customer c JOIN " +
       "(SELECT n1.n_nationkey n1key, n2.n_nationkey n2key " +
@@ -95,8 +94,7 @@ public class SQLQueries extends BenchQueries {
       ")n1n2 " +
       "ON string_to_codepoint(c.c_state)[0] = n1n2.n2key) n1n2c " +
       "ON n1n2c.c_id = o.o_c_id AND n1n2c.c_w_id = o.o_w_id AND n1n2c.c_d_id = o.o_d_id " +
-      "AND ol.ol_delivery_d BETWEEN '2017-01-01 00:00:00.000000' AND '2018-12-31 00:00:00.000000' " +
-      "WHERE o.o_id = ol.ol_o_id) n1n2cool " +
+      "AND ol.ol_delivery_d BETWEEN '2017-01-01 00:00:00.000000' AND '2018-12-31 00:00:00.000000') n1n2cool " +
       "ON n1n2cool.ol_supply_w_id = s.s_w_id AND n1n2cool.ol_i_id = s.s_i_id)  n1n2cools JOIN supplier su " +
       "ON n1n2cools.s_w_id * n1n2cools.s_i_id MOD 10000 = su.su_suppkey AND su.su_nationkey = n1n2cools.n1key " +
       "GROUP BY su.su_nationkey, SUBSTR1(n1n2cools.c_state,1,1), DATE_PART_STR(n1n2cools.o_entry_d, 'year') " +

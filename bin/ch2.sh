@@ -40,12 +40,21 @@ do
     esac
 done
 
+for workload in 16 32 64 128
+do
+  if [ -f "workloads/workload_ch2_${workload}" ]; then
+    WORKLOAD_LIST="$WORKLOAD_LIST workloads/workload_ch2_${workload}"
+  fi
+done
+
 if [ $LOAD_MODE -eq 1 ]; then
   LOAD_OPTS="-db $LOAD_DRIVER -P workloads/workload_ch2 -threads $THREADCOUNT_LOAD -s -load"
   java -cp "$CLASSPATH" site.ycsb.BenchClient $LOAD_OPTS
 fi
 
 if [ $RUN_MODE -eq 1 ]; then
-  RUN_OPTS="-db $RUN_DRIVER -P workloads/workload_ch2 -threads $THREADCOUNT_RUN -p operationcount=0 -p maxexecutiontime=$RUNTIME -manual -s -t"
-  java -cp "$CLASSPATH" site.ycsb.BenchClient $RUN_OPTS
+  for workload in $WORKLOAD_LIST; do
+    RUN_OPTS="-db $RUN_DRIVER -P $workload -p operationcount=0 -p maxexecutiontime=$RUNTIME -manual -s -t"
+    java -cp "$CLASSPATH" site.ycsb.BenchClient $RUN_OPTS
+  done
 fi

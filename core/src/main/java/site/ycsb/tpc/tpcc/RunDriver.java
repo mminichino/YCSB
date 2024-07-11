@@ -22,11 +22,11 @@ public class RunDriver extends BenchWorkload {
   public static final String QUERIES_PRINT_PROPERTY_DEFAULT = "false";
   private static final Object CYCLE_COORDINATOR = new Object();
   private static final AtomicLong opCounter = new AtomicLong(0);
+  public static Queries queries;
   public static String queryClass;
   public static int queryNumber;
   public static boolean queryPrint;
-  public static BenchQueries queries;
-  public static int[] queryVector;
+  public static List<Integer> queryVector;
   public static boolean debug = false;
 
   @Override
@@ -40,46 +40,50 @@ public class RunDriver extends BenchWorkload {
     }
 
     try {
-      ClassLoader classLoader = RunDriver.class.getClassLoader();
-      Class<?> queryClassLoader = classLoader.loadClass(queryClass);
-      queries = (BenchQueries) queryClassLoader.getDeclaredConstructor().newInstance();
+      queries = new Queries("ch2", "analytics");
     } catch (Exception e) {
       LOGGER.error(e.getMessage(), e);
       throw new WorkloadException(e);
     }
 
-    int threadId = getThreadId();
-    queryVector = queries.getQueryPermutations()[threadId];
+    queryVector = queries.getPermutation();
   }
 
   public int getNextQuery() {
     int next;
     synchronized (CYCLE_COORDINATOR) {
       long operation = opCounter.getAndIncrement();
-      next = Math.toIntExact(operation % queryVector.length);
+      next = Math.toIntExact(operation % queryVector.size());
     }
     return next;
   }
 
   @Override
   public boolean test(BenchRun db, Object threadState) {
-    String[] queryList = queries.getQueryList();
+    List<String> queryList = queries.getQueryList();
     try {
-      for (int i = 0; i < queryList.length; i++) {
+      for (int i = 0; i < queryList.size(); i++) {
         if (queryNumber > 0 && i != queryNumber - 1) {
           continue;
         }
+
+        String query = queries.statement(i + 1);
+
         if (queryPrint) {
-          System.out.println(queryList[i]);
+          System.out.printf("Query #%s:\n", i + 1);
+          System.out.println(query);
           continue;
         }
-        String query = queryList[i];
+
         List<ObjectNode> results = db.query(query);
+
         if (results == null) {
           LOGGER.warn("No results found for query: {}", query);
           continue;
         }
+
         System.out.printf("Query %d returned %d results\n", i + 1, results.size());
+
         LOGGER.info("Query #{}", i + 1);
         for (ObjectNode result : results) {
           LOGGER.info("\n{}", result.toPrettyString());
@@ -95,8 +99,8 @@ public class RunDriver extends BenchWorkload {
   @Override
   public boolean run(BenchRun db, Object threadState) {
     int next = getNextQuery();
-    int queryNum = queryVector[next];
-    String query = queries.getQueryList()[queryNum - 1];
+    int queryNum = queryVector.get(next);
+    String query = queries.statement(queryNum);
 
     if (debug) {
       LOGGER.debug("Thread {}: Query #{}: {}", getThreadId(), queryNum, query);
