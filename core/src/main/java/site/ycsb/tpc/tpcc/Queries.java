@@ -1,47 +1,34 @@
 package site.ycsb.tpc.tpcc;
 
-import com.google.common.io.Resources;
-import java.io.File;
-import java.nio.charset.StandardCharsets;
+import java.io.*;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import ch.qos.logback.classic.Logger;
+import org.slf4j.LoggerFactory;
+
 public class Queries {
+  protected static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.tpc.tpcc.Queries");
   public List<String> sqlStatements;
 
   public Queries(String benchmark, String group) {
     this.sqlStatements = new ArrayList<>();
     try {
-      File[] fileList = (new File(Objects.requireNonNull(getClass().getResource(String.format("/%s/%s", benchmark, group))).toURI())).listFiles();
-      if (fileList != null) {
-        Arrays.sort(fileList, new Comparator<>() {
-          @Override
-          public int compare(File o1, File o2) {
-            int n1 = extractNumber(o1.getName());
-            int n2 = extractNumber(o2.getName());
-            return n1 - n2;
-          }
-
-          private int extractNumber(String name) {
-            int i;
-            try {
-              int s = name.indexOf('q')+1;
-              int e = name.lastIndexOf('.');
-              String number = name.substring(s, e);
-              i = Integer.parseInt(number);
-            } catch(Exception e) {
-              i = 0;
-            }
-            return i;
-          }
-        });
-        for (File file : fileList) {
-          String text = Resources.toString(file.toURI().toURL(), StandardCharsets.UTF_8);
+      List<Integer> array = IntStream.rangeClosed(1, 100).boxed().collect(Collectors.toList());
+      for (Integer i : array) {
+        InputStream in = getClass().getResourceAsStream(String.format("/%s/%s/q%d.sql", benchmark, group, i));
+        if (in != null) {
+          BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+          String text = org.apache.commons.io.IOUtils.toString(reader);
           sqlStatements.add(text);
         }
       }
+    } catch (IllegalArgumentException e) {
+      LOGGER.debug("No more query files");
     } catch (Exception e) {
+      LOGGER.error(e.getMessage(), e);
       throw new RuntimeException(e);
     }
   }
