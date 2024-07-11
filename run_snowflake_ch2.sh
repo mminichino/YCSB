@@ -28,7 +28,7 @@ do
     esac
 done
 
-for workload in 16 32 64 128
+for workload in 16 32 64
 do
   if [ -f "workloads/workload_ch2_${workload}" ]; then
     WORKLOAD_LIST="$WORKLOAD_LIST workloads/workload_ch2_${workload}"
