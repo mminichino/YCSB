@@ -58,5 +58,10 @@ LICENSE file.
       <artifactId>snowflake-jdbc</artifactId>
       <version>3.16.1</version>
     </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>33.2.1-jre</version>
+    </dependency>
   </dependencies>
 </project>
