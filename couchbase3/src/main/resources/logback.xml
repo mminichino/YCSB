@@ -78,6 +78,10 @@
     <appender-ref ref="FILE"/>
   </logger>
 
+  <logger name="site.ycsb.BenchClientThread" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
   <logger name="com.couchbase" level="ERROR" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>

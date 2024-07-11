@@ -26,10 +26,15 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
+import ch.qos.logback.classic.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * A thread for executing transactions or data inserts to the database.
  */
 public class BenchClientThread implements Runnable {
+  protected static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.BenchClientThread");
   // Counts down each of the clients completing.
   private final CountDownLatch completeLatch;
 
@@ -78,7 +83,7 @@ public class BenchClientThread implements Runnable {
   }
 
   public void setThreadId(final int threadId) {
-    threadID = threadId;
+    this.threadID = threadId;
   }
 
   public void setThreadCount(final int threadCount) {
@@ -91,6 +96,7 @@ public class BenchClientThread implements Runnable {
 
   @Override
   public void run() {
+    LOGGER.debug("Starting thread {}", threadID);
     try {
       db.init();
     } catch (DBException e) {
@@ -116,11 +122,11 @@ public class BenchClientThread implements Runnable {
       while (((opcount == 0) || (opsDone < opcount)) && workload.workloadRunState()) {
 
         if (!testMode) {
-          if (!workload.run(db, workloadState)) {
+          if (!workload.run(db, threadID, workloadState)) {
             break;
           }
         } else {
-          if (!workload.test(db, workloadState)) {
+          if (!workload.test(db, threadID, workloadState)) {
             break;
           }
         }

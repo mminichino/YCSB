@@ -260,7 +260,7 @@ public class CouchbaseTPCRun extends BenchRun {
    * query records.
    */
   @Override
-  public List<ObjectNode> query(String statement) {
+  public List<ObjectNode> query(String statement, int number) {
     try {
       if (analyticsMode) {
         return runAnalytics(statement);

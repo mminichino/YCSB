@@ -66,9 +66,9 @@ public abstract class BenchWorkload {
   public void cleanup() throws WorkloadException {
   }
 
-  public abstract boolean test(BenchRun db, Object threadState);
+  public abstract boolean test(BenchRun db, int threadId, Object threadState);
 
-  public abstract boolean run(BenchRun db, Object threadState);
+  public abstract boolean run(BenchRun db, int threadId, Object threadState);
 
   public void enableDebug() {
     debug = true;

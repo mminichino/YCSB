@@ -23,6 +23,7 @@ import com.couchbase.client.java.manager.query.CollectionQueryIndexManager;
 import com.couchbase.client.java.manager.query.CreateQueryIndexOptions;
 import com.couchbase.client.java.query.QueryResult;
 import com.couchbase.client.java.query.QueryStatus;
+import com.couchbase.client.java.analytics.AnalyticsResult;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.LoggerFactory;
 import site.ycsb.Record;
@@ -230,13 +231,13 @@ public class AnalyticsTPCRun extends BenchRun {
    * query records.
    */
   @Override
-  public List<ObjectNode> query(String statement) {
+  public List<ObjectNode> query(String statement, int number) {
     TypeRef<ObjectNode> typeRef = new TypeRef<>() {};
     try {
-      return retryBlock(() -> scope.reactive().analyticsQuery(statement, analyticsOptions())
-          .flatMapMany(result -> result.rowsAs(typeRef))
-          .collectList()
-          .block());
+      return retryBlock(() -> {
+        AnalyticsResult result = scope.analyticsQuery(statement, analyticsOptions());
+        return result.rowsAs(typeRef);
+      });
     } catch (Throwable t) {
       LOGGER.error("query exception: {}", t.getMessage(), t);
       return null;

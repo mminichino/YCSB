@@ -59,7 +59,7 @@ public class RunDriver extends BenchWorkload {
   }
 
   @Override
-  public boolean test(BenchRun db, Object threadState) {
+  public boolean test(BenchRun db, int threadId, Object threadState) {
     List<String> queryList = queries.getQueryList();
     try {
       for (int i = 0; i < queryList.size(); i++) {
@@ -75,7 +75,7 @@ public class RunDriver extends BenchWorkload {
           continue;
         }
 
-        List<ObjectNode> results = db.query(query);
+        List<ObjectNode> results = db.query(query, i + 1);
 
         if (results == null) {
           LOGGER.warn("No results found for query: {}", query);
@@ -97,17 +97,17 @@ public class RunDriver extends BenchWorkload {
   }
 
   @Override
-  public boolean run(BenchRun db, Object threadState) {
+  public boolean run(BenchRun db, int threadId, Object threadState) {
     int next = getNextQuery();
     int queryNum = queryVector.get(next);
     String query = queries.statement(queryNum);
 
     if (debug) {
-      LOGGER.debug("Thread {}: Query #{}: {}", getThreadId(), queryNum, query);
+      LOGGER.debug("Thread {}: Query #{}", threadId, queryNum);
     }
 
     try {
-      List<ObjectNode> results = db.query(query);
+      List<ObjectNode> results = db.query(query, queryNum);
       if (results == null) {
         LOGGER.error("No results found for query: {}", query);
         return false;
