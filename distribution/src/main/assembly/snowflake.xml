@@ -24,7 +24,7 @@ LICENSE file.
   <baseDirectory>ycsb-snowflake</baseDirectory>
   <files>
     <file>
-      <source>../snowflake/conf/db.properties</source>
+      <source>../snowflake/src/main/conf/db.properties</source>
       <outputDirectory>conf</outputDirectory>
       <destName>db.properties</destName>
     </file>

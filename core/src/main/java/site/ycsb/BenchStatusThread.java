@@ -175,7 +175,7 @@ public class BenchStatusThread extends Thread {
       msg.append("est completion in ").append(RemainingFormatter.format(estremaining));
     }
 
-    msg.append(Measurements.getMeasurements().getSummary());
+//    msg.append(Measurements.getMeasurements().getSummary());
 
     System.err.println(msg);
 

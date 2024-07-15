@@ -1,12 +1,12 @@
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.core.deps.com.google.gson.JsonParser;
-import com.couchbase.client.core.deps.com.google.gson.JsonObject;
-
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.cli.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -51,13 +51,9 @@ public final class TSCompare {
       sDcp.streamDocuments();
       sDcp.startToNow();
       sDcp.getDrain().forEach(item -> {
-        JsonObject dataObject = JsonParser.parseString(item).getAsJsonObject();
-        JsonObject metadata = dataObject.get("meta").getAsJsonObject();
-        JsonObject document = dataObject.get("document").getAsJsonObject();
-        String id = metadata.get("id").getAsString();
-        long sourceTime = document.get("timestamp").getAsLong();
-        sourceTimeMap.put(id, sourceTime);
-        System.out.println("Source => " + id + " s_timestamp: " + sourceTime);
+        long sourceTime = new Date().getTime();
+        sourceTimeMap.put("id", sourceTime);
+        System.out.println("Source => " + "id" + " s_timestamp: " + sourceTime);
       });
       sDcp.stop();
       sourceDocCount.set(sDcp.getCount());
@@ -69,13 +65,9 @@ public final class TSCompare {
       tDcp.streamDocuments();
       tDcp.startToNow();
       tDcp.getDrain().forEach(item -> {
-        JsonObject dataObject = JsonParser.parseString(item).getAsJsonObject();
-        JsonObject metadata = dataObject.get("meta").getAsJsonObject();
-        JsonObject document = dataObject.get("document").getAsJsonObject();
-        String id = metadata.get("id").getAsString();
-        long targetTime = document.get("timestamp").getAsLong();
-        targetTimeMap.put(id, targetTime);
-        System.out.println("Target => " + id + " s_timestamp: " + targetTime);
+        long targetTime = new Date().getTime();
+        targetTimeMap.put("id", targetTime);
+        System.out.println("Target => " + "id" + " s_timestamp: " + targetTime);
       });
       tDcp.stop();
       targetDocCount.set(tDcp.getCount());

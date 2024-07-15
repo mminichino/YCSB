@@ -7,17 +7,28 @@ import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
+import com.couchbase.client.core.error.BucketExistsException;
 import com.couchbase.client.core.error.CollectionExistsException;
+import com.couchbase.client.core.error.ScopeExistsException;
 import com.couchbase.client.java.*;
+import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
+import com.couchbase.client.java.http.HttpPath;
+import com.couchbase.client.java.http.HttpResponse;
+import com.couchbase.client.java.http.HttpTarget;
 import com.couchbase.client.java.kv.MutationResult;
 import com.couchbase.client.java.manager.analytics.AnalyticsIndexManager;
+import com.couchbase.client.java.manager.bucket.*;
 import com.couchbase.client.java.manager.collection.CollectionManager;
 import com.couchbase.client.java.manager.query.CollectionQueryIndexManager;
 import com.couchbase.client.java.manager.query.CreateQueryIndexOptions;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.manager.analytics.CreateDatasetAnalyticsOptions.createDatasetAnalyticsOptions;
 import static com.couchbase.client.java.manager.analytics.CreateDataverseAnalyticsOptions.createDataverseAnalyticsOptions;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.LoggerFactory;
 import site.ycsb.Status;
@@ -27,17 +38,11 @@ import site.ycsb.tpc.tpcc.*;
 import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Properties;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
 import static com.couchbase.client.java.analytics.AnalyticsOptions.analyticsOptions;
@@ -81,7 +86,9 @@ public class CouchbaseTPCLoad extends LoadDriver {
   private boolean defaultScope;
   private static final AtomicLong recordNumber = new AtomicLong(0);
   private final List<Future<MutationResult>> tasks = new ArrayList<>();
-  private ExecutorService executor = Executors.newFixedThreadPool(32);
+  private final List<Throwable> errors = new ArrayList<>();
+  private final ExecutorService executor = Executors.newCachedThreadPool();
+  private static final AtomicBoolean runStop = new AtomicBoolean(false);
   private boolean analyticsMode;
   private boolean debug;
 
@@ -172,6 +179,21 @@ public class CouchbaseTPCLoad extends LoadDriver {
     }
 
     OPEN_CLIENTS.incrementAndGet();
+
+    Runnable r = () -> {
+      while(!runStop.get()) {
+        if (!errors.isEmpty()) {
+          Throwable error = errors.remove(0);
+          LOGGER.error(error.getMessage(), error);
+        }
+        try {
+          Thread.sleep(200L);
+        } catch (InterruptedException e) {
+          LOGGER.debug("Interrupted", e);
+        }
+      }
+    };
+    executor.submit(r);
   }
 
   private void logError(Exception error, String connectString) {
@@ -183,6 +205,12 @@ public class CouchbaseTPCLoad extends LoadDriver {
 
   @Override
   public synchronized void cleanup() {
+    if (!errors.isEmpty()) {
+      Throwable error = errors.remove(0);
+      LOGGER.error(error.getMessage(), error);
+    }
+    runStop.set(true);
+    executor.shutdown();
   }
 
   private static <T>T retryBlock(Callable<T> block) throws Exception {
@@ -209,28 +237,7 @@ public class CouchbaseTPCLoad extends LoadDriver {
     return block.call();
   }
 
-  public void taskAdd(Callable<MutationResult> task) {
-    tasks.add(executor.submit(task));
-  }
-
-  public boolean taskWait() {
-    boolean status = true;
-    for (Future<MutationResult> future : tasks) {
-      try {
-        MutationResult result = future.get();
-        if (debug) {
-          LOGGER.debug("Task status: {}", result);
-        }
-      } catch (InterruptedException | ExecutionException e) {
-        LOGGER.error(e.getMessage(), e);
-        status = false;
-      }
-    }
-    tasks.clear();
-    return status;
-  }
-
-  public void createFieldIndex(String collectionName, String field) {
+  public void createFieldIndex(Bucket bucket, String scopeName, String collectionName, String field) {
     Collection collection = bucket.scope(scopeName).collection(collectionName);
     CollectionQueryIndexManager queryIndexMgr = collection.queryIndexes();
     CreateQueryIndexOptions options = CreateQueryIndexOptions.createQueryIndexOptions()
@@ -243,15 +250,80 @@ public class CouchbaseTPCLoad extends LoadDriver {
     queryIndexMgr.watchIndexes(Collections.singletonList(indexName), Duration.ofSeconds(10));
   }
 
+  private JsonNode clusterInfo() {
+    HttpResponse response = cluster.httpClient().get(
+        HttpTarget.manager(),
+        HttpPath.of("/pools/default"));
+    ObjectMapper mapper = new ObjectMapper();
+    try {
+      return mapper.readTree(response.contentAsString());
+    } catch (JsonProcessingException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private long getMemQuota() {
+    return clusterInfo().get("memoryQuota").asLong();
+  }
+
+  public long ramQuotaCalc() {
+    long freeMemoryQuota = getMemQuota();
+    BucketManager bucketMgr = cluster.buckets();
+    Map<String, BucketSettings> buckets = bucketMgr.getAllBuckets();
+    for (Map.Entry<String, BucketSettings> bucketEntry : buckets.entrySet()) {
+      BucketSettings bucketSettings = bucketEntry.getValue();
+      long ramQuota = bucketSettings.ramQuotaMB();
+      freeMemoryQuota -= ramQuota;
+    }
+    return freeMemoryQuota;
+  }
+
+  public void createBucket(String bucket) {
+    StorageBackend type = StorageBackend.COUCHSTORE;
+    BucketManager bucketMgr = cluster.buckets();
+    try {
+      BucketSettings bucketSettings = BucketSettings.create(bucket)
+          .flushEnabled(true)
+          .replicaIndexes(true)
+          .ramQuotaMB(ramQuotaCalc())
+          .numReplicas(1)
+          .bucketType(BucketType.COUCHBASE)
+          .storageBackend(type)
+          .conflictResolutionType(ConflictResolutionType.SEQUENCE_NUMBER);
+
+      bucketMgr.createBucket(bucketSettings);
+    } catch (BucketExistsException e) {
+      LOGGER.info(String.format("Bucket %s already exists in cluster", bucket));
+    }
+  }
+
+  public void createScope(String bucketName, String scopeName) {
+    if (Objects.equals(scopeName, "_default")) {
+      return;
+    }
+    BucketManager bucketMgr = cluster.buckets();
+    bucketMgr.getBucket(bucketName);
+    bucket = cluster.bucket(bucketName);
+    CollectionManager collectionManager = bucket.collections();
+    try {
+      collectionManager.createScope(scopeName);
+    } catch (ScopeExistsException e) {
+      LOGGER.info(String.format("Scope %s already exists in cluster", scopeName));
+    }
+  }
+
   public Status createCollection(String name, List<String> indexFields) {
     try {
+      createBucket(bucketName);
+      createScope(bucketName, scopeName);
       LOGGER.debug("Creating collection: {}", name);
       collectionManager.createCollection(scopeName, name);
+
+      Bucket bucket = cluster.bucket(bucketName);
+      bucket.waitUntilReady(Duration.ofSeconds(15));
+
       if (analyticsMode) {
         createAnalyticsCollection(name);
-      }
-      for (String field : indexFields) {
-        createFieldIndex(name, field);
       }
     } catch (CollectionExistsException e) {
       LOGGER.debug("Collection {} already exists", name);
@@ -408,17 +480,25 @@ public class CouchbaseTPCLoad extends LoadDriver {
     }
   }
 
-  public MutationResult insert(Collection collection, String id, ObjectNode record) {
+  public void insert(Collection collection, String id, ObjectNode record, CountDownLatch countDownLatch) {
     try {
-    return retryBlock(() -> collection.upsert(id, record, upsertOptions().timeout(Duration.ofSeconds(10))));
+      collection.reactive().upsert(id, record, upsertOptions().timeout(Duration.ofSeconds(15)))
+          .subscribe(
+              next -> countDownLatch.countDown(),
+              error ->
+              {
+                countDownLatch.countDown();
+                errors.add(error);
+              }
+          );
     } catch (Throwable t) {
       LOGGER.error("insert transaction exception: {}", t.getMessage(), t);
-      return null;
     }
   }
 
   @Override
   public void insertItemBatch(List<Item> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertItemBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (itemCollection == null) {
@@ -428,13 +508,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Item i : batch) {
       ObjectNode record = i.asNode();
       String id = itemTable.getDocumentId(record);
-      taskAdd(() -> insert(itemCollection, id, record));
+      insert(itemCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertWarehouseBatch(List<Warehouse> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertWarehouseBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (warehouseCollection == null) {
@@ -444,13 +529,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Warehouse i : batch) {
       ObjectNode record = i.asNode();
       String id = warehouseTable.getDocumentId(record);
-      taskAdd(() -> insert(warehouseCollection, id, record));
+      insert(warehouseCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertStockBatch(List<Stock> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertStockBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (stockCollection == null) {
@@ -460,13 +550,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Stock i : batch) {
       ObjectNode record = i.asNode();
       String id = stockTable.getDocumentId(record);
-      taskAdd(() -> insert(stockCollection, id, record));
+      insert(stockCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertDistrictBatch(List<District> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertDistrictBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (districtCollection == null) {
@@ -476,13 +571,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (District i : batch) {
       ObjectNode record = i.asNode();
       String id = districtTable.getDocumentId(record);
-      taskAdd(() -> insert(districtCollection, id, record));
+      insert(districtCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertCustomerBatch(List<Customer> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertCustomerBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (customerCollection == null) {
@@ -492,13 +592,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Customer i : batch) {
       ObjectNode record = i.asNode();
       String id = customerTable.getDocumentId(record);
-      taskAdd(() -> insert(customerCollection, id, record));
+      insert(customerCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertHistoryBatch(List<History> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertHistoryBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (historyCollection == null) {
@@ -508,13 +613,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (History i : batch) {
       ObjectNode record = i.asNode();
       String id = historyTable.getDocumentId(record);
-      taskAdd(() -> insert(historyCollection, id, record));
+      insert(historyCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertOrderBatch(List<Order> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertOrderBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (orderCollection == null) {
@@ -524,13 +634,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Order i : batch) {
       ObjectNode record = i.asNode();
       String id = orderTable.getDocumentId(record);
-      taskAdd(() -> insert(orderCollection, id, record));
+      insert(orderCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertNewOrderBatch(List<NewOrder> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertNewOrderBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (newOrderCollection == null) {
@@ -540,13 +655,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (NewOrder i : batch) {
       ObjectNode record = i.asNode();
       String id = newOrderTable.getDocumentId(record);
-      taskAdd(() -> insert(newOrderCollection, id, record));
+      insert(newOrderCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertOrderLineBatch(List<OrderLine> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertOrderLineBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (orderLineCollection == null) {
@@ -556,13 +676,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (OrderLine i : batch) {
       ObjectNode record = i.asNode();
       String id = orderLineTable.getDocumentId(record);
-      taskAdd(() -> insert(orderLineCollection, id, record));
+      insert(orderLineCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertSupplierBatch(List<Supplier> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertSupplierBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (supplierCollection == null) {
@@ -572,13 +697,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Supplier i : batch) {
       ObjectNode record = i.asNode();
       String id = supplierTable.getDocumentId(record);
-      taskAdd(() -> insert(supplierCollection, id, record));
+      insert(supplierCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertNationBatch(List<Nation> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertNationBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (nationCollection == null) {
@@ -588,13 +718,18 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Nation i : batch) {
       ObjectNode record = i.asNode();
       String id = nationTable.getDocumentId(record);
-      taskAdd(() -> insert(nationCollection, id, record));
+      insert(nationCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 
   @Override
   public void insertRegionBatch(List<Region> batch) {
+    CountDownLatch countDownLatch = new CountDownLatch(batch.size());
     LOGGER.info("insertRegionBatch: called with {} items", batch.size());
     synchronized (INIT_COORDINATOR) {
       if (regionCollection == null) {
@@ -604,8 +739,12 @@ public class CouchbaseTPCLoad extends LoadDriver {
     for (Region i : batch) {
       ObjectNode record = i.asNode();
       String id = regionTable.getDocumentId(record);
-      taskAdd(() -> insert(regionCollection, id, record));
+      insert(regionCollection, id, record, countDownLatch);
     }
-    taskWait();
+    try {
+      countDownLatch.await();
+    } catch (InterruptedException e) {
+      LOGGER.error("countDownLatch await interrupted", e);
+    }
   }
 }

@@ -2,8 +2,10 @@ package site.ycsb.tpc.tpcc;
 
 import site.ycsb.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.*;
 
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Logger;
@@ -46,49 +48,73 @@ public abstract class LoadDriver extends BenchLoad {
   public static TableKeys nationTable = new TableKeys().create("n_nationkey", TableKeyType.INTEGER);
   public static TableKeys regionTable = new TableKeys().create("r_regionkey", TableKeyType.INTEGER);
 
-  private static int transactionCount;
   private static int maxItems;
   private static int custPerDist;
   private static int distPerWarehouse;
   private static int ordPerDist;
-  private static int maxNumItems;
-  private static int maxItemLen;
   private static boolean separateOrderLine;
-  private static boolean enableDebug;
+  private static boolean enableDebug = false;
   private static int warehouseCount;
+  private static boolean schemaOnly = false;
+  private static int batchSize;
 
   private Properties properties = new Properties();
   private Generate generator;
+
+  private final List<Future<Status>> loadTasks = new ArrayList<>();
+  private final ExecutorService loadExecutor = Executors.newFixedThreadPool(32);
 
   @Override
   public void setProperties(Properties p) {
     properties = p;
 
-    transactionCount = Integer.parseInt(p.getProperty("tpcc.transactionCount", "5"));
-    maxItems = Integer.parseInt(p.getProperty("tpcc.maxItems", "100000"));
-    custPerDist = Integer.parseInt(p.getProperty("tpcc.custPerDist", "3000"));
-    distPerWarehouse = Integer.parseInt(p.getProperty("tpcc.distPerWarehouse", "10"));
-    ordPerDist = Integer.parseInt(p.getProperty("tpcc.ordPerDist", "3000"));
-    maxNumItems = Integer.parseInt(p.getProperty("tpcc.maxNumItems", "15"));
-    maxItemLen = Integer.parseInt(p.getProperty("tpcc.maxItemLen", "24"));
-    warehouseCount = Integer.parseInt(p.getProperty("tpcc.warehouseCount", "1"));
-    separateOrderLine = Boolean.parseBoolean(p.getProperty("tpcc.separateOrderLine", "true"));
+    maxItems = Integer.parseInt(p.getProperty("bench.maxItems", "100000"));
+    custPerDist = Integer.parseInt(p.getProperty("bench.custPerDist", "3000"));
+    distPerWarehouse = Integer.parseInt(p.getProperty("bench.distPerWarehouse", "10"));
+    ordPerDist = Integer.parseInt(p.getProperty("bench.ordPerDist", "3000"));
+    warehouseCount = Integer.parseInt(p.getProperty("bench.warehouseCount", "1"));
+    separateOrderLine = Boolean.parseBoolean(p.getProperty("bench.separateOrderLine", "true"));
+    batchSize = Integer.parseInt(p.getProperty("bench.batchSize", "1000"));
+    schemaOnly = properties.getProperty("bench.schemaOnly", "false").equals("true");
+    enableDebug = properties.getProperty("bench.debug", "false").equals("true");
   }
 
   public Properties getProperties() {
     return properties;
   }
 
-  public void generate() {
+  public void loadTaskAdd(Callable<Status> task) {
+    loadTasks.add(loadExecutor.submit(task));
+  }
+
+  public boolean loadTaskWait() {
+    boolean status = true;
+    for (Future<Status> future : loadTasks) {
+      try {
+        Status result = future.get();
+        if (enableDebug) {
+          LOGGER.debug("Task status: {}", result);
+        }
+      } catch (InterruptedException | ExecutionException e) {
+        LOGGER.error(e.getMessage(), e);
+        status = false;
+      }
+    }
+    loadTasks.clear();
+    return status;
+  }
+
+  public void generate(int warehouseNumber) {
     Generate.GeneratorBuilder builder = new Generate.GeneratorBuilder();
     generator = builder
         .custPerDist(custPerDist)
         .distPerWarehouse(distPerWarehouse)
         .ordPerDist(ordPerDist)
-        .warehouseCount(warehouseCount)
+        .warehouseNumber(warehouseNumber)
         .maxItems(maxItems)
         .separateOrderLine(separateOrderLine)
         .enableDebug(enableDebug)
+        .batchSize(batchSize)
         .build();
     generator.createSchema();
   }
@@ -136,24 +162,36 @@ public abstract class LoadDriver extends BenchLoad {
     createNationTable();
     createRegionTable();
 
+    if (schemaOnly) {
+      return;
+    }
+
     LOGGER.info("Beginning data generation phase");
 
-    generate();
+    for (int warehouse = 1; warehouse <= warehouseCount; warehouse++) {
+      System.out.printf("Generating warehouse %d data\n", warehouse);
+      generate(warehouse);
 
-    insertItems();
-    insertWarehouses();
-    insertStock();
-    insertDistrict();
-    insertCustomer();
-    insertHistory();
-    insertOrders();
-    insertNewOrders();
-    if (separateOrderLine) {
-      insertOrderLines();
+      if (warehouse == 1) {
+        System.out.println("Loading foundation tables");
+        insertItems();
+        insertSupplier();
+        insertNation();
+        insertRegion();
+      }
+
+      System.out.printf("Loading warehouse %d tables\n", warehouse);
+      insertWarehouses();
+      insertStock();
+      insertDistrict();
+      insertCustomer();
+      insertHistory();
+      insertOrders();
+      insertNewOrders();
+      if (separateOrderLine) {
+        insertOrderLines();
+      }
     }
-    insertSupplier();
-    insertNation();
-    insertRegion();
   }
 
   public Status insertItems() {

@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Logger;
 
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class Generate {
@@ -17,7 +16,7 @@ public class Generate {
   private final int custPerDist;
   private final int distPerWarehouse;
   private final int ordPerDist;
-  private final int warehouseCount;
+  private final int warehouseNumber;
   private final int supplierCount;
   private final int batchSize;
   private final boolean separateOrderLine;
@@ -44,7 +43,7 @@ public class Generate {
     private int custPerDist = 3000;
     private int distPerWarehouse = 10;
     private int ordPerDist = 3000;
-    private int warehouseCount = 1;
+    private int warehouseNumber = 1;
     private int supplierCount = 10000;
     private int batchSize = 1000;
     private boolean separateOrderLine = false;
@@ -70,8 +69,8 @@ public class Generate {
       return this;
     }
 
-    public GeneratorBuilder warehouseCount(int value) {
-      this.warehouseCount = value;
+    public GeneratorBuilder warehouseNumber(int value) {
+      this.warehouseNumber = value;
       return this;
     }
 
@@ -105,7 +104,7 @@ public class Generate {
     this.custPerDist = builder.custPerDist;
     this.distPerWarehouse = builder.distPerWarehouse;
     this.ordPerDist = builder.ordPerDist;
-    this.warehouseCount = builder.warehouseCount;
+    this.warehouseNumber = builder.warehouseNumber;
     this.supplierCount = builder.supplierCount;
     this.batchSize = builder.batchSize;
     this.separateOrderLine = builder.separateOrderLine;
@@ -114,14 +113,15 @@ public class Generate {
   }
 
   public void createSchema() {
-    generateItems();
-    for (int warehouse = 1; warehouse <= warehouseCount; warehouse++) {
-      generateWarehouse(warehouse);
-      generateDistrict(warehouse);
+    if (warehouseNumber == 1) {
+      generateItems();
+      generateSuppliers();
+      generateNation();
+      generateRegion();
     }
-    generateSuppliers();
-    generateNation();
-    generateRegion();
+
+    generateWarehouse(warehouseNumber);
+    generateDistrict(warehouseNumber);
   }
 
   public Stream<List<Item>> itemData() {
@@ -225,7 +225,7 @@ public class Generate {
     }
 
     for (int s_i_id = 1; s_i_id <= maxItems; s_i_id++) {
-      stock.add(new Stock(s_i_id, warehouseNum, warehouseCount, util, orig));
+      stock.add(new Stock(s_i_id, warehouseNum, warehouseNumber, util, orig));
     }
 
     LOGGER.debug("stock table data generation complete for warehouse {}", warehouseNum);

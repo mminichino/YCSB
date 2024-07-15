@@ -18,6 +18,7 @@ import com.couchbase.client.core.config.PortInfo;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
+import com.couchbase.client.java.codec.TypeRef;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -33,14 +34,20 @@ import com.couchbase.client.java.manager.query.CollectionQueryIndexManager;
 import com.couchbase.client.java.manager.query.CreatePrimaryQueryIndexOptions;
 import com.couchbase.client.java.manager.query.CreateQueryIndexOptions;
 import com.couchbase.client.java.manager.analytics.AnalyticsIndexManager;
+import com.couchbase.client.java.analytics.AnalyticsResult;
 import static com.couchbase.client.java.manager.analytics.CreateDatasetAnalyticsOptions.createDatasetAnalyticsOptions;
 import static com.couchbase.client.java.manager.analytics.DropDatasetAnalyticsOptions.dropDatasetAnalyticsOptions;
 import static com.couchbase.client.java.manager.analytics.CreateIndexAnalyticsOptions.createIndexAnalyticsOptions;
 import static com.couchbase.client.java.manager.analytics.DropIndexAnalyticsOptions.dropIndexAnalyticsOptions;
+import static com.couchbase.client.java.analytics.AnalyticsOptions.analyticsOptions;
+import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import static com.couchbase.client.java.kv.MutateInSpec.arrayAppend;
 import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.MutateInOptions.mutateInOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.gson.*;
 import org.slf4j.LoggerFactory;
 
@@ -90,6 +97,7 @@ public final class CouchbaseConnect {
   private final boolean scopeEnabled;
   private final boolean collectionEnabled;
   private boolean analyticsEnabled;
+  private boolean columnar;
   private final DurabilityLevel durability;
   private final int ttlSeconds;
   private boolean communityEdition = false;
@@ -107,6 +115,7 @@ public final class CouchbaseConnect {
     private String bucketName;
     private String scopeName = DEFAULT_SCOPE;
     private String collectionName = DEFAULT_COLLECTION;
+    private boolean columnar = false;
     private int ttlSeconds = 0;
     private DurabilityLevel durabilityLevel = DurabilityLevel.NONE;
 
@@ -180,6 +189,11 @@ public final class CouchbaseConnect {
       return this;
     }
 
+    public CouchbaseBuilder columnar(final boolean columnar) {
+      this.columnar = columnar;
+      return this;
+    }
+
     public CouchbaseBuilder keyspace(final String bucket, final String scope, final String collection) {
       this.bucketName = bucket;
       this.scopeName = scope;
@@ -204,6 +218,7 @@ public final class CouchbaseConnect {
     bucketName = builder.bucketName;
     scopeName = builder.scopeName;
     collectionName = builder.collectionName;
+    columnar = builder.columnar;
     scopeEnabled = !Objects.equals(scopeName, "_default");
     collectionEnabled = !Objects.equals(collectionName, "_default");
     analyticsEnabled = false;
@@ -252,14 +267,17 @@ public final class CouchbaseConnect {
           cluster = Cluster.connect(connectString,
               ClusterOptions.clusterOptions(username, password).environment(environment));
           cluster.waitUntilReady(Duration.ofSeconds(15));
-          bucketMgr = cluster.buckets();
-          try {
-            if (bucketName != null) {
-              bucketMgr.getBucket(bucketName);
-              bucket = cluster.bucket(bucketName);
+          if (!columnar) {
+            bucketMgr = cluster.buckets();
+            try {
+              if (bucketName != null) {
+                bucketMgr.getBucket(bucketName);
+                bucket = cluster.bucket(bucketName);
+              }
+            } catch (BucketNotFoundException ignored) {
             }
-          } catch (BucketNotFoundException ignored) { }
-          getClusterInfo();
+            getClusterInfo();
+          }
         }
       } catch(Exception e) {
         logError(e, connectString);
@@ -662,5 +680,55 @@ public final class CouchbaseConnect {
           .forEach(data::add);
           return data;
       });
+  }
+
+  public List<JsonNode> runQuery(String statement) {
+    TypeRef<JsonNode> typeRef = new TypeRef<>() {};
+    Bucket bucket = cluster.bucket(bucketName);
+    Scope scope = bucket.scope(scopeName);
+    return scope.reactive().query(statement, queryOptions())
+        .flatMapMany(result -> result.rowsAs(typeRef))
+        .collectList()
+        .block();
+  }
+
+  public List<ObjectNode> analyticsQuery(String statement) {
+    TypeRef<ObjectNode> typeRef = new TypeRef<>() {};
+    Bucket bucket = cluster.bucket(bucketName);
+    Scope scope = bucket.scope(scopeName);
+    try {
+      AnalyticsResult result = cluster.analyticsQuery(statement, analyticsOptions());
+      return result.rowsAs(typeRef);
+    } catch (Throwable t) {
+      LOGGER.error("analytics query exception: {}", t.getMessage(), t);
+      return null;
+    }
+  }
+
+  public List<ObjectNode> analyticsScopeQuery(String statement) {
+    TypeRef<ObjectNode> typeRef = new TypeRef<>() {};
+    Bucket bucket = cluster.bucket(bucketName);
+    Scope scope = bucket.scope(scopeName);
+    try {
+      AnalyticsResult result = scope.analyticsQuery(statement, analyticsOptions());
+      return result.rowsAs(typeRef);
+    } catch (Throwable t) {
+      LOGGER.error("analytics query exception: {}", t.getMessage(), t);
+      return null;
+    }
+  }
+
+  public List<ObjectNode> analyticsScopeQuery(String statement, List<String> parameters) {
+    TypeRef<ObjectNode> typeRef = new TypeRef<>() {};
+    Bucket bucket = cluster.bucket(bucketName);
+    Scope scope = bucket.scope(scopeName);
+    try {
+      AnalyticsResult result = scope.analyticsQuery(statement,
+          analyticsOptions().parameters(com.couchbase.client.java.json.JsonArray.from(parameters)));
+      return result.rowsAs(typeRef);
+    } catch (Throwable t) {
+      LOGGER.error("analytics query exception: {}", t.getMessage(), t);
+      return null;
+    }
   }
 }

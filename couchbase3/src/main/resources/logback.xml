@@ -70,7 +70,15 @@
     <appender-ref ref="FILE"/>
   </logger>
 
+  <logger name="site.ycsb.db.couchbase3.CouchbaseStream" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
   <logger name="site.ycsb.tpc.tpcc.Generate" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.tpc.tpcc.LoadDriver" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 
@@ -83,6 +91,14 @@
   </logger>
 
   <logger name="com.couchbase" level="ERROR" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="software.amazon.awssdk" level="ERROR" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="io.netty.util" level="ERROR" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 

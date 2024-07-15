@@ -1,6 +1,6 @@
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.core.deps.com.google.gson.JsonParser;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.highlevel.internal.CollectionIdAndKey;
 import com.couchbase.client.dcp.SecurityConfig;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -9,41 +9,42 @@ import com.couchbase.client.dcp.StreamFrom;
 import com.couchbase.client.dcp.StreamTo;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
-import com.couchbase.client.core.deps.com.google.gson.JsonObject;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static java.util.Objects.requireNonNull;
 
+import org.slf4j.LoggerFactory;
+import ch.qos.logback.classic.Logger;
+
 /**
  * Couchbase Stream Utility.
  */
 public class CouchbaseStream {
-  private String hostname;
-  private String username;
-  private String password;
-  private String connectString;
-  private String bucket;
-  private String scope;
-  private String collection;
-  private Boolean useSsl;
-  private String httpPrefix;
-  private String couchbasePrefix;
-  private String srvPrefix;
-  private String adminPort;
-  private String nodePort;
+  static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.db.couchbase3.CouchbaseStream");
+  private final String hostname;
+  private final String username;
+  private final String password;
+  private final String bucket;
+  private final String scope;
+  private final String collection;
+  private final Boolean useSsl;
   private boolean collectionEnabled;
   private final AtomicLong totalSize = new AtomicLong(0);
   private final AtomicLong docCount = new AtomicLong(0);
   private final AtomicLong sentCount = new AtomicLong(0);
-  private final PriorityBlockingQueue<String> queue = new PriorityBlockingQueue<>();
+  private final PriorityBlockingQueue<ByteBuffer> queue = new PriorityBlockingQueue<>();
   private Client client;
 
   public CouchbaseStream(String hostname, String username, String password, String bucket, Boolean ssl) {
@@ -72,24 +73,17 @@ public class CouchbaseStream {
   public void init() {
     StringBuilder connectBuilder = new StringBuilder();
 
+    String couchbasePrefix;
     if (useSsl) {
-      httpPrefix = "https://";
       couchbasePrefix = "couchbases://";
-      srvPrefix = "_couchbases._tcp.";
-      adminPort = "18091";
-      nodePort = "19102";
     } else {
-      httpPrefix = "http://";
       couchbasePrefix = "couchbase://";
-      srvPrefix = "_couchbase._tcp.";
-      adminPort = "8091";
-      nodePort = "9102";
     }
 
     connectBuilder.append(couchbasePrefix);
     connectBuilder.append(hostname);
 
-    connectString = connectBuilder.toString();
+    String connectString = connectBuilder.toString();
 
     collectionEnabled = !collection.equals("_default");
 
@@ -102,6 +96,8 @@ public class CouchbaseStream {
     client = Client.builder()
         .connectionString(connectString)
         .bucket(bucket)
+        .collectionsAware(true)
+        .collectionNames(scope + "." + collection)
         .securityConfig(secClientConfig)
         .credentials(username, password)
         .build();
@@ -115,19 +111,16 @@ public class CouchbaseStream {
   public void streamDocuments() {
     client.dataEventHandler((flowController, event) -> {
       if (DcpMutationMessage.is(event)) {
-        Date date = new Date();
-        CollectionIdAndKey key = MessageUtil.getCollectionIdAndKey(event, collectionEnabled);
-        String content = DcpMutationMessage.content(event).toString(StandardCharsets.UTF_8);
-        JsonObject metaObject = new JsonObject();
-        metaObject.addProperty("id", key.key());
-        metaObject.addProperty("timestamp", date.getTime());
-        JsonObject docObject = JsonParser.parseString(content).getAsJsonObject();
-        JsonObject rootObject = new JsonObject();
-        rootObject.add("meta", metaObject);
-        rootObject.add("document", docObject);
-        queue.add(rootObject.toString());
-        docCount.incrementAndGet();
-        totalSize.addAndGet(DcpMutationMessage.content(event).readableBytes());
+        String key = MessageUtil.getCollectionIdAndKey(event, collectionEnabled).key();
+        byte[] content = DcpMutationMessage.contentBytes(event);
+        try {
+          DocumentBuffer buffer = new DocumentBuffer(key, content);
+          queue.add(buffer.getBuffer());
+          docCount.incrementAndGet();
+          totalSize.addAndGet(DcpMutationMessage.content(event).readableBytes());
+        } catch (Exception e) {
+          LOGGER.error("Error reading stream: {}", e.getMessage(), e);
+        }
       }
       event.release();
     });
@@ -164,11 +157,11 @@ public class CouchbaseStream {
         }, false);
   }
 
-  public Stream<String> getDrain() {
+  public Stream<ByteBuffer> getDrain() {
     return whileNotNull(queue::poll);
   }
 
-  public Stream<String> getByCount(long count) {
+  public Stream<ByteBuffer> getByCount(long count) {
     return Stream.generate(() -> {
           try {
             return queue.take();

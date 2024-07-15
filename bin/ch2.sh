@@ -3,26 +3,32 @@
 SCRIPT_PATH=$(dirname "$0")
 SCRIPT_ROOT=$(cd "$SCRIPT_PATH/.." && pwd)
 CLASSPATH="${SCRIPT_ROOT}/conf:${SCRIPT_ROOT}/lib/*"
-THREADCOUNT_LOAD=1
-THREADCOUNT_RUN=10
 RUNTIME=600
 RUN_MODE=0
 LOAD_MODE=0
+TEST_MODE=0
+QUERY_PRINT="false"
 CBS_DRIVER_LOAD="site.ycsb.db.couchbase3.CouchbaseTPCLoad"
 COLUMNAR_DRIVER_LOAD="site.ycsb.db.couchbase3.AnalyticsTPCLoad"
 CBS_DRIVER_RUN="site.ycsb.db.couchbase3.CouchbaseTPCRun"
 COLUMNAR_DRIVER_RUN="site.ycsb.db.couchbase3.AnalyticsTPCRun"
-LOAD_DRIVER=$CBS_DRIVER_LOAD
-RUN_DRIVER=$CBS_DRIVER_RUN
+LOAD_DRIVER=$COLUMNAR_DRIVER_LOAD
+RUN_DRIVER=$COLUMNAR_DRIVER_RUN
 
-while getopts "T:lrSC" opt
+while getopts "T:lprtS" opt
 do
   case $opt in
     l)
       LOAD_MODE=1
       ;;
+    p)
+      QUERY_PRINT="true"
+      ;;
     r)
       RUN_MODE=1
+      ;;
+    t)
+      TEST_MODE=1
       ;;
     T)
       RUNTIME=$OPTARG
@@ -31,30 +37,24 @@ do
       LOAD_DRIVER=$CBS_DRIVER_LOAD
       RUN_DRIVER=$CBS_DRIVER_RUN
       ;;
-    C)
-      LOAD_DRIVER=$COLUMNAR_DRIVER_LOAD
-      RUN_DRIVER=$COLUMNAR_DRIVER_RUN
-      ;;
     \?)
       ;;
     esac
 done
 
-for workload in 16 32 64
-do
-  if [ -f "workloads/workload_ch2_${workload}" ]; then
-    WORKLOAD_LIST="$WORKLOAD_LIST workloads/workload_ch2_${workload}"
-  fi
-done
-
 if [ $LOAD_MODE -eq 1 ]; then
-  LOAD_OPTS="-db $LOAD_DRIVER -P workloads/workload_ch2 -threads $THREADCOUNT_LOAD -s -load"
+  LOAD_OPTS="-db $LOAD_DRIVER -P workloads/workload_ch2 -threads 1 -s -load"
   java -cp "$CLASSPATH" site.ycsb.BenchClient $LOAD_OPTS
 fi
 
+if [ $TEST_MODE -eq 1 ]; then
+  RUN_OPTS="-db $RUN_DRIVER -P workloads/workload_ch2 -threads 1 -p operationcount=1 -p maxexecutiontime=120 -p benchmark.queryPrint=$QUERY_PRINT -test -manual -s -t"
+  java -cp "$CLASSPATH" site.ycsb.BenchClient $RUN_OPTS
+fi
+
 if [ $RUN_MODE -eq 1 ]; then
-  for workload in $WORKLOAD_LIST; do
-    RUN_OPTS="-db $RUN_DRIVER -P $workload -p operationcount=0 -p maxexecutiontime=$RUNTIME -manual -s -t"
+  for THREADCOUNT_RUN in 1 3 8; do
+    RUN_OPTS="-db $RUN_DRIVER -P workloads/workload_ch2_${THREADCOUNT_RUN} -threads $THREADCOUNT_RUN -p operationcount=0 -p maxexecutiontime=$RUNTIME -manual -s -t"
     java -cp "$CLASSPATH" site.ycsb.BenchClient $RUN_OPTS
   done
 fi

@@ -57,6 +57,7 @@ public class AnalyticsTPCLoad extends LoadDriver {
   public static final String COUCHBASE_BUCKET = "couchbase.bucket";
   public static final String COUCHBASE_SCOPE = "couchbase.scope";
   public static final String COUCHBASE_COLLECTION = "couchbase.collection";
+  public static final String COLUMNAR_LOAD_MODE = "columnar.loadMode";
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
   private static final Object INIT_COORDINATOR = new Object();
   private static volatile Cluster cluster;
@@ -71,6 +72,7 @@ public class AnalyticsTPCLoad extends LoadDriver {
   private int maxParallelism;
   private boolean defaultScope;
   private static final AtomicLong recordNumber = new AtomicLong(0);
+  private static ColumnarLoadMode columnarLoadMode;
 
   @Override
   public void init() {
@@ -101,6 +103,18 @@ public class AnalyticsTPCLoad extends LoadDriver {
 
     if (debug) {
       LOGGER.setLevel(Level.DEBUG);
+    }
+
+    String loadMode = properties.getProperty(COLUMNAR_LOAD_MODE, "direct");
+
+    if (loadMode.equals("direct")) {
+      columnarLoadMode = ColumnarLoadMode.DIRECT;
+    } else if (loadMode.equals("s3")) {
+      columnarLoadMode = ColumnarLoadMode.S3;
+    } else if (loadMode.equals("csv")) {
+      columnarLoadMode = ColumnarLoadMode.CSV;
+    } else {
+      columnarLoadMode = ColumnarLoadMode.DIRECT;
     }
 
     defaultScope = properties.getProperty("couchbase.defaultScope", "false").equals("true");

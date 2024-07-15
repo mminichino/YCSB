@@ -45,6 +45,10 @@ public class Queries {
     return sqlStatements;
   }
 
+  public String getRandomQuery() {
+    return this.sqlStatements.get(new Random().nextInt(this.sqlStatements.size()));
+  }
+
   public List<Integer> getPermutation() {
     List<Integer> array = IntStream.rangeClosed(1, sqlStatements.size()).boxed().collect(Collectors.toList());
     Collections.shuffle(array);
