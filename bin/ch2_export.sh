@@ -21,5 +21,5 @@ do
   if [ -n "$COLLECTION" ] && [ "$collection" != "$COLLECTION" ]; then
     continue
   fi
-  java -cp "$CLASSPATH" site.ycsb.db.couchbase3.CouchbaseExport -p conf/db.properties -c $collection
+  java -Xmx16g -cp "$CLASSPATH" site.ycsb.db.couchbase3.CouchbaseExport -p conf/db.properties -c $collection
 done

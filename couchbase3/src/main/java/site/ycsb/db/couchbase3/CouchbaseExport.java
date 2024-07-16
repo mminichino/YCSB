@@ -29,10 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -68,7 +65,7 @@ public class CouchbaseExport {
   public static String awsCredentialsProvider = "org.apache.hadoop.fs.s3a.TemporaryAWSCredentialsProvider";
 
   public static final AtomicLong fileCounter = new AtomicLong(0);
-  public static final AtomicLong dataSizeCounter = new AtomicLong(0);
+  public static final AtomicLong opCounter = new AtomicLong(0);
   public static final AtomicLong totalCounter = new AtomicLong(0);
 
   private static String hostname;
@@ -79,14 +76,11 @@ public class CouchbaseExport {
   private static String collection;
   private static String s3Bucket;
   private static Boolean useSsl;
-  private static boolean collectionEnabled;
-  private final AtomicLong totalSize = new AtomicLong(0);
-  private final AtomicLong docCount = new AtomicLong(0);
+  private static final AtomicLong docCount = new AtomicLong(0);
   private final AtomicLong sentCount = new AtomicLong(0);
   private final PriorityBlockingQueue<ByteBuffer> queue = new PriorityBlockingQueue<>();
   private static final BlockingQueue<String> docQueue = new LinkedBlockingQueue<>();
-  private final AtomicBoolean streamOn = new AtomicBoolean(true);
-  private int batchSize;
+  private static long expectedSize;
   private static Client client;
 
   private static final ObjectMapper mapper = new ObjectMapper();
@@ -97,8 +91,6 @@ public class CouchbaseExport {
 
   private static Schema schema;
   private static Configuration config;
-  private static volatile ParquetWriter<GenericRecord> writer;
-  private static Path path;
 
   public static void main(String[] args) {
     StringBuilder connectBuilder = new StringBuilder();
@@ -172,8 +164,6 @@ public class CouchbaseExport {
 
     String connectString = connectBuilder.toString();
 
-    collectionEnabled = !collection.equals("_default");
-
     Consumer<SecurityConfig.Builder> secClientConfig = securityConfig -> {
       securityConfig.enableTls(useSsl)
           .enableHostnameVerification(false)
@@ -189,6 +179,7 @@ public class CouchbaseExport {
         .credentials(username, password)
         .controlParam(DcpControl.Names.CONNECTION_BUFFER_SIZE, 1048576)
         .bufferAckWatermark(75)
+        .dcpChannelsReconnectMaxAttempts(10)
         .build();
 
     client.controlEventHandler((flowController, event) -> {
@@ -204,32 +195,42 @@ public class CouchbaseExport {
     config.set("fs.s3a.session.token", awsSessionToken);
     config.set("fs.s3a.aws.credentials.provider", awsCredentialsProvider);
 
+    expectedSize = getCount(hostname, username, password, useSsl, bucket, scope, collection);
+    System.out.printf("Expecting %,d documents\n", expectedSize);
+
     streamDocuments();
     createSystemEventHandler();
     startToNow();
 
     while (!lastPartition.get() && !client.sessionState().isAtEnd()) {
       try {
-        Thread.sleep(TimeUnit.SECONDS.toMillis(1));
+        Thread.sleep(TimeUnit.MILLISECONDS.toMillis(500));
       } catch (InterruptedException e) {
         System.out.println("Interrupted");
       }
     }
 
-    try {
-      Thread.sleep(TimeUnit.SECONDS.toMillis(5));
-    } catch (InterruptedException e) {
-      System.out.println("Interrupted");
+    synchronized (WRITE_COORDINATOR) {
+      while (opCounter.get() < expectedSize) {
+        try {
+          Thread.sleep(TimeUnit.SECONDS.toMillis(1));
+        } catch (InterruptedException e) {
+          System.out.println("Interrupted");
+        }
+      }
+      if (!docQueue.isEmpty()) {
+        writeParquetFile();
+      }
+      LOGGER.debug(String.format("Wrote (Overflow) => %,d\n", totalCounter.get()));
     }
 
-    synchronized (WRITE_COORDINATOR) {
-      while (!docQueue.isEmpty()) {
-        writeParquetFile();
-        LOGGER.debug(String.format("Wrote (Overflow) => %,d\n", totalCounter.get()));
-      }
-    }
     stop();
-    System.out.printf(" -> Exported %,d records\n", totalCounter.get());
+
+    if (expectedSize != totalCounter.get()) {
+      throw new RuntimeException("Expected " + expectedSize + " documents but got " + totalCounter.get());
+    }
+
+    System.out.printf("\n -> Exported %,d records\n", totalCounter.get());
   }
 
   public static Schema createSchema(String tableName, JsonNode sample) {
@@ -242,47 +243,47 @@ public class CouchbaseExport {
     for (Iterator<Map.Entry<String, JsonNode>> it = sample.fields(); it.hasNext(); ) {
       Map.Entry<String, JsonNode> column = it.next();
       if (column.getValue().isBoolean()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "boolean"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("boolean").add("null")));
       } else if (column.getValue().isInt()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "int"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("int").add("null")));
       } else if (column.getValue().isTextual()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "string"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("string").add("null")));
       } else if (column.getValue().isDouble()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "double"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("double").add("null")));
       } else if (column.getValue().isBinary()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "bytes"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("bytes").add("null")));
       } else if (column.getValue().isFloat()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "float"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("float").add("null")));
       } else if (column.getValue().isLong()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "long"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("long").add("null")));
       } else if (column.getValue().isNull()) {
-        fields.add(mapper.createObjectNode().put("name", column.getKey()).put("type", "null"));
+        fields.add(mapper.createObjectNode().put("name", column.getKey()).set("type", mapper.createArrayNode().add("string").add("null")));
       }
     }
     config.set("fields", fields);
     return new Schema.Parser().parse(config.toString());
   }
 
-  public static GenericRecord getRecord(Schema schema, JsonNode document) {
+  public static GenericRecord getRecord(Schema schema, JsonNode document) throws IOException {
     GenericRecord record = new GenericData.Record(schema);
     for (Iterator<Map.Entry<String, JsonNode>> it = document.fields(); it.hasNext(); ) {
       Map.Entry<String, JsonNode> column = it.next();
       if (column.getValue().isBoolean()) {
-        record.put(column.getKey(), column.getValue());
+        record.put(column.getKey(), Boolean.valueOf(column.getValue().asBoolean()));
       } else if (column.getValue().isInt()) {
         record.put(column.getKey(), Integer.valueOf(column.getValue().asInt()));
       } else if (column.getValue().isTextual()) {
-        record.put(column.getKey(), column.getValue());
+        record.put(column.getKey(), String.valueOf(column.getValue().asText()));
       } else if (column.getValue().isDouble()) {
         record.put(column.getKey(), Double.valueOf(column.getValue().asDouble()));
       } else if (column.getValue().isBinary()) {
-        record.put(column.getKey(), column.getValue());
+        record.put(column.getKey(), column.getValue().binaryValue());
       } else if (column.getValue().isFloat()) {
         record.put(column.getKey(), Double.valueOf(column.getValue().asDouble()));
       } else if (column.getValue().isLong()) {
         record.put(column.getKey(), Long.valueOf(column.getValue().asLong()));
       } else if (column.getValue().isNull()) {
-        record.put(column.getKey(), column.getValue());
+        record.put(column.getKey(), null);
       }
     }
     return record;
@@ -298,6 +299,18 @@ public class CouchbaseExport {
         .collection(collection);
     db = dbBuilder.build();
     return db.runQuery(String.format("SELECT * from %s LIMIT 1", collection)).get(0).get(collection);
+  }
+
+  public static long getCount(String host, String user, String password, boolean ssl, String bucket, String scope, String collection) {
+    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
+    CouchbaseConnect db;
+    dbBuilder.connect(host, user, password)
+        .ssl(ssl)
+        .bucket(bucket)
+        .scope(scope)
+        .collection(collection);
+    db = dbBuilder.build();
+    return db.runQuery(String.format("select raw count(*) from %s", collection)).get(0).asLong();
   }
 
   public static synchronized void writeParquetFile() {
@@ -322,7 +335,9 @@ public class CouchbaseExport {
           totalCounter.incrementAndGet();
         }
       }
+      System.out.printf("Wrote file #%04d: %s\r", fileNumber, fileName);
     } catch (Exception e) {
+      LOGGER.error("Error reading stream: {}", e.getMessage(), e);
       throw new RuntimeException(e);
     }
   }
@@ -333,17 +348,17 @@ public class CouchbaseExport {
         String content = DcpMutationMessage.content(event).toString(StandardCharsets.UTF_8);
         try {
           docQueue.put(content);
-          dataSizeCounter.addAndGet(content.length());
+          opCounter.incrementAndGet();
           flowController.ack(event);
           synchronized (WRITE_COORDINATOR) {
-            if (!docQueue.isEmpty() && (dataSizeCounter.get() > 256_000_000)) {
+            if (!docQueue.isEmpty() && docQueue.size() >= 100_000) {
               writeParquetFile();
-              dataSizeCounter.set(0);
               LOGGER.debug(String.format("Wrote (Main) => %,d\n", totalCounter.get()));
             }
           }
         } catch (Exception e) {
           LOGGER.error("Error reading stream: {}", e.getMessage(), e);
+          throw new RuntimeException(e);
         }
       }
       event.release();
@@ -455,7 +470,7 @@ public class CouchbaseExport {
     client.disconnect().block();
   }
 
-  public long getCount() {
+  public static long getCount() {
     return docCount.get();
   }
 }
