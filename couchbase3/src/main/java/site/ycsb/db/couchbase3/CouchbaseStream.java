@@ -1,7 +1,6 @@
 package site.ycsb.db.couchbase3;
 
-import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.dcp.highlevel.internal.CollectionIdAndKey;
+import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.SecurityConfig;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import com.couchbase.client.dcp.Client;
@@ -9,13 +8,12 @@ import com.couchbase.client.dcp.StreamFrom;
 import com.couchbase.client.dcp.StreamTo;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -45,6 +43,9 @@ public class CouchbaseStream {
   private final AtomicLong docCount = new AtomicLong(0);
   private final AtomicLong sentCount = new AtomicLong(0);
   private final PriorityBlockingQueue<ByteBuffer> queue = new PriorityBlockingQueue<>();
+  private final BlockingQueue<String> docQueue = new LinkedBlockingQueue<>();
+  private final AtomicBoolean streamOn = new AtomicBoolean(true);
+  private int batchSize;
   private Client client;
 
   public CouchbaseStream(String hostname, String username, String password, String bucket, Boolean ssl) {
@@ -55,6 +56,7 @@ public class CouchbaseStream {
     this.useSsl = ssl;
     this.scope = "_default";
     this.collection = "_default";
+    this.batchSize = 1000;
     this.init();
   }
 
@@ -67,6 +69,7 @@ public class CouchbaseStream {
     this.useSsl = ssl;
     this.scope = scope;
     this.collection = collection;
+    this.batchSize = 1000;
     this.init();
   }
 
@@ -100,6 +103,8 @@ public class CouchbaseStream {
         .collectionNames(scope + "." + collection)
         .securityConfig(secClientConfig)
         .credentials(username, password)
+        .controlParam(DcpControl.Names.CONNECTION_BUFFER_SIZE, 1048576)
+        .bufferAckWatermark(75)
         .build();
 
     client.controlEventHandler((flowController, event) -> {
@@ -116,8 +121,24 @@ public class CouchbaseStream {
         try {
           DocumentBuffer buffer = new DocumentBuffer(key, content);
           queue.add(buffer.getBuffer());
+          flowController.ack(event);
           docCount.incrementAndGet();
-          totalSize.addAndGet(DcpMutationMessage.content(event).readableBytes());
+        } catch (Exception e) {
+          LOGGER.error("Error reading stream: {}", e.getMessage(), e);
+        }
+      }
+      event.release();
+    });
+  }
+
+  public void streamDocumentContents() {
+    client.dataEventHandler((flowController, event) -> {
+      if (DcpMutationMessage.is(event)) {
+        String content = DcpMutationMessage.content(event).toString(StandardCharsets.UTF_8);
+        try {
+          docQueue.put(content);
+          flowController.ack(event);
+          docCount.incrementAndGet();
         } catch (Exception e) {
           LOGGER.error("Error reading stream: {}", e.getMessage(), e);
         }
@@ -159,6 +180,34 @@ public class CouchbaseStream {
 
   public Stream<ByteBuffer> getDrain() {
     return whileNotNull(queue::poll);
+  }
+
+  public long getDocCount() {
+    return docCount.get();
+  }
+
+  public Stream<String> getNextDocument() {
+    return whileNotNull(docQueue::poll);
+  }
+
+  public BlockingQueue<String> getDocQueue() {
+    return docQueue;
+  }
+
+  public boolean isDocQueueEmpty() {
+    return docQueue.isEmpty();
+  }
+
+  public String getDocQueueEntry() {
+    try {
+      return docQueue.poll(5, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      return null;
+    }
+  }
+
+  public boolean isAtEnd() {
+    return client.sessionState().isAtEnd();
   }
 
   public Stream<ByteBuffer> getByCount(long count) {

@@ -612,6 +612,22 @@ public final class CouchbaseConnect {
     });
   }
 
+  public JsonNode document(String id) {
+    TypeRef<JsonNode> typeRef = new TypeRef<>() {};
+    try {
+      return RetryLogic.retryBlock(() -> {
+        try {
+          GetResult result =  collection.get(id);
+          return result.contentAs(typeRef);
+        } catch (DocumentNotFoundException e) {
+          return null;
+        }
+      });
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   public void upsert(String id, Object content) throws Exception {
     Collection collection = getCollection();
     try {

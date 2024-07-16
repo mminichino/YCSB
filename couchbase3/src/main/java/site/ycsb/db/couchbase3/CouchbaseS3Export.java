@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.collect.Iterators;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
@@ -15,19 +16,25 @@ import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
 import org.apache.hadoop.fs.Path;
 import java.nio.file.Paths;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.LoggerFactory;
+import ch.qos.logback.classic.Logger;
 
 /**
  * Clean Cluster after Testing.
  */
 public class CouchbaseS3Export {
+  protected static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.db.couchbase3.CouchbaseS3Export");
   public static final String CLUSTER_HOST = "couchbase.hostname";
   public static final String CLUSTER_USER = "couchbase.username";
   public static final String CLUSTER_PASSWORD = "couchbase.password";
@@ -45,6 +52,10 @@ public class CouchbaseS3Export {
   public static String awsSecretKey;
   public static String awsSessionToken;
   public static String awsCredentialsProvider = "org.apache.hadoop.fs.s3a.TemporaryAWSCredentialsProvider";
+
+  public static final AtomicLong fileCounter = new AtomicLong(0);
+  public static final AtomicLong opCounter = new AtomicLong(0);
+  public static final AtomicLong totalCounter = new AtomicLong(0);
 
   public static void main(String[] args) {
     Options options = new Options();
@@ -176,14 +187,25 @@ public class CouchbaseS3Export {
     }
     String s3Bucket = properties.getProperty(CLUSTER_S3_BUCKET, "bucket");
 
-    System.err.printf("Exporting collection %s to S3 bucket %s\n", clusterCollection, s3Bucket);
+    System.out.printf("Exporting collection %s to S3 bucket \"%s\"\n", clusterCollection, s3Bucket);
 
     exportCollection(clusterHost, clusterUser, clusterPassword, clusterSsl, clusterBucket, clusterScope, clusterCollection, s3Bucket);
   }
 
   private static void exportCollection(String host, String user, String password, boolean ssl, String bucket, String scope, String collection, String s3Bucket) {
     CouchbaseStream stream = new CouchbaseStream(host, user, password, bucket, ssl, scope, collection);
-    Path path = new Path(String.format("s3a://%s/%s.parquet", s3Bucket, collection));
+    ObjectMapper mapper = new ObjectMapper();
+    System.out.println("Start export");
+
+//    CouchbaseConnect.CouchbaseBuilder dbBuilder = new CouchbaseConnect.CouchbaseBuilder();
+//    CouchbaseConnect db;
+//    dbBuilder.connect(host, user, password)
+//        .ssl(ssl)
+//        .bucket(bucket)
+//        .scope(scope)
+//        .collection(collection);
+//    db = dbBuilder.build();
+//    db.connectKeyspace();
 
     JsonNode sample = getSample(host, user, password, ssl, bucket, scope, collection);
     Schema schema = createSchema(collection, sample);
@@ -193,31 +215,39 @@ public class CouchbaseS3Export {
     config.set("fs.s3a.session.token", awsSessionToken);
     config.set("fs.s3a.aws.credentials.provider", awsCredentialsProvider);
 
+    System.out.println("Enter try block");
     try {
-      ParquetWriter<GenericRecord> writer = AvroParquetWriter.<GenericRecord>builder(path)
-          .withRowGroupSize(ParquetWriter.DEFAULT_BLOCK_SIZE)
-          .withPageSize(ParquetWriter.DEFAULT_PAGE_SIZE)
-          .withSchema(schema)
-          .withConf(config)
-          .withCompressionCodec(CompressionCodecName.SNAPPY)
-          .withValidation(false)
-          .withDictionaryEncoding(false)
-          .withWriteMode(ParquetFileWriter.Mode.OVERWRITE)
-          .build();
-      stream.streamDocuments();
+      stream.streamDocumentContents();
       stream.startToNow();
-      stream.getDrain().forEach(o -> {
-        DocumentBuffer buffer = new DocumentBuffer(o);
-        ObjectMapper mapper = new ObjectMapper();
-        try {
-          JsonNode node = mapper.readTree(buffer.getContent());
+      System.out.println("Enter while block");
+      while (!stream.isAtEnd() || !stream.isDocQueueEmpty()) {
+        System.out.println("Start block");
+        String document;
+        long fileNumber = fileCounter.incrementAndGet();
+        Path path = new Path(String.format("s3a://%s/%s/%s-%04d.parquet", s3Bucket, collection, collection, fileNumber));
+        ParquetWriter<GenericRecord> writer = AvroParquetWriter.<GenericRecord>builder(path)
+            .withRowGroupSize(ParquetWriter.DEFAULT_BLOCK_SIZE)
+            .withPageSize(ParquetWriter.DEFAULT_PAGE_SIZE)
+            .withSchema(schema)
+            .withConf(config)
+            .withCompressionCodec(CompressionCodecName.SNAPPY)
+            .withValidation(false)
+            .withDictionaryEncoding(false)
+            .withWriteMode(ParquetFileWriter.Mode.OVERWRITE)
+            .build();
+        while ((opCounter.incrementAndGet() % 100_001) != 0 && (document = stream.getDocQueueEntry()) != null) {
+          JsonNode node = mapper.readTree(document);
           writer.write(getRecord(schema, node));
-        } catch (IOException e) {
-          throw new RuntimeException(e);
+          totalCounter.incrementAndGet();
+          if (totalCounter.get() % 1_000 == 0) {
+            LOGGER.info(String.format("Processed %,d records", totalCounter.get()));
+          }
         }
-      });
-      writer.close();
+        opCounter.set(0);
+        writer.close();
+      }
       stream.stop();
+      System.out.printf(" -> Exported %,d records\n", totalCounter.get());
     } catch (Exception e) {
       throw new RuntimeException(e);
     }

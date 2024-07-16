@@ -74,6 +74,14 @@
     <appender-ref ref="FILE"/>
   </logger>
 
+  <logger name="site.ycsb.db.couchbase3.CouchbaseS3Export" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="site.ycsb.db.couchbase3.CouchbaseExport" level="INFO" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
   <logger name="site.ycsb.tpc.tpcc.Generate" level="INFO" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
@@ -95,6 +103,10 @@
   </logger>
 
   <logger name="software.amazon.awssdk" level="ERROR" additivity="false">
+    <appender-ref ref="FILE"/>
+  </logger>
+
+  <logger name="org.apache" level="ERROR" additivity="false">
     <appender-ref ref="FILE"/>
   </logger>
 
