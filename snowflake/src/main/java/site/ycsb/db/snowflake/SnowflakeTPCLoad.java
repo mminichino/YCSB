@@ -94,7 +94,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
    * particular database. Current database flavors are: {default, phoenix} */
   private DBFlavor dbFlavor;
   private boolean debug = false;
-  private boolean overwrite = false;
+  private boolean overwrite = true;
 
   public void dropTable(String tableName) {
     try {
@@ -134,6 +134,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
 
       return Status.OK;
     } catch (Throwable t) {
+      LOGGER.info(t.getMessage(), t);
       return Status.ERROR;
     }
   }
@@ -733,7 +734,7 @@ public class SnowflakeTPCLoad extends LoadDriver {
     String user = props.getProperty(CONNECTION_USER, DEFAULT_PROP);
     String passwd = props.getProperty(CONNECTION_PASSWD, DEFAULT_PROP);
     String warehouse = props.getProperty(CONNECTION_WAREHOUSE, DEFAULT_PROP);
-    String database = props.getProperty(CONNECTION_DB, "ycsb");
+    String database = props.getProperty(CONNECTION_DB, "bench");
     String schema = props.getProperty(CONNECTION_SCHEMA, "public");
     String driver = props.getProperty(DRIVER_CLASS);
 

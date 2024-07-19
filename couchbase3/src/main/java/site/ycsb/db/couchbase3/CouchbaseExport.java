@@ -67,6 +67,7 @@ public class CouchbaseExport {
   public static final AtomicLong fileCounter = new AtomicLong(0);
   public static final AtomicLong opCounter = new AtomicLong(0);
   public static final AtomicLong totalCounter = new AtomicLong(0);
+  public static final AtomicLong totalLength = new AtomicLong(0);
 
   private static String hostname;
   private static String username;
@@ -177,8 +178,8 @@ public class CouchbaseExport {
         .collectionNames(scope + "." + collection)
         .securityConfig(secClientConfig)
         .credentials(username, password)
-        .controlParam(DcpControl.Names.CONNECTION_BUFFER_SIZE, 1048576)
-        .bufferAckWatermark(75)
+        .controlParam(DcpControl.Names.CONNECTION_BUFFER_SIZE, 131072)
+        .bufferAckWatermark(70)
         .dcpChannelsReconnectMaxAttempts(10)
         .build();
 
@@ -210,19 +211,21 @@ public class CouchbaseExport {
       }
     }
 
-    synchronized (WRITE_COORDINATOR) {
-      while (opCounter.get() < expectedSize) {
-        try {
-          Thread.sleep(TimeUnit.SECONDS.toMillis(1));
-        } catch (InterruptedException e) {
-          System.out.println("Interrupted");
-        }
+    while (opCounter.get() < expectedSize) {
+      LOGGER.debug(String.format("Waiting for remaining transactions - opCounter %d / expectedSize %d / queue %d", opCounter.get(), expectedSize, docQueue.size()));
+      try {
+        Thread.sleep(TimeUnit.SECONDS.toMillis(5));
+      } catch (InterruptedException e) {
+        System.out.println("Interrupted");
       }
-      if (!docQueue.isEmpty()) {
-        writeParquetFile();
-      }
-      LOGGER.debug(String.format("Wrote (Overflow) => %,d\n", totalCounter.get()));
     }
+
+    if (!docQueue.isEmpty()) {
+      writeParquetFile();
+      LOGGER.debug(String.format("Wrote (Overflow) => %,d", totalCounter.get()));
+    }
+
+    LOGGER.debug("Export complete");
 
     stop();
 
@@ -319,8 +322,7 @@ public class CouchbaseExport {
       String fileName = String.format("s3a://%s/%s/%s-%04d.parquet", s3Bucket, collection, collection, fileNumber);
       Path path = new Path(fileName);
       try (ParquetWriter<GenericRecord> writer = AvroParquetWriter.<GenericRecord>builder(path)
-          .withRowGroupSize(ParquetWriter.DEFAULT_BLOCK_SIZE)
-          .withPageSize(ParquetWriter.DEFAULT_PAGE_SIZE)
+          .withPageSize(131072)
           .withSchema(schema)
           .withConf(config)
           .withCompressionCodec(CompressionCodecName.SNAPPY)
@@ -329,10 +331,12 @@ public class CouchbaseExport {
           .withWriteMode(ParquetFileWriter.Mode.OVERWRITE)
           .build()) {
         while (docQueue.peek() != null) {
-          String document = docQueue.take();
-          JsonNode node = mapper.readTree(document);
-          writer.write(getRecord(schema, node));
-          totalCounter.incrementAndGet();
+          String document = docQueue.poll(5, TimeUnit.SECONDS);
+          if (document != null) {
+            JsonNode node = mapper.readTree(document);
+            writer.write(getRecord(schema, node));
+            totalCounter.incrementAndGet();
+          }
         }
       }
       System.out.printf("Wrote file #%04d: %s\r", fileNumber, fileName);
@@ -342,18 +346,25 @@ public class CouchbaseExport {
     }
   }
 
+  public static long calcBatchSize(long length) {
+    totalLength.addAndGet(length);
+    long average = totalLength.get() / opCounter.get();
+    return 16_000_000 / average;
+  }
+
   public static void streamDocuments() {
     client.dataEventHandler((flowController, event) -> {
       if (DcpMutationMessage.is(event)) {
         String content = DcpMutationMessage.content(event).toString(StandardCharsets.UTF_8);
         try {
           docQueue.put(content);
-          opCounter.incrementAndGet();
           flowController.ack(event);
+          opCounter.incrementAndGet();
+          long batchSize = calcBatchSize(content.length());
           synchronized (WRITE_COORDINATOR) {
-            if (!docQueue.isEmpty() && docQueue.size() >= 100_000) {
+            if (!docQueue.isEmpty() && docQueue.size() >= batchSize) {
               writeParquetFile();
-              LOGGER.debug(String.format("Wrote (Main) => %,d\n", totalCounter.get()));
+              LOGGER.debug(String.format("Wrote (Main) => %,d", totalCounter.get()));
             }
           }
         } catch (Exception e) {

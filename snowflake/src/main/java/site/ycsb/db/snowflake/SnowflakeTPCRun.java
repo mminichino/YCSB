@@ -48,6 +48,8 @@ public class SnowflakeTPCRun extends BenchRun {
 
   public static final String JDBC_BATCH_UPDATES = "jdbc.batchupdateapi";
 
+  public static final String JDBC_QUERY_TIMEOUT = "jdbc.queryTimeout";
+
   /** The name of the property for the number of fields in a record. */
   public static final String FIELD_COUNT_PROPERTY = "fieldcount";
 
@@ -78,6 +80,7 @@ public class SnowflakeTPCRun extends BenchRun {
   private static final String DEFAULT_PROP = "";
   private ConcurrentMap<StatementType, PreparedStatement> cachedStatements;
   private long numRowsInBatch = 0;
+  private int queryTimeout;
   /** DB flavor defines DB-specific syntax and behavior for the
    * particular database. Current database flavors are: {default, phoenix} */
   private DBFlavor dbFlavor;
@@ -152,6 +155,14 @@ public class SnowflakeTPCRun extends BenchRun {
     return -1;
   }
 
+  private static int getIntProperty(Properties props, String key, int defaultVal) {
+    String valueStr = props.getProperty(key);
+    if (valueStr != null) {
+      return Integer.parseInt(valueStr);
+    }
+    return defaultVal;
+  }
+
   /** Returns parsed boolean value from the properties if set, otherwise returns defaultVal. */
   private static boolean getBoolProperty(Properties props, String key, boolean defaultVal) {
     String valueStr = props.getProperty(key);
@@ -181,6 +192,7 @@ public class SnowflakeTPCRun extends BenchRun {
 
     this.autoCommit = getBoolProperty(props, JDBC_AUTO_COMMIT, true);
     this.batchUpdates = getBoolProperty(props, JDBC_BATCH_UPDATES, false);
+    this.queryTimeout = getIntProperty(props, JDBC_QUERY_TIMEOUT, 300);
 
     Properties prop = new Properties();
     prop.put("user", user);
@@ -300,10 +312,11 @@ public class SnowflakeTPCRun extends BenchRun {
   }
 
   @Override
-  public List<ObjectNode> query(String statement, int number) {
+  public List<ObjectNode> query(String statement, int number) throws BenchTimeoutException {
     List<ObjectNode> results = new ArrayList<>();
     try {
       PreparedStatement readStatement = createQueryStatement(statement);
+      readStatement.setQueryTimeout(queryTimeout);
       ResultSet resultSet = readStatement.executeQuery();
       while (resultSet.next()) {
         ObjectMapper mapper = new ObjectMapper();
@@ -318,6 +331,9 @@ public class SnowflakeTPCRun extends BenchRun {
       }
       resultSet.close();
       return results;
+    } catch (SQLException e) {
+      LOGGER.warn(e.getMessage(), e);
+      throw new BenchTimeoutException("query exception");
     } catch (Exception e) {
       LOGGER.error("Error processing query: {}", e.getMessage(), e);
       return null;

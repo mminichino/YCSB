@@ -24,5 +24,5 @@ public abstract class BenchRun {
   public void cleanup() throws DBException {
   }
 
-  public abstract List<ObjectNode> query(String statement, int number);
+  public abstract List<ObjectNode> query(String statement, int number) throws BenchTimeoutException;
 }

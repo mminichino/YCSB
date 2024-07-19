@@ -43,12 +43,12 @@ do
 done
 
 if [ $LOAD_MODE -eq 1 ]; then
-  LOAD_OPTS="-db $LOAD_DRIVER -P workloads/workload_ch2 -threads 1 -s -load"
+  LOAD_OPTS="-db $LOAD_DRIVER -P workloads/workload_ch2 -threads 1 -load"
   java -cp "$CLASSPATH" site.ycsb.BenchClient $LOAD_OPTS
 fi
 
 if [ $TEST_MODE -eq 1 ]; then
-  RUN_OPTS="-db $RUN_DRIVER -P workloads/workload_ch2 -threads 1 -p operationcount=1 -p maxexecutiontime=120 -p benchmark.queryPrint=$QUERY_PRINT -test -manual -s -t"
+  RUN_OPTS="-db $RUN_DRIVER -P workloads/workload_ch2 -threads 1 -p operationcount=1 -p maxexecutiontime=0 -p benchmark.queryPrint=$QUERY_PRINT -test -manual -t"
   java -cp "$CLASSPATH" site.ycsb.BenchClient $RUN_OPTS
 fi
 

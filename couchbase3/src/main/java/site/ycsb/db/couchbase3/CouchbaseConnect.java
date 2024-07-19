@@ -4,6 +4,7 @@
 
 package site.ycsb.db.couchbase3;
 
+import ch.qos.logback.classic.Logger;
 import com.couchbase.client.core.config.AlternateAddress;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.NetworkResolution;
@@ -15,6 +16,7 @@ import com.couchbase.client.core.error.ScopeExistsException;
 import com.couchbase.client.core.error.CollectionExistsException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.core.config.PortInfo;
+import com.couchbase.client.core.retry.FailFastRetryStrategy;
 import com.couchbase.client.java.*;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
@@ -22,10 +24,7 @@ import com.couchbase.client.java.codec.TypeRef;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import com.couchbase.client.java.http.CouchbaseHttpClient;
-import com.couchbase.client.java.http.HttpPath;
-import com.couchbase.client.java.http.HttpResponse;
-import com.couchbase.client.java.http.HttpTarget;
+import com.couchbase.client.java.http.*;
 import com.couchbase.client.java.kv.*;
 import com.couchbase.client.java.manager.analytics.AnalyticsDataType;
 import com.couchbase.client.java.manager.bucket.*;
@@ -47,6 +46,7 @@ import static com.couchbase.client.java.kv.MutateInOptions.mutateInOptions;
 import static com.couchbase.client.java.kv.GetOptions.getOptions;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.gson.*;
 import org.slf4j.LoggerFactory;
@@ -61,8 +61,8 @@ import java.util.stream.Stream;
  * Couchbase Connection Utility.
  */
 public final class CouchbaseConnect {
-  private static final ch.qos.logback.classic.Logger LOGGER =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("site.ycsb.db.couchbase3.CouchbaseConnect");
+  private static final Logger LOGGER =
+      (Logger) LoggerFactory.getLogger("site.ycsb.db.couchbase3.CouchbaseConnect");
   private volatile Cluster cluster;
   private volatile Bucket bucket;
   private volatile Scope scope;
@@ -256,6 +256,7 @@ public final class CouchbaseConnect {
           Consumer<TimeoutConfig.Builder> timeOutConfiguration = timeoutConfig -> timeoutConfig
               .kvTimeout(Duration.ofSeconds(5))
               .connectTimeout(Duration.ofSeconds(15))
+              .analyticsTimeout(Duration.ofSeconds(360))
               .queryTimeout(Duration.ofSeconds(75));
 
           environment = ClusterEnvironment
@@ -726,7 +727,9 @@ public final class CouchbaseConnect {
     Bucket bucket = cluster.bucket(bucketName);
     Scope scope = bucket.scope(scopeName);
     try {
-      AnalyticsResult result = scope.analyticsQuery(statement, analyticsOptions());
+      AnalyticsResult result = scope.analyticsQuery(statement, analyticsOptions()
+          .timeout(Duration.ofSeconds(360))
+          .priority(true));
       return result.rowsAs(typeRef);
     } catch (Throwable t) {
       LOGGER.error("analytics query exception: {}", t.getMessage(), t);
@@ -740,11 +743,52 @@ public final class CouchbaseConnect {
     Scope scope = bucket.scope(scopeName);
     try {
       AnalyticsResult result = scope.analyticsQuery(statement,
-          analyticsOptions().parameters(com.couchbase.client.java.json.JsonArray.from(parameters)));
+          analyticsOptions().parameters(com.couchbase.client.java.json.JsonArray.from(parameters))
+              .timeout(Duration.ofSeconds(360))
+              .priority(true));
       return result.rowsAs(typeRef);
     } catch (Throwable t) {
       LOGGER.error("analytics query exception: {}", t.getMessage(), t);
       return null;
+    }
+  }
+
+  public List<JsonNode> analyticsRESTQuery(String statement) {
+    CouchbaseHttpClient client = cluster.httpClient();
+    String endpoint = "/analytics/service";
+    HttpResponse response;
+
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode body = mapper.createObjectNode();
+
+    try {
+      body.put("statement", statement);
+      body.put("query_context", "default:" + bucketName + "." + scopeName);
+      response = client.post(
+          HttpTarget.analytics(),
+          HttpPath.of(endpoint),
+          HttpPostOptions.httpPostOptions().timeout(Duration.ofSeconds(360))
+              .body(HttpBody.json(body.toString())));
+    } catch (Exception e) {
+      LOGGER.error(e.getMessage(), e);
+      return null;
+    }
+
+    try {
+      if (response == null || !response.success()) {
+        LOGGER.error(response != null ? response.contentAsString() : "no response text (was null)");
+        return null;
+      }
+      List<JsonNode> rows = new ArrayList<>();
+      JsonNode results = mapper.readTree(response.contentAsString());
+      if (results.has("results")) {
+        for (JsonNode row : results.get("results")) {
+          rows.add(row);
+        }
+      }
+      return rows;
+    } catch (Exception e) {
+      throw new RuntimeException(e.getMessage(), e);
     }
   }
 }
