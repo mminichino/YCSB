@@ -321,6 +321,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>scylla</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>scylla</module>
+      </modules>
+    </profile>
+    <profile>
       <id>default</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -337,6 +346,7 @@ LICENSE file.
         <module>dynamodb</module>
         <module>aerospike</module>
         <module>snowflake</module>
+        <module>scylla</module>
       </modules>
     </profile>
   </profiles>
