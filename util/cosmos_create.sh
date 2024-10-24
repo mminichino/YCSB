@@ -7,8 +7,11 @@ err_exit() {
    if [ -n "$1" ]; then
       echo "[!] Error: $1"
    fi
+   echo "Operation exited with non-zero value"
    exit 1
 }
+
+az config param-persist off
 
 echo "Creating database"
 az cosmosdb sql database create \
@@ -26,3 +29,7 @@ az cosmosdb sql container create \
 --partition-key-path "/id" \
 --throughput "$THROUGHPUT" >/var/tmp/cosmos.log 2>&1
 [ $? -ne 0 ] && err_exit "Error creating container"
+
+exit 0
+#
+##

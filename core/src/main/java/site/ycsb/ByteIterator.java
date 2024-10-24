@@ -46,6 +46,13 @@ import java.util.Iterator;
  */
 public abstract class ByteIterator implements Iterator<Byte> {
 
+  public enum valueDataType {
+    STRING,
+    LONG
+  }
+
+  public valueDataType valueType = valueDataType.STRING;
+
   @Override
   public abstract boolean hasNext();
 
@@ -87,6 +94,15 @@ public abstract class ByteIterator implements Iterator<Byte> {
     Charset cset = Charset.forName("UTF-8");
     CharBuffer cb = cset.decode(ByteBuffer.wrap(this.toArray()));
     return cb.toString();
+  }
+
+  public Long toLong() {
+    long value = 0L;
+    for (ByteIterator it = this; it.hasNext(); ) {
+      byte b = it.next();
+      value = (value << 8) + (b & 255);
+    }
+    return value;
   }
 
   /** Consumes remaining contents of this object, and returns them as a byte array. */
