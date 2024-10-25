@@ -92,3 +92,7 @@ do
   --name ycsb --yes >/var/tmp/cosmos.log 2>&1
   [ $? -ne 0 ] && err_exit "Error deleting database"
 done
+
+exit 0
+#
+##
