@@ -33,7 +33,7 @@ LICENSE file.
     <dependency>
       <groupId>com.azure</groupId>
       <artifactId>azure-cosmos</artifactId>
-      <version>4.59.0</version>
+      <version>4.64.0</version>
       <exclusions>
         <exclusion>
           <groupId>org.slf4j</groupId>

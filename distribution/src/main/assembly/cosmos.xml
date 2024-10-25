@@ -46,6 +46,7 @@ LICENSE file.
       <fileMode>0755</fileMode>
       <includes>
         <include>run_cosmos.sh</include>
+        <include>run_cosmos_sql.sh</include>
       </includes>
     </fileSet>
     <fileSet>
