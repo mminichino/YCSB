@@ -330,6 +330,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>cassandra</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>cassandra</module>
+      </modules>
+    </profile>
+    <profile>
       <id>default</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -347,6 +356,7 @@ LICENSE file.
         <module>aerospike</module>
         <module>snowflake</module>
         <module>scylla</module>
+        <module>cassandra</module>
       </modules>
     </profile>
   </profiles>
