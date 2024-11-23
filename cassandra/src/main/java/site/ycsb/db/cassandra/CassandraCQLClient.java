@@ -121,7 +121,7 @@ public class CassandraCQLClient extends DB {
    */
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
 
-  private static boolean debug = false;
+  private static boolean debug = true;
   
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
@@ -312,7 +312,7 @@ public class CassandraCQLClient extends DB {
 
       ResultSet rs = session.execute(readStatement.bind(key));
 
-      if (rs.isFullyFetched()) {
+      if (rs.getAvailableWithoutFetching() == 0) {
         return Status.NOT_FOUND;
       }
 
@@ -321,13 +321,17 @@ public class CassandraCQLClient extends DB {
       ColumnDefinitions cd = Objects.requireNonNull(row).getColumnDefinitions();
 
       for (ColumnDefinition def : cd) {
+        String field = def.getName().toString();
+        if (field.equals(YCSB_KEY)) continue;
         ByteBuffer val = row.getBytesUnsafe(def.getName());
         if (val != null) {
-          result.put(def.getName().toString(), new ByteArrayByteIterator(val.array()));
+          result.put(field, new ByteArrayByteIterator(val.array()));
         } else {
-          result.put(def.getName().toString(), null);
+          result.put(field, null);
         }
       }
+
+      LOGGER.debug("{} read {} results", key, result.size());
 
       return Status.OK;
 
@@ -385,19 +389,19 @@ public class CassandraCQLClient extends DB {
 
       ResultSet rs = session.execute(scanStatement.bind(startkey, recordcount));
 
-      HashMap<String, ByteIterator> tuple;
-      while (!rs.isFullyFetched()) {
-        Row row = rs.one();
-        tuple = new HashMap<>();
+      for (Row row : rs) {
+        HashMap<String, ByteIterator> tuple = new HashMap<>();
 
         ColumnDefinitions cd = Objects.requireNonNull(row).getColumnDefinitions();
 
         for (ColumnDefinition def : cd) {
+          String field = def.getName().toString();
+          if (field.equals(YCSB_KEY)) continue;
           ByteBuffer val = row.getBytesUnsafe(def.getName());
           if (val != null) {
-            tuple.put(def.getName().toString(), new ByteArrayByteIterator(val.array()));
+            tuple.put(field, new ByteArrayByteIterator(val.array()));
           } else {
-            tuple.put(def.getName().toString(), null);
+            tuple.put(field, null);
           }
         }
 
