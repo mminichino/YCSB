@@ -128,7 +128,7 @@ public class CassandraCleanup {
     ProgrammaticDriverConfigLoaderBuilder loaderBuilder = DriverConfigLoader.programmaticBuilder();
     loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(5000));
     loaderBuilder.withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, Duration.ofMillis(10000));
-    loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(10000));
+    loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(15000));
 
     DriverConfigLoader loader = loaderBuilder.build();
     builder.withConfigLoader(loader);

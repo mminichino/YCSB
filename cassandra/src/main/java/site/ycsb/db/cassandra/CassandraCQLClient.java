@@ -51,6 +51,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Callable;
 
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
@@ -83,7 +84,8 @@ public class CassandraCQLClient extends DB {
   private static final AtomicReference<PreparedStatement> deleteStmt = new AtomicReference<>();
 
   private static ConsistencyLevel readConsistencyLevel = ConsistencyLevel.ONE;
-  private static ConsistencyLevel writeConsistencyLevel = ConsistencyLevel.ONE;
+  private static ConsistencyLevel updateConsistencyLevel = ConsistencyLevel.ONE;
+  private static ConsistencyLevel insertConsistencyLevel = ConsistencyLevel.ONE;
 
   public static final String YCSB_KEY = "y_id";
   public static final String KEYSPACE_PROPERTY = "cassandra.keyspace";
@@ -95,8 +97,9 @@ public class CassandraCQLClient extends DB {
   public static final String PORT_PROPERTY = "cassandra.port";
   public static final String PORT_PROPERTY_DEFAULT = "9042";
 
-  public static final String READ_CONSISTENCY_LEVEL_PROPERTY = "cassandra.readconsistencylevel";
-  public static final String WRITE_CONSISTENCY_LEVEL_PROPERTY = "cassandra.writeconsistencylevel";
+  public static final String READ_CONSISTENCY_LEVEL_PROPERTY = "cassandra.readConsistency";
+  public static final String UPDATE_CONSISTENCY_LEVEL_PROPERTY = "cassandra.updateConsistency";
+  public static final String INSERT_CONSISTENCY_LEVEL_PROPERTY = "cassandra.insertConsistency";
 
   public static final String CONNECT_TIMEOUT_MILLIS_PROPERTY = "cassandra.connecttimeoutmillis";
   public static final String DEFAULT_CONNECT_TIMEOUT_MILLIS = "10000";
@@ -175,9 +178,13 @@ public class CassandraCQLClient extends DB {
         if (readConsistency != null) {
           readConsistencyLevel = getConsistencyLevel(readConsistency);
         }
-        String writeConsistency = getProperties().getProperty(WRITE_CONSISTENCY_LEVEL_PROPERTY);
-        if (writeConsistency != null) {
-          writeConsistencyLevel = getConsistencyLevel(writeConsistency);
+        String updateConsistency = getProperties().getProperty(UPDATE_CONSISTENCY_LEVEL_PROPERTY);
+        if (updateConsistency != null) {
+          updateConsistencyLevel = getConsistencyLevel(updateConsistency);
+        }
+        String insertConsistency = getProperties().getProperty(INSERT_CONSISTENCY_LEVEL_PROPERTY);
+        if (insertConsistency != null) {
+          insertConsistencyLevel = getConsistencyLevel(insertConsistency);
         }
 
         boolean useSSL = Boolean.parseBoolean(getProperties().getProperty(USE_SSL_CONNECTION, DEFAULT_USE_SSL_CONNECTION));
@@ -209,8 +216,7 @@ public class CassandraCQLClient extends DB {
 
         ProgrammaticDriverConfigLoaderBuilder loaderBuilder = DriverConfigLoader.programmaticBuilder();
 
-        loaderBuilder.withInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE, 4);
-        loaderBuilder.withInt(DefaultDriverOption.CONNECTION_POOL_REMOTE_SIZE, 4);
+        loaderBuilder.withInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE, 2);
         loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(5000));
 
         String connectTimoutMillis = getProperties().getProperty(CONNECT_TIMEOUT_MILLIS_PROPERTY, DEFAULT_CONNECT_TIMEOUT_MILLIS);
@@ -239,6 +245,30 @@ public class CassandraCQLClient extends DB {
     } // synchronized
   }
 
+  private static <T>T retryBlock(Callable<T> block) throws Exception {
+    int retryCount = 10;
+    long waitFactor = 100L;
+    for (int retryNumber = 1; retryNumber <= retryCount; retryNumber++) {
+      try {
+        return block.call();
+      } catch (Exception e) {
+        if (retryNumber == retryCount) {
+          LOGGER.error("Retry count {}: {}: error: {}", retryNumber, e.getClass(), e.getMessage(), e);
+          throw e;
+        } else {
+          double factor = waitFactor * Math.pow(2, retryNumber);
+          long wait = (long) factor;
+          try {
+            Thread.sleep(wait);
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+          }
+        }
+      }
+    }
+    return block.call();
+  }
+
   public ConsistencyLevel getConsistencyLevel(String consistencyLevel) {
     switch (consistencyLevel.toUpperCase()) {
       case "QUORUM":
@@ -260,7 +290,7 @@ public class CassandraCQLClient extends DB {
   public void cleanup() throws DBException {
     synchronized (INIT_COUNT) {
       final int curInitCount = INIT_COUNT.decrementAndGet();
-      if (curInitCount == 1) {
+      if (curInitCount == 0) {
         LOGGER.info("Closing CQL session");
         session.close();
         session = null;
@@ -308,19 +338,21 @@ public class CassandraCQLClient extends DB {
           readStmts.putIfAbsent(fields, readStatement);
         }
       }
+      final PreparedStatement stmt = readStatement;
 
       LOGGER.debug(readStatement.getQuery());
       LOGGER.debug("read key = {}", key);
 
       ResultSet rs;
       try {
-        rs = session.execute(readStatement.bind(key));
+        rs = retryBlock(() -> session.execute(stmt.bind(key)));
       } catch (Throwable t) {
         LOGGER.error("read exception: {}", t.getMessage(), t);
         return Status.ERROR;
       }
 
       if (rs.getAvailableWithoutFetching() == 0) {
+        LOGGER.warn("Record with key {} not found", key);
         return Status.NOT_FOUND;
       }
 
@@ -391,11 +423,12 @@ public class CassandraCQLClient extends DB {
           scanStmts.putIfAbsent(fields, scanStatement);
         }
       }
+      final PreparedStatement stmt = scanStatement;
 
       LOGGER.debug(scanStatement.getQuery());
       LOGGER.debug("startKey = {}, recordcount = {}", startkey, recordcount);
 
-      ResultSet rs = session.execute(scanStatement.bind(startkey, recordcount));
+      ResultSet rs = retryBlock(() -> session.execute(stmt.bind(startkey, recordcount)));
 
       for (Row row : rs) {
         HashMap<String, ByteIterator> tuple = new HashMap<>();
@@ -456,7 +489,7 @@ public class CassandraCQLClient extends DB {
         // Add key
         Update update = QueryBuilder.update(tableName).set(assignments).whereColumn(YCSB_KEY).isEqualTo(bindMarker());
 
-        updateStatement = session.prepare(update.build().setConsistencyLevel(writeConsistencyLevel));
+        updateStatement = session.prepare(update.build().setConsistencyLevel(updateConsistencyLevel));
         updateStmts.putIfAbsent(new HashSet<>(fields), updateStatement);
       }
 
@@ -478,7 +511,8 @@ public class CassandraCQLClient extends DB {
       boundStmt.setString(YCSB_KEY, key);
 
       try {
-        session.execute(boundStmt.build());
+        final BoundStatement bound = boundStmt.build();
+        retryBlock(() -> session.execute(bound));
       } catch (Throwable t) {
         LOGGER.error("update exception: {}", t.getMessage(), t);
         return Status.ERROR;
@@ -524,7 +558,7 @@ public class CassandraCQLClient extends DB {
         // Add key
         Insert insert = QueryBuilder.insertInto(tableName).values(assignments);
 
-        insertStatement = session.prepare(insert.build().setConsistencyLevel(writeConsistencyLevel));
+        insertStatement = session.prepare(insert.build().setConsistencyLevel(insertConsistencyLevel));
         insertStmts.putIfAbsent(new HashSet<>(fields), insertStatement);
       }
 
@@ -543,7 +577,13 @@ public class CassandraCQLClient extends DB {
         boundStmt.setString(field, values.get(field).toString());
       }
 
-      session.execute(boundStmt.build());
+      try {
+        final BoundStatement bound = boundStmt.build();
+        retryBlock(() -> session.execute(bound));
+      } catch (Throwable t) {
+        LOGGER.error("insert exception: {}", t.getMessage(), t);
+        return Status.ERROR;
+      }
 
       return Status.OK;
     } catch (Exception e) {
@@ -573,11 +613,12 @@ public class CassandraCQLClient extends DB {
         deleteStatement = session.prepare(query.build());
         deleteStmt.getAndSet(deleteStatement);
       }
+      final PreparedStatement stmt = deleteStatement;
 
       LOGGER.debug(deleteStatement.getQuery());
       LOGGER.debug("delete key = {}", key);
 
-      session.execute(deleteStatement.bind(key));
+      retryBlock(() -> session.execute(stmt.bind(key)));
 
       return Status.OK;
     } catch (Exception e) {

@@ -141,7 +141,7 @@ public class CassandraSetup {
     ProgrammaticDriverConfigLoaderBuilder loaderBuilder = DriverConfigLoader.programmaticBuilder();
     loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(5000));
     loaderBuilder.withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, Duration.ofMillis(10000));
-    loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(10000));
+    loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(15000));
 
     DriverConfigLoader loader = loaderBuilder.build();
     builder.withConfigLoader(loader);
@@ -151,7 +151,7 @@ public class CassandraSetup {
     Thread.sleep(1000);
     System.out.printf("Creating keyspace %s%n", keyspace);
 
-    CreateKeyspace createKs = SchemaBuilder.createKeyspace(keyspace).ifNotExists().withSimpleStrategy(1);
+    CreateKeyspace createKs = SchemaBuilder.createKeyspace(keyspace).ifNotExists().withSimpleStrategy(2);
     session.execute(createKs.build());
 
     session.close();
