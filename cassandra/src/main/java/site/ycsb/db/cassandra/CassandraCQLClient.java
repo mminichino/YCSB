@@ -85,7 +85,7 @@ public class CassandraCQLClient extends DB {
 
   private static ConsistencyLevel readConsistencyLevel = ConsistencyLevel.ONE;
   private static ConsistencyLevel updateConsistencyLevel = ConsistencyLevel.ONE;
-  private static ConsistencyLevel insertConsistencyLevel = ConsistencyLevel.ONE;
+  private static ConsistencyLevel insertConsistencyLevel = ConsistencyLevel.QUORUM;
 
   public static final String YCSB_KEY = "y_id";
   public static final String KEYSPACE_PROPERTY = "cassandra.keyspace";
