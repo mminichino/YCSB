@@ -39,7 +39,7 @@ shift $((OPTIND -1))
 for run_workload in {a..f}
 do
   workload="workloads/workload${run_workload}"
-  LOAD_OPTS="-db site.ycsb.db.cassandra.CassandraCQLClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -s -load"
+  LOAD_OPTS="-db site.ycsb.db.cassandra.CassandraCQLClient -P conf/db.properties -P $workload -threads $THREADCOUNT_LOAD -p recordcount=$RECORDCOUNT -p core_workload_insertion_retry_limit=10 -s -load"
   RUN_OPTS="-db site.ycsb.db.cassandra.CassandraCQLClient -P conf/db.properties -P $workload -threads $THREADCOUNT_RUN -p recordcount=$RECORDCOUNT -p operationcount=$OPCOUNT -p maxexecutiontime=$RUNTIME -s -t"
 
   java -cp "$CLASSPATH" site.ycsb.db.cassandra.CassandraSetup -p conf/db.properties

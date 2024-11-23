@@ -99,7 +99,7 @@ public class CassandraCQLClient extends DB {
   public static final String WRITE_CONSISTENCY_LEVEL_PROPERTY = "cassandra.writeconsistencylevel";
 
   public static final String CONNECT_TIMEOUT_MILLIS_PROPERTY = "cassandra.connecttimeoutmillis";
-  public static final String DEFAULT_CONNECT_TIMEOUT_MILLIS = "5000";
+  public static final String DEFAULT_CONNECT_TIMEOUT_MILLIS = "10000";
   public static final String REQUEST_TIMEOUT_MILLIS_PROPERTY = "cassandra.readtimeoutmillis";
   public static final String DEFAULT_REQUEST_TIMEOUT_MILLIS = "10000";
 
@@ -211,7 +211,7 @@ public class CassandraCQLClient extends DB {
 
         loaderBuilder.withInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE, 4);
         loaderBuilder.withInt(DefaultDriverOption.CONNECTION_POOL_REMOTE_SIZE, 4);
-        loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(4000));
+        loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(5000));
 
         String connectTimoutMillis = getProperties().getProperty(CONNECT_TIMEOUT_MILLIS_PROPERTY, DEFAULT_CONNECT_TIMEOUT_MILLIS);
         loaderBuilder.withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, Duration.ofMillis(Long.parseLong(connectTimoutMillis)));
