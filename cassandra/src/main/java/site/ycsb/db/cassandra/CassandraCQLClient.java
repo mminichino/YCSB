@@ -52,9 +52,9 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.helpers.MessageFormatter;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -68,9 +68,10 @@ import javax.net.ssl.X509TrustManager;
  */
 public class CassandraCQLClient extends DB {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(CassandraCQLClient.class);
+  protected static final Logger LOGGER =
+      (Logger)LoggerFactory.getLogger("site.ycsb.db.cassandra.CassandraCQLClient");
 
-  private static CqlSession session = null;
+  private static volatile CqlSession session = null;
   private static String tableName;
 
   private static final ConcurrentMap<Set<String>, PreparedStatement> readStmts = new ConcurrentHashMap<>();
@@ -121,7 +122,7 @@ public class CassandraCQLClient extends DB {
    */
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
 
-  private static boolean debug = true;
+  private static boolean debug = false;
   
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
@@ -143,8 +144,13 @@ public class CassandraCQLClient extends DB {
       }
 
       try {
+        LOGGER.info("Initializing CQL session");
 
         debug = Boolean.parseBoolean(getProperties().getProperty(DEBUG_PROPERTY, DEBUG_PROPERTY_DEFAULT));
+
+        if (debug) {
+          LOGGER.setLevel(Level.DEBUG);
+        }
 
         String host = getProperties().getProperty(HOSTS_PROPERTY);
         if (host == null) {
@@ -259,7 +265,8 @@ public class CassandraCQLClient extends DB {
   public void cleanup() throws DBException {
     synchronized (INIT_COUNT) {
       final int curInitCount = INIT_COUNT.decrementAndGet();
-      if (curInitCount <= 0) {
+      if (curInitCount == 1) {
+        LOGGER.info("Closing CQL session");
         session.close();
         session = null;
       }
@@ -336,7 +343,7 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      LOGGER.error(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
+      LOGGER.error("Error reading key: {}: {}", key, e.getMessage(), e);
       return Status.ERROR;
     }
 
@@ -411,8 +418,7 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      LOGGER.error(
-          MessageFormatter.format("Error scanning with startkey: {}", startkey).getMessage(), e);
+      LOGGER.error("Error scanning with startkey: {}: {}", startkey, e.getMessage(), e);
       return Status.ERROR;
     }
 
@@ -474,7 +480,7 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      LOGGER.error(MessageFormatter.format("Error updating key: {}", key).getMessage(), e);
+      LOGGER.error("Error updating key: {}: {}", key, e.getMessage(), e);
     }
 
     return Status.ERROR;
@@ -535,7 +541,7 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      LOGGER.error(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
+      LOGGER.error("Error inserting key: {}: {}", key, e.getMessage(), e);
     }
 
     return Status.ERROR;
@@ -569,7 +575,7 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      LOGGER.error(MessageFormatter.format("Error deleting key: {}", key).getMessage(), e);
+      LOGGER.error("Error deleting key: {}: {}", key, e.getMessage(), e);
     }
 
     return Status.ERROR;
