@@ -82,8 +82,8 @@ public class CassandraCQLClient extends DB {
   private static final AtomicReference<PreparedStatement> scanAllStmt = new AtomicReference<>();
   private static final AtomicReference<PreparedStatement> deleteStmt = new AtomicReference<>();
 
-  private static ConsistencyLevel readConsistencyLevel = ConsistencyLevel.QUORUM;
-  private static ConsistencyLevel writeConsistencyLevel = ConsistencyLevel.QUORUM;
+  private static ConsistencyLevel readConsistencyLevel = ConsistencyLevel.ONE;
+  private static ConsistencyLevel writeConsistencyLevel = ConsistencyLevel.ONE;
 
   public static final String YCSB_KEY = "y_id";
   public static final String KEYSPACE_PROPERTY = "cassandra.keyspace";
@@ -96,13 +96,12 @@ public class CassandraCQLClient extends DB {
   public static final String PORT_PROPERTY_DEFAULT = "9042";
 
   public static final String READ_CONSISTENCY_LEVEL_PROPERTY = "cassandra.readconsistencylevel";
-  public static final String READ_CONSISTENCY_LEVEL_PROPERTY_DEFAULT = readConsistencyLevel.name();
   public static final String WRITE_CONSISTENCY_LEVEL_PROPERTY = "cassandra.writeconsistencylevel";
-  public static final String WRITE_CONSISTENCY_LEVEL_PROPERTY_DEFAULT = writeConsistencyLevel.name();
 
-  public static final String MAX_CONNECTIONS_PROPERTY = "cassandra.maxconnections";
   public static final String CONNECT_TIMEOUT_MILLIS_PROPERTY = "cassandra.connecttimeoutmillis";
-  public static final String READ_TIMEOUT_MILLIS_PROPERTY = "cassandra.readtimeoutmillis";
+  public static final String DEFAULT_CONNECT_TIMEOUT_MILLIS = "5000";
+  public static final String REQUEST_TIMEOUT_MILLIS_PROPERTY = "cassandra.readtimeoutmillis";
+  public static final String DEFAULT_REQUEST_TIMEOUT_MILLIS = "10000";
 
   public static final String USE_SSL_CONNECTION = "cassandra.useSSL";
   private static final String DEFAULT_USE_SSL_CONNECTION = "false";
@@ -172,13 +171,14 @@ public class CassandraCQLClient extends DB {
         tableName = getProperties().getProperty(TABLE_NAME_PROPERTY, TABLE_NAME_PROPERTY_DEFAULT);
         String datacenter = getProperties().getProperty(DATACENTER_PROPERTY, DATACENTER_PROPERTY_DEFAULT);
 
-        readConsistencyLevel = getConsistencyLevel(
-            getProperties().getProperty(READ_CONSISTENCY_LEVEL_PROPERTY,
-                READ_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
-
-        writeConsistencyLevel = getConsistencyLevel(
-            getProperties().getProperty(WRITE_CONSISTENCY_LEVEL_PROPERTY,
-                WRITE_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
+        String readConsistency = getProperties().getProperty(READ_CONSISTENCY_LEVEL_PROPERTY);
+        if (readConsistency != null) {
+          readConsistencyLevel = getConsistencyLevel(readConsistency);
+        }
+        String writeConsistency = getProperties().getProperty(WRITE_CONSISTENCY_LEVEL_PROPERTY);
+        if (writeConsistency != null) {
+          writeConsistencyLevel = getConsistencyLevel(writeConsistency);
+        }
 
         boolean useSSL = Boolean.parseBoolean(getProperties().getProperty(USE_SSL_CONNECTION, DEFAULT_USE_SSL_CONNECTION));
 
@@ -209,20 +209,15 @@ public class CassandraCQLClient extends DB {
 
         ProgrammaticDriverConfigLoaderBuilder loaderBuilder = DriverConfigLoader.programmaticBuilder();
 
-        String maxConnections = getProperties().getProperty(MAX_CONNECTIONS_PROPERTY);
-        if (maxConnections != null) {
-          loaderBuilder.withInt(DefaultDriverOption.CONNECTION_MAX_REQUESTS, Integer.parseInt(maxConnections));
-        }
+        loaderBuilder.withInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE, 4);
+        loaderBuilder.withInt(DefaultDriverOption.CONNECTION_POOL_REMOTE_SIZE, 4);
+        loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(4000));
 
-        String connectTimoutMillis = getProperties().getProperty(CONNECT_TIMEOUT_MILLIS_PROPERTY);
-        if (connectTimoutMillis != null) {
-          loaderBuilder.withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, Duration.ofMillis(Long.parseLong(connectTimoutMillis)));
-        }
+        String connectTimoutMillis = getProperties().getProperty(CONNECT_TIMEOUT_MILLIS_PROPERTY, DEFAULT_CONNECT_TIMEOUT_MILLIS);
+        loaderBuilder.withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, Duration.ofMillis(Long.parseLong(connectTimoutMillis)));
 
-        String readTimoutMillis = getProperties().getProperty(READ_TIMEOUT_MILLIS_PROPERTY);
-        if (readTimoutMillis != null) {
-          loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(Long.parseLong(readTimoutMillis)));
-        }
+        String readTimoutMillis = getProperties().getProperty(REQUEST_TIMEOUT_MILLIS_PROPERTY, DEFAULT_REQUEST_TIMEOUT_MILLIS);
+        loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(Long.parseLong(readTimoutMillis)));
 
         DriverConfigLoader loader = loaderBuilder.build();
         builder.withConfigLoader(loader);
@@ -306,7 +301,7 @@ public class CassandraCQLClient extends DB {
           query = selectFrom(tableName).columns(fields).whereColumn(YCSB_KEY).isEqualTo(bindMarker());
         }
 
-        readStatement = session.prepare(query.build());
+        readStatement = session.prepare(query.build().setConsistencyLevel(readConsistencyLevel));
         if (fields == null) {
           readAllStmt.getAndSet(readStatement);
         } else {
@@ -317,7 +312,13 @@ public class CassandraCQLClient extends DB {
       LOGGER.debug(readStatement.getQuery());
       LOGGER.debug("read key = {}", key);
 
-      ResultSet rs = session.execute(readStatement.bind(key));
+      ResultSet rs;
+      try {
+        rs = session.execute(readStatement.bind(key));
+      } catch (Throwable t) {
+        LOGGER.error("read exception: {}", t.getMessage(), t);
+        return Status.ERROR;
+      }
 
       if (rs.getAvailableWithoutFetching() == 0) {
         return Status.NOT_FOUND;
@@ -383,7 +384,7 @@ public class CassandraCQLClient extends DB {
           query = selectFrom(tableName).columns(fields).whereColumn(YCSB_KEY).isGreaterThanOrEqualTo(bindMarker()).limit(bindMarker()).allowFiltering();
         }
 
-        scanStatement = session.prepare(query.build());
+        scanStatement = session.prepare(query.build().setConsistencyLevel(readConsistencyLevel));
         if (fields == null) {
           scanAllStmt.getAndSet(scanStatement);
         } else {
@@ -455,7 +456,7 @@ public class CassandraCQLClient extends DB {
         // Add key
         Update update = QueryBuilder.update(tableName).set(assignments).whereColumn(YCSB_KEY).isEqualTo(bindMarker());
 
-        updateStatement = session.prepare(update.build());
+        updateStatement = session.prepare(update.build().setConsistencyLevel(writeConsistencyLevel));
         updateStmts.putIfAbsent(new HashSet<>(fields), updateStatement);
       }
 
@@ -476,7 +477,12 @@ public class CassandraCQLClient extends DB {
       // Add key
       boundStmt.setString(YCSB_KEY, key);
 
-      session.execute(boundStmt.build());
+      try {
+        session.execute(boundStmt.build());
+      } catch (Throwable t) {
+        LOGGER.error("update exception: {}", t.getMessage(), t);
+        return Status.ERROR;
+      }
 
       return Status.OK;
     } catch (Exception e) {
@@ -518,7 +524,7 @@ public class CassandraCQLClient extends DB {
         // Add key
         Insert insert = QueryBuilder.insertInto(tableName).values(assignments);
 
-        insertStatement = session.prepare(insert.build());
+        insertStatement = session.prepare(insert.build().setConsistencyLevel(writeConsistencyLevel));
         insertStmts.putIfAbsent(new HashSet<>(fields), insertStatement);
       }
 

@@ -2,6 +2,9 @@ package site.ycsb.db.cassandra;
 
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.CqlSessionBuilder;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
+import com.datastax.oss.driver.api.core.config.ProgrammaticDriverConfigLoaderBuilder;
 import com.datastax.oss.driver.api.core.ssl.ProgrammaticSslEngineFactory;
 import com.datastax.oss.driver.api.core.type.DataTypes;
 import com.datastax.oss.driver.api.querybuilder.SchemaBuilder;
@@ -20,6 +23,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.*;
 
 public class CassandraSetup {
@@ -134,8 +138,17 @@ public class CassandraSetup {
     }
     builder.withLocalDatacenter(datacenter);
 
+    ProgrammaticDriverConfigLoaderBuilder loaderBuilder = DriverConfigLoader.programmaticBuilder();
+    loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(4000));
+    loaderBuilder.withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, Duration.ofMillis(5000));
+    loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(10000));
+
+    DriverConfigLoader loader = loaderBuilder.build();
+    builder.withConfigLoader(loader);
+
     CqlSession session = builder.build();
 
+    Thread.sleep(1000);
     System.out.printf("Creating keyspace %s%n", keyspace);
 
     CreateKeyspace createKs = SchemaBuilder.createKeyspace(keyspace).ifNotExists().withSimpleStrategy(1);

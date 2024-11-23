@@ -2,6 +2,9 @@ package site.ycsb.db.cassandra;
 
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.CqlSessionBuilder;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
+import com.datastax.oss.driver.api.core.config.ProgrammaticDriverConfigLoaderBuilder;
 import com.datastax.oss.driver.api.core.ssl.ProgrammaticSslEngineFactory;
 import com.datastax.oss.driver.api.querybuilder.schema.Drop;
 import org.apache.commons.cli.*;
@@ -14,6 +17,7 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.Properties;
@@ -121,8 +125,17 @@ public class CassandraCleanup {
     }
     builder.withLocalDatacenter(datacenter);
 
+    ProgrammaticDriverConfigLoaderBuilder loaderBuilder = DriverConfigLoader.programmaticBuilder();
+    loaderBuilder.withDuration(DefaultDriverOption.HEARTBEAT_TIMEOUT, Duration.ofMillis(4000));
+    loaderBuilder.withDuration(DefaultDriverOption.CONNECTION_CONNECT_TIMEOUT, Duration.ofMillis(5000));
+    loaderBuilder.withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofMillis(10000));
+
+    DriverConfigLoader loader = loaderBuilder.build();
+    builder.withConfigLoader(loader);
+
     CqlSession session = builder.build();
 
+    Thread.sleep(1000);
     System.out.printf("Removing keyspace %s%n", keyspace);
 
     Drop dropKs = dropKeyspace(keyspace).ifExists();

@@ -32,7 +32,7 @@ release:
 		$(PROJECT_VERSION)
 upload:
 		$(eval REV_FILE := $(shell ls -tr distribution/target/*.zip | tail -1))
-		gh release upload -R "mminichino/$(PROJECT_NAME)" $(PROJECT_VERSION) $(REV_FILE)
+		gh release upload --clobber -R "mminichino/$(PROJECT_NAME)" $(PROJECT_VERSION) $(REV_FILE)
 remove:
 		$(eval REV_FILE := $(shell ls -tr distribution/target/*.zip | tail -1))
 		$(eval ASSET_NAME := $(shell basename $(REV_FILE)))
