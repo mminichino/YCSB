@@ -339,6 +339,15 @@ LICENSE file.
       </modules>
     </profile>
     <profile>
+      <id>cockroachdb</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <modules>
+        <module>cockroachdb</module>
+      </modules>
+    </profile>
+    <profile>
       <id>default</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -357,6 +366,7 @@ LICENSE file.
         <module>snowflake</module>
         <module>scylla</module>
         <module>cassandra</module>
+        <module>cockroachdb</module>
       </modules>
     </profile>
   </profiles>
