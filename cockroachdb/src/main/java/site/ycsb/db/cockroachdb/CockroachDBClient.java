@@ -1,5 +1,7 @@
 package site.ycsb.db.cockroachdb;
 
+import okhttp3.ConnectionPool;
+import org.postgresql.ds.PGConnectionPoolDataSource;
 import org.postgresql.ds.PGSimpleDataSource;
 import site.ycsb.*;
 
@@ -23,13 +25,13 @@ public class CockroachDBClient extends DB {
   protected static final Logger LOGGER =
       (Logger)LoggerFactory.getLogger("site.ycsb.db.cockroachdb.CockroachDBClient");
 
-  private static final ConcurrentMap<Set<String>, PreparedStatement> readStmts = new ConcurrentHashMap<>();
-  private static final ConcurrentMap<Set<String>, PreparedStatement> scanStmts = new ConcurrentHashMap<>();
-  private static final ConcurrentMap<Set<String>, PreparedStatement> insertStmts = new ConcurrentHashMap<>();
-  private static final ConcurrentMap<Set<String>, PreparedStatement> updateStmts = new ConcurrentHashMap<>();
-  private static final AtomicReference<PreparedStatement> readAllStmt = new AtomicReference<>();
-  private static final AtomicReference<PreparedStatement> scanAllStmt = new AtomicReference<>();
-  private static final AtomicReference<PreparedStatement> deleteStmt = new AtomicReference<>();
+  private final ConcurrentMap<Set<String>, PreparedStatement> readStmts = new ConcurrentHashMap<>();
+  private final ConcurrentMap<Set<String>, PreparedStatement> scanStmts = new ConcurrentHashMap<>();
+  private final ConcurrentMap<Set<String>, PreparedStatement> insertStmts = new ConcurrentHashMap<>();
+  private final ConcurrentMap<Set<String>, PreparedStatement> updateStmts = new ConcurrentHashMap<>();
+  private final AtomicReference<PreparedStatement> readAllStmt = new AtomicReference<>();
+  private final AtomicReference<PreparedStatement> scanAllStmt = new AtomicReference<>();
+  private final AtomicReference<PreparedStatement> deleteStmt = new AtomicReference<>();
 
   public static final String CONNECTION_URL = "db.url";
   public static final String CONNECTION_USER = "db.user";
@@ -39,42 +41,30 @@ public class CockroachDBClient extends DB {
   public static final String YCSB_KEY = "id";
 
   private static final int MAX_RETRY_COUNT = 3;
-  private static final String RETRY_SQL_STATE = "40001";
-  private static final boolean FORCE_RETRY = false;
 
-  private static final Random rand = new Random();
-
-  private static volatile Connection connection;
-  private static final DSLContext create = DSL.using(SQLDialect.POSTGRES);
-
-  private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
+  private final Random rand = new Random();
+  private Connection connection;
+  private final DSLContext create = DSL.using(SQLDialect.POSTGRES);
 
   @Override
   public void init() throws DBException {
-    INIT_COUNT.incrementAndGet();
+    Properties props = getProperties();
+    String url = props.getProperty(CONNECTION_URL);
+    String user = props.getProperty(CONNECTION_USER);
+    String passwd = props.getProperty(CONNECTION_PASSWD);
+    boolean ssl = Boolean.parseBoolean(props.getProperty(CONNECTION_SSL, "false"));
 
-    synchronized (INIT_COUNT) {
-      if (connection != null) {
-        return;
-      }
-
-      Properties props = getProperties();
-      String url = props.getProperty(CONNECTION_URL);
-      String user = props.getProperty(CONNECTION_USER);
-      String passwd = props.getProperty(CONNECTION_PASSWD);
-      boolean ssl = Boolean.parseBoolean(props.getProperty(CONNECTION_SSL, "false"));
-
-      try {
-        PGSimpleDataSource ds = new PGSimpleDataSource();
-        ds.setUrl(url);
-        ds.setUser(user);
-        ds.setPassword(passwd);
-        ds.setSsl(ssl);
-        connection = ds.getConnection();
-        connection.setAutoCommit(false);
-      } catch (Exception e) {
-        throw new DBException(e);
-      }
+    try {
+      PGSimpleDataSource ds = new PGSimpleDataSource();
+      ds.setUrl(url);
+      ds.setUser(user);
+      ds.setPassword(passwd);
+      ds.setSsl(ssl);
+      connection = ds.getConnection();
+      connection.setAutoCommit(false);
+      connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+    } catch (Exception e) {
+      throw new DBException(e);
     }
   }
 
@@ -174,15 +164,10 @@ public class CockroachDBClient extends DB {
     }
   }
 
-  public ResultSet runSQL(PreparedStatement pstmt, String... args) {
+  public ResultSet runSQL(PreparedStatement pstmt, String... args) throws DBException {
     int retryCount = 0;
 
     while (retryCount <= MAX_RETRY_COUNT) {
-      if (retryCount == MAX_RETRY_COUNT) {
-        LOGGER.error("hit max of {} retries, aborting", MAX_RETRY_COUNT);
-        return null;
-      }
-
       try {
         for (int i=0; i<args.length; i++) {
           int place = i + 1;
@@ -206,7 +191,8 @@ public class CockroachDBClient extends DB {
         } catch (InterruptedException ignored) {}
       }
     }
-    return null;
+    LOGGER.error("Query failed: {}", pstmt.toString());
+    throw new DBException("hit max of " + MAX_RETRY_COUNT + " retries, aborting");
   }
 
   @Override
@@ -226,7 +212,7 @@ public class CockroachDBClient extends DB {
         }
       }
       return Status.OK;
-    } catch (SQLException e) {
+    } catch (Exception e) {
       LOGGER.error("Error reading key: {}: {}", key, e.getMessage(), e);
       return Status.ERROR;
     }
@@ -252,7 +238,7 @@ public class CockroachDBClient extends DB {
         result.add(tuple);
       }
       return Status.OK;
-    } catch (SQLException e) {
+    } catch (Exception e) {
       LOGGER.error("Error scanning from key: {}: {}", startkey, e.getMessage(), e);
       return Status.ERROR;
     }
@@ -270,7 +256,7 @@ public class CockroachDBClient extends DB {
       }
       runSQL(getUpdateStatement(table, fields), parameters);
       return Status.OK;
-    } catch (SQLException e) {
+    } catch (Exception e) {
       LOGGER.error("Error updating key: {}: {}", key, e.getMessage(), e);
       return Status.ERROR;
     }
@@ -288,7 +274,7 @@ public class CockroachDBClient extends DB {
       }
       runSQL(getInsertStatement(table, fields), parameters);
       return Status.OK;
-    } catch (SQLException e) {
+    } catch (Exception e) {
       LOGGER.error("Error updating key: {}: {}", key, e.getMessage(), e);
       return Status.ERROR;
     }
@@ -299,7 +285,7 @@ public class CockroachDBClient extends DB {
     try {
       runSQL(getDeleteStatement(table), key);
       return Status.OK;
-    } catch (SQLException e) {
+    } catch (Exception e) {
       LOGGER.error("Error deleting key: {}: {}", key, e.getMessage(), e);
       return Status.ERROR;
     }
