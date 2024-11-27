@@ -1,7 +1,5 @@
 package site.ycsb.db.cockroachdb;
 
-import okhttp3.ConnectionPool;
-import org.postgresql.ds.PGConnectionPoolDataSource;
 import org.postgresql.ds.PGSimpleDataSource;
 import site.ycsb.*;
 
@@ -9,7 +7,6 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.LoggerFactory;
@@ -18,8 +15,6 @@ import ch.qos.logback.classic.Logger;
 import static org.jooq.impl.DSL.*;
 import org.jooq.*;
 import org.jooq.impl.*;
-
-import javax.sql.PooledConnection;
 
 public class CockroachDBClient extends DB {
   protected static final Logger LOGGER =
@@ -38,10 +33,14 @@ public class CockroachDBClient extends DB {
   public static final String CONNECTION_PASSWD = "db.passwd";
   public static final String CONNECTION_SSL = "db.ssl";
 
+  public static final String TABLE_NAME_PROPERTY = "db.tablename";
+  public static final String TABLE_NAME_PROPERTY_DEFAULT = "usertable";
+
   public static final String YCSB_KEY = "id";
 
   private static final int MAX_RETRY_COUNT = 3;
 
+  private String tableName;
   private final Random rand = new Random();
   private Connection connection;
   private final DSLContext create = DSL.using(SQLDialect.POSTGRES);
@@ -53,6 +52,8 @@ public class CockroachDBClient extends DB {
     String user = props.getProperty(CONNECTION_USER);
     String passwd = props.getProperty(CONNECTION_PASSWD);
     boolean ssl = Boolean.parseBoolean(props.getProperty(CONNECTION_SSL, "false"));
+
+    tableName = getProperties().getProperty(TABLE_NAME_PROPERTY, TABLE_NAME_PROPERTY_DEFAULT);
 
     try {
       PGSimpleDataSource ds = new PGSimpleDataSource();
@@ -68,97 +69,102 @@ public class CockroachDBClient extends DB {
     }
   }
 
-  public PreparedStatement getInsertStatement(String table, Set<String> fields) throws SQLException {
+  public PreparedStatement getInsertStatement(Set<String> fields) throws SQLException {
     PreparedStatement insertStatement = insertStmts.get(fields);
     if (insertStatement == null) {
-      InsertQuery<?> insert = create.insertQuery(table(table));
-      insert.addValue(field(YCSB_KEY), val(1));
-      int index = 2;
-      for (String field : fields) {
-        insert.addValue(field(field), val(index++));
+      try (InsertQuery<?> insert = create.insertQuery(table(tableName))) {
+        insert.addValue(field(YCSB_KEY), val(1));
+        int index = 2;
+        for (String field : fields) {
+          insert.addValue(field(field), val(index++));
+        }
+        PreparedStatement stmt = connection.prepareStatement(insert.getSQL());
+        insertStmts.putIfAbsent(new HashSet<>(fields), stmt);
+        return stmt;
       }
-      PreparedStatement stmt = connection.prepareStatement(insert.getSQL());
-      insertStmts.putIfAbsent(new HashSet<>(fields), stmt);
-      return stmt;
     } else {
       return insertStatement;
     }
   }
 
-  public PreparedStatement getUpdateStatement(String table, Set<String> fields) throws SQLException {
+  public PreparedStatement getUpdateStatement(Set<String> fields) throws SQLException {
     PreparedStatement updateStatement = updateStmts.get(fields);
     if (updateStatement == null) {
-      UpdateQuery<?> update = create.updateQuery(table(table));
-      update.addConditions(field(YCSB_KEY).eq(val(1)));
-      int index = 2;
-      for (String field : fields) {
-        update.addValue(field(field), val(index++));
+      try (UpdateQuery<?> update = create.updateQuery(table(tableName))) {
+        update.addConditions(field(YCSB_KEY).eq(val(1)));
+        int index = 2;
+        for (String field : fields) {
+          update.addValue(field(field), val(index++));
+        }
+        PreparedStatement stmt = connection.prepareStatement(update.getSQL());
+        updateStmts.putIfAbsent(new HashSet<>(fields), stmt);
+        return stmt;
       }
-      PreparedStatement stmt = connection.prepareStatement(update.getSQL());
-      updateStmts.putIfAbsent(new HashSet<>(fields), stmt);
-      return stmt;
     } else {
       return updateStatement;
     }
   }
 
-  public PreparedStatement getReadStatement(String table, Set<String> fields) throws SQLException {
+  public PreparedStatement getReadStatement(Set<String> fields) throws SQLException {
     PreparedStatement readStatement = (fields == null) ? readAllStmt.get() : readStmts.get(fields);
     if (readStatement == null) {
-      SelectQuery<?> select = create.selectQuery(table(table));
-      select.addConditions(field(YCSB_KEY).eq(val(1)));
-      if (fields != null) {
-        for (String field : fields) {
-          select.addSelect(field(field));
+      try (SelectQuery<?> select = create.selectQuery(table(tableName))) {
+        select.addConditions(field(YCSB_KEY).eq(val(1)));
+        if (fields != null) {
+          for (String field : fields) {
+            select.addSelect(field(field));
+          }
+        } else {
+          select.addSelect(asterisk());
         }
-      } else {
-        select.addSelect(asterisk());
+        PreparedStatement stmt = connection.prepareStatement(select.getSQL());
+        if (fields == null) {
+          readAllStmt.getAndSet(stmt);
+        } else {
+          readStmts.putIfAbsent(fields, stmt);
+        }
+        return stmt;
       }
-      PreparedStatement stmt = connection.prepareStatement(select.getSQL());
-      if (fields == null) {
-        readAllStmt.getAndSet(stmt);
-      } else {
-        readStmts.putIfAbsent(fields, stmt);
-      }
-      return stmt;
     } else {
       return readStatement;
     }
   }
 
-  public PreparedStatement getScanStatement(String table, Set<String> fields) throws SQLException {
+  public PreparedStatement getScanStatement(Set<String> fields) throws SQLException {
     PreparedStatement scanStatement = (fields == null) ? scanAllStmt.get() : scanStmts.get(fields);
     if (scanStatement == null) {
-      SelectQuery<?> select = create.selectQuery(table(table));
-      select.addConditions(field(YCSB_KEY).ge(val(1)));
-      select.addLimit(val(2));
-      if (fields != null) {
-        for (String field : fields) {
-          select.addSelect(field(field));
+      try (SelectQuery<?> select = create.selectQuery(table(tableName))) {
+        select.addConditions(field(YCSB_KEY).ge(val(1)));
+        select.addLimit(val(2));
+        if (fields != null) {
+          for (String field : fields) {
+            select.addSelect(field(field));
+          }
+        } else {
+          select.addSelect(asterisk());
         }
-      } else {
-        select.addSelect(asterisk());
+        PreparedStatement stmt = connection.prepareStatement(select.getSQL());
+        if (fields == null) {
+          scanAllStmt.getAndSet(stmt);
+        } else {
+          scanStmts.putIfAbsent(fields, stmt);
+        }
+        return stmt;
       }
-      PreparedStatement stmt = connection.prepareStatement(select.getSQL());
-      if (fields == null) {
-        scanAllStmt.getAndSet(stmt);
-      } else {
-        scanStmts.putIfAbsent(fields, stmt);
-      }
-      return stmt;
     } else {
       return scanStatement;
     }
   }
 
-  public PreparedStatement getDeleteStatement(String table) throws SQLException {
+  public PreparedStatement getDeleteStatement() throws SQLException {
     PreparedStatement deleteStatement = deleteStmt.get();
     if (deleteStatement == null) {
-      DeleteQuery<?> delete = create.deleteQuery(table(table));
-      delete.addConditions(field(YCSB_KEY).eq(val(1)));
-      PreparedStatement stmt = connection.prepareStatement(delete.getSQL());
-      deleteStmt.getAndSet(stmt);
-      return stmt;
+      try (DeleteQuery<?> delete = create.deleteQuery(table(tableName))) {
+        delete.addConditions(field(YCSB_KEY).eq(val(1)));
+        PreparedStatement stmt = connection.prepareStatement(delete.getSQL());
+        deleteStmt.getAndSet(stmt);
+        return stmt;
+      }
     } else {
       return deleteStatement;
     }
@@ -198,7 +204,7 @@ public class CockroachDBClient extends DB {
   @Override
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
     try {
-      ResultSet rs = runSQL(getReadStatement(table, fields), key);
+      ResultSet rs = runSQL(getReadStatement(fields), key);
       rs.next();
       ResultSetMetaData meta = rs.getMetaData();
       int colCount = meta.getColumnCount();
@@ -221,7 +227,7 @@ public class CockroachDBClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
     try {
-      ResultSet rs = runSQL(getScanStatement(table, fields), startkey, String.valueOf(recordcount));
+      ResultSet rs = runSQL(getScanStatement(fields), startkey, String.valueOf(recordcount));
       ResultSetMetaData meta = rs.getMetaData();
       int colCount = meta.getColumnCount();
       while (rs.next()) {
@@ -254,7 +260,7 @@ public class CockroachDBClient extends DB {
       for (String field : fields) {
         parameters[index++] = values.get(field).toString();
       }
-      runSQL(getUpdateStatement(table, fields), parameters);
+      runSQL(getUpdateStatement(fields), parameters);
       return Status.OK;
     } catch (Exception e) {
       LOGGER.error("Error updating key: {}: {}", key, e.getMessage(), e);
@@ -272,7 +278,7 @@ public class CockroachDBClient extends DB {
       for (String field : fields) {
         parameters[index++] = values.get(field).toString();
       }
-      runSQL(getInsertStatement(table, fields), parameters);
+      runSQL(getInsertStatement(fields), parameters);
       return Status.OK;
     } catch (Exception e) {
       LOGGER.error("Error updating key: {}: {}", key, e.getMessage(), e);
@@ -283,7 +289,7 @@ public class CockroachDBClient extends DB {
   @Override
   public Status delete(String table, String key) {
     try {
-      runSQL(getDeleteStatement(table), key);
+      runSQL(getDeleteStatement(), key);
       return Status.OK;
     } catch (Exception e) {
       LOGGER.error("Error deleting key: {}: {}", key, e.getMessage(), e);
